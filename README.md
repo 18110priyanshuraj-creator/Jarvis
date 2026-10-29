@@ -1,62 +1,42 @@
-# JARVIS — local-first personal assistant
+# JARVIS — built-in offline core
 
-JARVIS is a private, self-hostable assistant dashboard with an **Ollama-compatible local-model backend**. It has a password-protected web UI, persistent JSON-file notes/tasks/feedback/skills, chat history, optional SearXNG research, and browser voice features.
+JARVIS is a private dashboard with login, local JSON-backed chats, memories, tasks, feedback and skill notes. Its chat engine is a small **self-contained deterministic rule engine** with an embedded knowledge pack. It does not call Gemini, Ollama, an LLM API, a model server, or a remote search service. The server-side chat and knowledge-search routes make no outbound network requests.
 
-**No Gemini or other hosted AI API is used by the chat backend in this branch.** JARVIS still needs a pretrained language model running on a machine you control or a model server you trust. It does not create a capable language model from scratch.
+## Important capability boundary
 
-**This is a foundation, not a fully autonomous or self-training AGI.** Feedback and approved skill instructions are saved and supplied as context; they do not automatically modify model weights. The app does not execute arbitrary shell commands, edit its own source automatically, or act on external accounts.
+This version is **not a general-purpose trained AI model**. A sophisticated, open-ended language model cannot be created merely by deleting an API URL. This build uses explicit rules, a safe arithmetic parser and curated offline notes. It can help with supported operations, but it cannot reliably answer arbitrary questions, follow open-ended custom instructions like an LLM, access live news, or learn new facts from the internet. It tells the user when a request is outside the built-in knowledge instead of inventing a response.
 
-## Included
+## Built-in features
 
-- Password login with an HttpOnly, SameSite session cookie and rate-limited login attempts.
-- Local-first chat through an Ollama-compatible model server; there is no Gemini fallback.
-- User-editable memories, tasks, response feedback, and custom skill notes.
-- Recent feedback and approved skills are supplied to the model as guidance on later chats.
-- Optional SearXNG research, disabled unless configured.
-- Security headers, same-origin checks, bounded input fields, and JSON request limits.
-- Render Blueprint and Node.js syntax-check command.
+- Password-protected dashboard with same-origin checks, session cookies, security headers and login rate limiting.
+- Arithmetic calculator: basic operations, parentheses, powers, percentages/remainder, constants and selected math functions. Trigonometric functions use radians.
+- Bundled notes for Newton's laws, units and dimensions, mole concept, sets, circular motion, Ohm's law, basic JavaScript/debugging and study planning.
+- Local search across the embedded knowledge pack (not the web).
+- Saved chat history, editable memories, tasks, response feedback and custom skill notes.
+- No Gemini/Ollama/model/search service URL or AI API key is required by the application.
 
-## Requirements
-
-- Node.js 22 or later.
-- Ollama (or a compatible local inference server) running a model already installed, such as a model matching `JARVIS_MODEL`.
-- A long, unique `JARVIS_PASSWORD`.
-- Optional: a trusted SearXNG instance for web research.
+Memory and feedback are stored context, not model training. Custom skill notes are saved notes; without a language model, they cannot make the engine generally follow arbitrary instructions. JARVIS does not execute shell commands, modify its own code autonomously, or operate external accounts.
 
 ## Run locally
 
+Requirements: Node.js 22 or later.
+
 1. Copy `.env.example` to `.env`.
 2. Set `JARVIS_PASSWORD` to a long, unique password.
-3. Install and start Ollama on your own machine, then download a compatible model using Ollama's own instructions.
-4. Set `OLLAMA_BASE_URL` to the model server's root URL and `JARVIS_MODEL` to the exact installed model name.
-5. Run `npm install`, then `npm start`.
+3. Run `npm install`.
+4. Run `npm run check`.
+5. Run `npm start`.
 6. Open `http://localhost:3000`.
-7. Run `npm run check` for syntax and integration tests.
 
-Do not expose an unauthenticated Ollama endpoint to the public internet. Keep model inference on your own hardware or behind a private, authenticated network.
+No model download, AI API key or model-server URL is required. The app still needs a web host or a local Node.js process to serve the dashboard; its own browser-to-server requests are necessary for login, chat and storage.
 
-## Render deployment reality
+## Render deployment and storage
 
-Render's free web service does not automatically include Ollama or a language model, and `OLLAMA_BASE_URL=http://127.0.0.1:11434` only works if a model server actually runs in that same network namespace. Setting this variable alone does not install or start a model. For hosted use, configure a secured model server reachable from Render; that server may require separate compute and storage. If no model server is available, JARVIS reports a connection error rather than falling back to Gemini or another AI API.
+The web app can run as a Node.js service on Render without a model server. The Render hosting URL is still needed to open the web dashboard, but the chat engine does not call any AI provider URL. Free hosted filesystems can be ephemeral: JSON-file chats, memories and tasks may be lost during restarts or redeploys. Use a durable database/volume or export and back up important data if persistence is required.
 
-The filesystem on hosted services can be ephemeral. Render Free web services do **not** support persistent disks, so JSON-file memory may be lost on restarts/redeploys. For durable cloud memory, use a paid persistent disk or migrate the store to a managed database. For a truly private setup with no third-party AI service, run both JARVIS and the model server on hardware you control.
+## Security
 
-## Memory, feedback, skills, and “learning”
-
-- Memories are editable notes and are injected into chat context.
-- Feedback records whether a response was helpful and optional comments; recent feedback guides future prompts.
-- Skill entries are user-approved instruction notes injected as context. Treat them as instructions for writing/planning, not executable code.
-- These features provide persistent context and behavioral guidance. They **do not train the model weights** or guarantee it learns correctly over time. Actual fine-tuning requires curated training data, compute, and evaluation.
-- There is no autonomous self-modification or arbitrary command execution in this branch.
-
-## Optional web research
-
-Set `SEARXNG_URL` to a SearXNG instance you trust. Leave it unset to disable web search. Research uses the configured search service; this is separate from the local model backend.
-
-## Safety and operations
-
-- Model output does not grant permission to run tools.
-- No arbitrary shell execution, public posting, email sending, external account changes, or self-editing code is implemented.
-- Never store passwords, API keys, or access tokens in memories or skills.
-- Use HTTPS, strong secrets, restricted network access to the model server, and backups for persistent data.
-- Verify generated answers and sources, especially for important decisions.
+- Set a strong `JARVIS_PASSWORD` in the host's environment settings; never commit a real secret.
+- Do not store passwords, access tokens or other secrets in memories or skill notes.
+- This app protects the dashboard with a shared password and cookie session; do not treat it as a multi-user identity system.
+- Treat answers as limited offline utilities and notes; verify important information.
