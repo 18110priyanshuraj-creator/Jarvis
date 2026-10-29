@@ -38,7 +38,7 @@ The included \`render.yaml\` can create a web service. Set \`JARVIS_PASSWORD\` a
 
 A free web-service plan generally is not suitable for running a useful local language model inside the same service. You need a model server reachable by the deployed backend, and that server may have its own compute/storage cost. Do not put credentials in source control or expose an unauthenticated model endpoint.
 
-The filesystem on many hosted services is ephemeral. Attach a persistent disk and configure \`JARVIS_DATA_DIR\` to the disk mount path if chats, memories, and tasks must survive redeploys or restarts. The included in-process session store logs you out when the process restarts; use a durable session store before multi-user or high-availability use.
+The filesystem on hosted services is often ephemeral. Render Free web services do **not** support persistent disks, so saved JSON data can be lost during restarts or redeploys on the free plan. For persistence, upgrade to a plan that supports a persistent disk and set `JARVIS_DATA_DIR` to its mount path, or move storage to a managed database in a later stage. The included in-process session store logs you out when the process restarts; use a durable session store before multi-user or high-availability use.
 
 ## Optional web research
 
