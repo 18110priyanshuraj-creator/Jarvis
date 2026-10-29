@@ -143,11 +143,13 @@ function findCalculation(message) {
 
 function knowledgeSearch(query, limit = 5) {
   const q = normalize(query);
-  const words = q.split(/[^a-z0-9]+/).filter((word) => word.length > 2);
+  const stopWords = new Set(["who", "what", "when", "where", "why", "how", "the", "and", "that", "this", "with", "from", "into", "for", "are", "was", "were", "has", "have", "had", "not", "can", "could", "should", "would", "will", "about", "after", "before", "game", "happened", "minute", "ago", "won", "any", "some", "like", "did", "does", "then", "than", "been", "being", "you", "your", "our", "their", "them", "his", "her", "she", "he", "they", "all", "just", "one", "out", "too", "very"]);
+  const words = q.split(/[^a-z0-9]+/).filter((word) => word.length > 2 && !stopWords.has(word));
   return KNOWLEDGE.map((item) => {
     const haystack = normalize(item.title + " " + item.keywords.join(" ") + " " + item.body);
+    const haystackWords = new Set(haystack.split(/[^a-z0-9]+/).filter(Boolean));
     const score = item.keywords.reduce((sum, keyword) => sum + (q.includes(keyword) ? 4 : 0), 0)
-      + words.reduce((sum, word) => sum + (haystack.includes(word) ? 1 : 0), 0);
+      + words.reduce((sum, word) => sum + (haystackWords.has(word) ? 1 : 0), 0);
     return { ...item, score };
   }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score).slice(0, limit)
     .map(({ title, body, score }) => ({ title, snippet: body, score }));
