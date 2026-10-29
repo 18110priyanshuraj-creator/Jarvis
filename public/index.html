@@ -53,16 +53,16 @@
           <h2 id="page-title">Assistant</h2>
         </div>
         <div class="topbar-actions">
-          <span class="model-chip"><span class="status-dot"></span><span>Self-hosted model</span></span>
+          <span class="model-chip"><span class="status-dot"></span><span>Built-in offline core</span></span>
         </div>
       </header>
 
       <section id="view-chat" class="view chat-view">
         <div class="chat-intro">
           <div class="orb" aria-hidden="true"><span>J</span></div>
-          <p class="eyebrow">YOUR PERSONAL AI</p>
+          <p class="eyebrow">BUILT-IN OFFLINE ASSISTANT</p>
           <h1>What are we working on?</h1>
-          <p class="muted intro-copy">Study, write, plan, explore an idea, or break a big goal into small steps.</p>
+          <p class="muted intro-copy">Study, calculate, organize tasks, use built-in notes, or break a goal into small steps—without an external AI model.</p>
           <div class="prompt-grid">
             <button class="prompt-card" data-prompt="Help me make a realistic plan for today."><span>↗</span><strong>Plan my day</strong><small>Turn priorities into steps</small></button>
             <button class="prompt-card" data-prompt="Explain a difficult concept step by step and give me a quick check question at the end."><span>◉</span><strong>Help me learn</strong><small>Understand, then practise</small></button>
@@ -118,17 +118,17 @@
       </section>
 
       <section id="view-research" class="view content-view hidden">
-        <div class="section-heading"><div><p class="eyebrow">WEB DISCOVERY</p><h1>Research</h1><p class="muted">Search through your configured SearXNG service. Open sources and verify claims yourself.</p></div></div>
+        <div class="section-heading"><div><p class="eyebrow">WEB DISCOVERY</p><h1>Research</h1><p class="muted">Search the small knowledge base bundled inside JARVIS. No search server or external URL is contacted.</p></div></div>
         <form id="search-form" class="search-form">
           <span aria-hidden="true">⌕</span>
-          <input id="search-input" required maxlength="300" placeholder="Search a topic, question, or source…">
+          <input id="search-input" required maxlength="300" placeholder="Search built-in topics such as Newton’s laws, units, mole concept, or debugging…">
           <button class="primary" id="search-button" type="submit">Search</button>
         </form>
-        <div class="research-hint"><strong>Source check</strong><p>Prefer official documentation and primary sources. Search is disabled until a trusted <code>SEARXNG_URL</code> is configured on the server.</p></div>
+        <div class="research-hint"><strong>Source check</strong><p>Prefer official documentation and primary sources. Search uses only JARVIS’s bundled offline notes; it does not browse the live web.</p></div>
         <div id="search-results" class="search-results"></div>
       </section>
 
-      <footer class="page-footer"><span>JARVIS FOUNDATION · v0.1.0</span><span>Built for one user, with safety boundaries</span></footer>
+      <footer class="page-footer"><span>JARVIS OFFLINE CORE · v0.2.0</span><span>Built for one user, with safety boundaries</span></footer>
     </main>
   </div>
 </body>
