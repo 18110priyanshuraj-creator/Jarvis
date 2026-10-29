@@ -411,7 +411,7 @@ $("#skill-form").addEventListener("submit", async (event) => {
     $("#skill-name").value = "";
     $("#skill-instructions").value = "";
     renderSkills();
-    toast("Skill saved. It will be supplied as guidance to the local model.");
+    toast("Skill saved. The built-in rules can use saved preferences where supported.");
   } catch (error) { toast(error.message, true); }
   finally { button.disabled = false; }
 });
@@ -445,7 +445,7 @@ $("#search-form").addEventListener("submit", async (event) => {
   const target = $("#search-results");
   button.disabled = true;
   target.replaceChildren();
-  target.append(makeEmpty("Searching configured sources…"));
+  target.append(makeEmpty("Searching the embedded offline knowledge base…"));
   try {
     const query = $("#search-input").value.trim();
     const data = await api("/api/search?q=" + encodeURIComponent(query));
@@ -454,10 +454,12 @@ $("#search-form").addEventListener("submit", async (event) => {
     for (const result of data.results) {
       const card = document.createElement("article");
       card.className = "result-card";
-      const title = document.createElement("a");
-      title.href = result.url;
-      title.target = "_blank";
-      title.rel = "noopener noreferrer";
+      const title = result.url ? document.createElement("a") : document.createElement("strong");
+      if (result.url) {
+        title.href = result.url;
+        title.target = "_blank";
+        title.rel = "noopener noreferrer";
+      }
       title.textContent = result.title;
       const snippet = document.createElement("p");
       snippet.textContent = result.snippet || "No description available.";
