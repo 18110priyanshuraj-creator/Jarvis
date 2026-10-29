@@ -92,7 +92,8 @@ function renderChats() {
   }
   $("#chat-messages").classList.remove("hidden");
   $(".chat-intro").classList.add("hidden");
-  for (const item of messages) {
+  for (let index = 0; index < messages.length; index++) {
+    const item = messages[index];
     if (item.role !== "user" && item.role !== "assistant") continue;
     const row = document.createElement("article");
     row.className = "message " + item.role;
