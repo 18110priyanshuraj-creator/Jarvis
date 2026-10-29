@@ -181,3 +181,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .page-footer { flex-direction: column; gap: 6px; }
   .login-card { padding: 27px 23px; }
 }
+
+.message-feedback { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+.message-feedback .item-action { font-size: .68rem; padding: 5px 9px; }
+#skill-list { margin-top: 12px; }
