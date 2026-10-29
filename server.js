@@ -153,7 +153,6 @@ async function loadStore() {
       store = normalizeStore(saved);
       return;
     }
-    await fs.mkdir(DATA_DIR, { recursive: true });
     let initial = store;
     try {
       initial = normalizeStore(JSON.parse(await fs.readFile(STORE_FILE, "utf8")));
