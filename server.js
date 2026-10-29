@@ -11,6 +11,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const PASSWORD = process.env.JARVIS_PASSWORD || "";
+const AI_PROVIDER = (process.env.AI_PROVIDER || (process.env.GEMINI_API_KEY ? "gemini" : "ollama")).trim().toLowerCase();
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 const MODEL = process.env.JARVIS_MODEL || "qwen2.5:7b";
 const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434").replace(/\/+$/, "");
 const SEARXNG_URL = (process.env.SEARXNG_URL || "").replace(/\/+$/, "");
@@ -220,22 +223,76 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   messages.push({ role: "user", content: message });
 
   try {
-    const response = await fetch(OLLAMA_BASE_URL + "/api/chat", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: MODEL, messages, stream: false }),
-      signal: AbortSignal.timeout(90000)
-    });
+    let answer = "";
 
-    if (!response.ok) {
-      console.error("Model endpoint returned HTTP", response.status);
+    if (AI_PROVIDER === "gemini") {
+      if (!GEMINI_API_KEY) {
+        return res.status(503).json({
+          error: "Gemini is selected, but GEMINI_API_KEY is missing. Add your key in Render Dashboard > Environment; do not paste it into the chat."
+        });
+      }
+
+      const response = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(GEMINI_MODEL) + ":generateContent",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-goog-api-key": GEMINI_API_KEY
+          },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: messages
+              .filter((item) => item.role !== "system")
+              .map((item) => ({
+                role: item.role === "assistant" ? "model" : "user",
+                parts: [{ text: item.content }]
+              })),
+            generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
+          }),
+          signal: AbortSignal.timeout(90000)
+        }
+      );
+
+      if (!response.ok) {
+        console.error("Gemini API returned HTTP", response.status);
+        return res.status(response.status === 429 ? 429 : 503).json({
+          error: response.status === 429
+            ? "Gemini API rate limit or quota reached. Check your Google AI Studio project quota and try again."
+            : "Gemini API request failed (HTTP " + response.status + "). Check GEMINI_API_KEY and GEMINI_MODEL in Render Environment."
+        });
+      }
+
+      const payload = await response.json();
+      answer = cleanText(
+        (payload?.candidates?.[0]?.content?.parts || [])
+          .map((part) => typeof part.text === "string" ? part.text : "")
+          .join("\n"),
+        16000
+      );
+    } else if (AI_PROVIDER === "ollama") {
+      const response = await fetch(OLLAMA_BASE_URL + "/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: MODEL, messages, stream: false }),
+        signal: AbortSignal.timeout(90000)
+      });
+
+      if (!response.ok) {
+        console.error("Ollama endpoint returned HTTP", response.status);
+        return res.status(503).json({
+          error: "The configured Ollama server is not ready. Set OLLAMA_BASE_URL to a server reachable from Render and confirm the model is installed."
+        });
+      }
+
+      const payload = await response.json();
+      answer = cleanText(payload?.message?.content, 16000);
+    } else {
       return res.status(503).json({
-        error: "The configured model server is not ready. Check OLLAMA_BASE_URL and confirm the model is installed."
+        error: "Unsupported AI_PROVIDER. Set it to gemini or ollama in the server environment."
       });
     }
 
-    const payload = await response.json();
-    const answer = cleanText(payload?.message?.content, 16000);
     if (!answer) {
       return res.status(502).json({ error: "The model server returned an empty response. Please try again." });
     }
@@ -246,10 +303,13 @@ app.post("/api/chat", requireAuth, async (req, res) => {
     res.json({ answer });
   } catch (error) {
     const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
+    console.error("AI provider request failed:", AI_PROVIDER, error?.name || "Error");
     res.status(timedOut ? 504 : 503).json({
       error: timedOut
-        ? "The model took too long to respond. Try a smaller model or retry."
-        : "Could not reach the model server. Check that Ollama is running and reachable from JARVIS."
+        ? "The AI model took too long to respond. Try again or select a faster model."
+        : AI_PROVIDER === "gemini"
+          ? "Could not reach the Gemini API. Check that the API is available and GEMINI_API_KEY is set in Render Environment."
+          : "Could not reach the Ollama model server. Check that Ollama is running and OLLAMA_BASE_URL is reachable from JARVIS."
     });
   }
 });
