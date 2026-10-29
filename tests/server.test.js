@@ -46,6 +46,8 @@ before(async () => {
       PORT: String(port),
       JARVIS_PASSWORD: "test-only-password-2026",
       JARVIS_DATA_DIR: tempDir,
+      AI_PROVIDER: "ollama",
+      GEMINI_API_KEY: "",
       OLLAMA_BASE_URL: "http://127.0.0.1:1",
       JARVIS_MODEL: "nonexistent-test-model",
       SEARXNG_URL: ""
