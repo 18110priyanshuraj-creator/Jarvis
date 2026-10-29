@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import { neon } from "@neondatabase/serverless";
 import path from "node:path";
 import fs from "node:fs/promises";
 import crypto from "node:crypto";
@@ -58,6 +59,23 @@ app.use("/api", apiLimiter);
 
 let store = { chats: [], memories: [], tasks: [], feedback: [], skills: [] };
 let writeQueue = Promise.resolve();
+let neonSql;
+
+function getNeonSql() {
+  if (!process.env.DATABASE_URL) return null;
+  if (!neonSql) neonSql = neon(process.env.DATABASE_URL);
+  return neonSql;
+}
+
+function normalizeStore(parsed = {}) {
+  return {
+    chats: Array.isArray(parsed.chats) ? parsed.chats.slice(-100) : [],
+    memories: Array.isArray(parsed.memories) ? parsed.memories.slice(-200) : [],
+    tasks: Array.isArray(parsed.tasks) ? parsed.tasks.slice(-200) : [],
+    feedback: Array.isArray(parsed.feedback) ? parsed.feedback.slice(-300) : [],
+    skills: Array.isArray(parsed.skills) ? parsed.skills.slice(-100) : []
+  };
+}
 
 function newId() {
   return crypto.randomUUID();
@@ -122,17 +140,37 @@ app.use("/api", (req, res, next) => {
 });
 
 async function loadStore() {
+  const sql = getNeonSql();
+  if (sql) {
+    await sql`CREATE TABLE IF NOT EXISTS jarvis_app_state (
+      id SMALLINT PRIMARY KEY CHECK (id = 1),
+      state JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`;
+    const rows = await sql`SELECT state FROM jarvis_app_state WHERE id = 1 LIMIT 1`;
+    if (rows.length > 0) {
+      const saved = typeof rows[0].state === "string" ? JSON.parse(rows[0].state) : rows[0].state;
+      store = normalizeStore(saved);
+      return;
+    }
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    let initial = store;
+    try {
+      initial = normalizeStore(JSON.parse(await fs.readFile(STORE_FILE, "utf8")));
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        throw new Error("Could not read saved JARVIS data. Check " + STORE_FILE + " before migrating to PostgreSQL.");
+      }
+    }
+    store = initial;
+    const snapshot = JSON.stringify(store);
+    await sql`INSERT INTO jarvis_app_state (id, state, updated_at) VALUES (1, ${snapshot}::jsonb, now()) ON CONFLICT (id) DO NOTHING`;
+    return;
+  }
   await fs.mkdir(DATA_DIR, { recursive: true });
   try {
     const raw = await fs.readFile(STORE_FILE, "utf8");
-    const parsed = JSON.parse(raw);
-    store = {
-      chats: Array.isArray(parsed.chats) ? parsed.chats.slice(-100) : [],
-      memories: Array.isArray(parsed.memories) ? parsed.memories.slice(-200) : [],
-      tasks: Array.isArray(parsed.tasks) ? parsed.tasks.slice(-200) : [],
-      feedback: Array.isArray(parsed.feedback) ? parsed.feedback.slice(-300) : [],
-      skills: Array.isArray(parsed.skills) ? parsed.skills.slice(-100) : []
-    };
+    store = normalizeStore(JSON.parse(raw));
   } catch (error) {
     if (error.code !== "ENOENT") throw new Error("Could not read saved JARVIS data. Check " + STORE_FILE + " before restarting.");
     await saveStore();
@@ -142,6 +180,12 @@ async function loadStore() {
 function saveStore() {
   const snapshot = JSON.stringify(store, null, 2) + "\n";
   writeQueue = writeQueue.catch(() => {}).then(async () => {
+    const sql = getNeonSql();
+    if (sql) {
+      const databaseSnapshot = JSON.stringify(store);
+      await sql`INSERT INTO jarvis_app_state (id, state, updated_at) VALUES (1, ${databaseSnapshot}::jsonb, now()) ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, updated_at = now()`;
+      return;
+    }
     await fs.mkdir(DATA_DIR, { recursive: true });
     const tempFile = STORE_FILE + ".tmp";
     await fs.writeFile(tempFile, snapshot, { encoding: "utf8", mode: 0o600 });
