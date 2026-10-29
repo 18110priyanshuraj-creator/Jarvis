@@ -93,6 +93,15 @@
         </form>
         <div class="list-heading"><h2>Saved notes</h2><span class="muted small">You stay in control</span></div>
         <div id="memory-list" class="item-list"></div>
+        <div class="list-heading"><h2>Custom skills</h2><span class="muted small">Saved guidance, not executable code</span></div>
+        <form id="skill-form" class="form-card">
+          <label for="skill-name">Skill name</label>
+          <input id="skill-name" maxlength="80" required placeholder="Example: JEE tutor">
+          <label for="skill-instructions">Instructions for JARVIS</label>
+          <textarea id="skill-instructions" rows="3" maxlength="1200" required placeholder="Example: Explain concepts step by step, use simple Hinglish, then give one practice question."></textarea>
+          <div class="form-row"><span class="small muted">Never add passwords, tokens, or dangerous commands.</span><button class="primary" type="submit">Save skill</button></div>
+        </form>
+        <div id="skill-list" class="item-list"></div>
       </section>
 
       <section id="view-tasks" class="view content-view hidden">
