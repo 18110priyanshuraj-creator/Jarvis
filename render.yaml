@@ -12,11 +12,7 @@ services:
       - key: JARVIS_PASSWORD
         sync: false
       - key: AI_PROVIDER
-        value: gemini
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: GEMINI_MODEL
-        value: gemini-3.8-flash
+        value: ollama
       - key: OLLAMA_BASE_URL
         sync: false
       - key: JARVIS_MODEL
