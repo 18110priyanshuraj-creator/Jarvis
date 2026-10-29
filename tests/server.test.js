@@ -149,6 +149,30 @@ test("authentication, same-origin protection, tasks, memories, and model failure
   const deleteTask = await request("/api/tasks/" + taskPayload.task.id, { method: "DELETE" });
   assert.equal(deleteTask.status, 200);
 
+  const createFeedback = await request("/api/feedback", {
+    method: "POST",
+    body: JSON.stringify({ prompt: "Explain this simply", rating: "up", note: "Helpful example" })
+  });
+  assert.equal(createFeedback.status, 201);
+  const feedbackPayload = await createFeedback.json();
+  assert.equal(feedbackPayload.feedback.rating, "up");
+
+  const createSkill = await request("/api/skills", {
+    method: "POST",
+    body: JSON.stringify({ name: "Simple Hinglish", instructions: "Explain in simple Hinglish and use one example." })
+  });
+  assert.equal(createSkill.status, 201);
+  const skillPayload = await createSkill.json();
+  assert.equal(skillPayload.skill.name, "Simple Hinglish");
+
+  const learningState = await request("/api/state");
+  const learningSnapshot = await learningState.json();
+  assert.equal(learningSnapshot.feedback.some((item) => item.id === feedbackPayload.feedback.id), true);
+  assert.equal(learningSnapshot.skills.some((item) => item.id === skillPayload.skill.id), true);
+
+  assert.equal((await request("/api/feedback/" + feedbackPayload.feedback.id, { method: "DELETE" })).status, 200);
+  assert.equal((await request("/api/skills/" + skillPayload.skill.id, { method: "DELETE" })).status, 200);
+
   const searchDisabled = await request("/api/search?q=test");
   assert.equal(searchDisabled.status, 503);
 
