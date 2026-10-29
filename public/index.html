@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1020">
+  <meta name="description" content="Private JARVIS personal assistant dashboard">
+  <title>JARVIS — Personal Assistant</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <section id="login-screen" class="login-screen">
+    <div class="login-card">
+      <div class="brand-mark large-mark" aria-hidden="true">J</div>
+      <p class="eyebrow">PERSONAL AI SYSTEM</p>
+      <h1>Welcome back.</h1>
+      <p class="muted">Sign in to your private JARVIS workspace.</p>
+      <form id="login-form">
+        <label for="password">Workspace password</label>
+        <input id="password" type="password" autocomplete="current-password" required maxlength="500" placeholder="Enter your password">
+        <button class="primary wide" type="submit" id="login-button">Unlock workspace <span aria-hidden="true">↗</span></button>
+      </form>
+      <p class="small muted">Private workspace · No account sharing</p>
+    </div>
+  </section>
+
+  <div id="app-shell" class="app-shell hidden">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="JARVIS home">
+        <span class="brand-mark">J</span>
+        <span><strong>JARVIS</strong><small>PERSONAL SYSTEM</small></span>
+      </a>
+      <div class="nav-label">WORKSPACE</div>
+      <nav class="main-nav" aria-label="Main navigation">
+        <button class="nav-item active" data-view="chat"><span class="nav-icon">✳</span> Assistant</button>
+        <button class="nav-item" data-view="research"><span class="nav-icon">⌕</span> Research</button>
+        <button class="nav-item" data-view="tasks"><span class="nav-icon">☷</span> Tasks <span id="task-count" class="nav-count">0</span></button>
+        <button class="nav-item" data-view="memory"><span class="nav-icon">◈</span> Memory</button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="connection"><span class="status-dot"></span><span><strong>Private workspace</strong><small>Session protected</small></span></div>
+        <button id="logout-button" class="logout-button">↪ Sign out</button>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow" id="page-kicker">PERSONAL ASSISTANT</div>
+          <h2 id="page-title">Assistant</h2>
+        </div>
+        <div class="topbar-actions">
+          <span class="model-chip"><span class="status-dot"></span><span>Built-in offline core</span></span>
+        </div>
+      </header>
+
+      <section id="view-chat" class="view chat-view">
+        <div class="chat-intro">
+          <div class="orb" aria-hidden="true"><span>J</span></div>
+          <p class="eyebrow">BUILT-IN OFFLINE ASSISTANT</p>
+          <h1>What are we working on?</h1>
+          <p class="muted intro-copy">Study, calculate, organize tasks, use built-in notes, or break a goal into small steps—without an external AI model.</p>
+          <div class="prompt-grid">
+            <button class="prompt-card" data-prompt="Help me make a realistic plan for today."><span>↗</span><strong>Plan my day</strong><small>Turn priorities into steps</small></button>
+            <button class="prompt-card" data-prompt="Explain a difficult concept step by step and give me a quick check question at the end."><span>◉</span><strong>Help me learn</strong><small>Understand, then practise</small></button>
+            <button class="prompt-card" data-prompt="Help me research this topic. Tell me what evidence and sources I should verify."><span>⌕</span><strong>Explore a topic</strong><small>Research with caution</small></button>
+          </div>
+        </div>
+        <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
+        <form id="chat-form" class="composer">
+          <textarea id="chat-input" rows="1" maxlength="4000" placeholder="Message JARVIS…" aria-label="Message JARVIS"></textarea>
+          <div class="composer-bottom">
+            <div class="composer-tools">
+              <button type="button" id="voice-button" class="tool-button" title="Voice input" aria-label="Voice input">🎙 <span>Voice</span></button>
+              <label class="speak-label"><input id="speak-toggle" type="checkbox"> Read replies aloud</label>
+            </div>
+            <button id="send-button" type="submit" class="primary send-button">Send <span aria-hidden="true">↑</span></button>
+          </div>
+          <p class="composer-note">JARVIS can make mistakes. Verify important information. External actions are not enabled.</p>
+        </form>
+      </section>
+
+      <section id="view-memory" class="view content-view hidden">
+        <div class="section-heading"><div><p class="eyebrow">PERSONAL CONTEXT</p><h1>Memory</h1><p class="muted">Save useful preferences, goals, or facts. Review and delete them anytime.</p></div><span class="counter" id="memory-count">0 saved</span></div>
+        <form id="memory-form" class="form-card">
+          <label for="memory-content">What should JARVIS remember?</label>
+          <textarea id="memory-content" rows="3" maxlength="1000" required placeholder="Example: I prefer explanations in simple Hinglish, with examples."></textarea>
+          <div class="form-row"><label class="field-label" for="memory-category">Category<select id="memory-category"><option value="preference">Preference</option><option value="goal">Goal</option><option value="fact">Fact</option></select></label><button class="primary" type="submit">Save memory</button></div>
+          <p class="small muted">Do not save passwords, API keys, private tokens, or other secrets.</p>
+        </form>
+        <div class="list-heading"><h2>Saved notes</h2><span class="muted small">You stay in control</span></div>
+        <div id="memory-list" class="item-list"></div>
+        <div class="list-heading"><h2>Custom skills</h2><span class="muted small">Saved guidance, not executable code</span></div>
+        <form id="skill-form" class="form-card">
+          <label for="skill-name">Skill name</label>
+          <input id="skill-name" maxlength="80" required placeholder="Example: JEE tutor">
+          <label for="skill-instructions">Instructions for JARVIS</label>
+          <textarea id="skill-instructions" rows="3" maxlength="1200" required placeholder="Example: Explain concepts step by step, use simple Hinglish, then give one practice question."></textarea>
+          <div class="form-row"><span class="small muted">Never add passwords, tokens, or dangerous commands.</span><button class="primary" type="submit">Save skill</button></div>
+        </form>
+        <div id="skill-list" class="item-list"></div>
+      </section>
+
+      <section id="view-tasks" class="view content-view hidden">
+        <div class="section-heading"><div><p class="eyebrow">ORGANIZATION</p><h1>Tasks</h1><p class="muted">Keep track of next steps. JARVIS will not silently perform them for you.</p></div></div>
+        <form id="task-form" class="form-card">
+          <label for="task-title">Task</label>
+          <input id="task-title" maxlength="180" required placeholder="What needs to get done?">
+          <label for="task-description">Details <span class="muted">(optional)</span></label>
+          <textarea id="task-description" rows="2" maxlength="1000" placeholder="Notes, small steps, or context"></textarea>
+          <div class="form-row"><label class="field-label" for="task-due">Due date <span class="muted">(optional)</span><input id="task-due" type="datetime-local"></label><button class="primary" type="submit">Add task</button></div>
+        </form>
+        <div class="list-heading"><h2>Your task list</h2><span class="muted small">Mark complete as you go</span></div>
+        <div id="task-list" class="item-list"></div>
+      </section>
+
+      <section id="view-research" class="view content-view hidden">
+        <div class="section-heading"><div><p class="eyebrow">WEB DISCOVERY</p><h1>Research</h1><p class="muted">Search the small knowledge base bundled inside JARVIS. No search server or external URL is contacted.</p></div></div>
+        <form id="search-form" class="search-form">
+          <span aria-hidden="true">⌕</span>
+          <input id="search-input" required maxlength="300" placeholder="Search built-in topics such as Newton’s laws, units, mole concept, or debugging…">
+          <button class="primary" id="search-button" type="submit">Search</button>
+        </form>
+        <div class="research-hint"><strong>Source check</strong><p>Prefer official documentation and primary sources. Search uses only JARVIS’s bundled offline notes; it does not browse the live web.</p></div>
+        <div id="search-results" class="search-results"></div>
+      </section>
+
+      <footer class="page-footer"><span>JARVIS OFFLINE CORE · v0.2.0</span><span>Built for one user, with safety boundaries</span></footer>
+    </main>
+  </div>
+</body>
+</html>
