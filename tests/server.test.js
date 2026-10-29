@@ -46,11 +46,6 @@ before(async () => {
       PORT: String(port),
       JARVIS_PASSWORD: "test-only-password-2026",
       JARVIS_DATA_DIR: tempDir,
-      AI_PROVIDER: "ollama",
-      GEMINI_API_KEY: "",
-      OLLAMA_BASE_URL: "http://127.0.0.1:1",
-      JARVIS_MODEL: "nonexistent-test-model",
-      SEARXNG_URL: ""
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -87,7 +82,7 @@ test("health endpoint is public without disclosing configuration", async () => {
   assert.equal(JSON.stringify(payload).includes("test-only-password-2026"), false);
 });
 
-test("authentication, same-origin protection, tasks, memories, and model failures behave safely", async (t) => {
+test("authentication, local search, tasks, memories, and offline chat behave safely", async () => {
   const blockedState = await request("/api/state", { headers: {} });
   assert.equal(blockedState.status, 401);
 
@@ -173,15 +168,21 @@ test("authentication, same-origin protection, tasks, memories, and model failure
   assert.equal((await request("/api/feedback/" + feedbackPayload.feedback.id, { method: "DELETE" })).status, 200);
   assert.equal((await request("/api/skills/" + skillPayload.skill.id, { method: "DELETE" })).status, 200);
 
-  const searchDisabled = await request("/api/search?q=test");
-  assert.equal(searchDisabled.status, 503);
+  const localSearch = await request("/api/search?q=mole%20concept");
+  assert.equal(localSearch.status, 200);
+  const localSearchPayload = await localSearch.json();
+  assert.equal(localSearchPayload.externalSearch, false);
+  assert.ok(localSearchPayload.results.some((item) => item.title === "Mole concept"));
 
-  const modelUnavailable = await request("/api/chat", {
+  const localChat = await request("/api/chat", {
     method: "POST",
-    body: JSON.stringify({ message: "This should report that the model server is unavailable." })
+    body: JSON.stringify({ message: "What is 2 + 2?" })
   });
-  assert.equal(modelUnavailable.status, 503);
-  assert.match((await modelUnavailable.json()).error, /model server/i);
+  assert.equal(localChat.status, 200);
+  const chatPayload = await localChat.json();
+  assert.match(chatPayload.answer, /4/);
+  assert.equal(chatPayload.engine, "built-in-offline");
+  assert.equal(chatPayload.externalAI, false);
 
   const logout = await request("/api/logout", { method: "POST", body: JSON.stringify({}) });
   assert.equal(logout.status, 200);
