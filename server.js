@@ -244,7 +244,7 @@ app.post("/api/chat", requireAuth, async (req, res) => {
       if (!response.ok) {
         console.error("Ollama endpoint returned HTTP", response.status);
         return res.status(503).json({
-          error: "The configured Ollama server is not ready. Set OLLAMA_BASE_URL to a server reachable from Render and confirm the model is installed."
+          error: "The configured local model server is not ready. Set OLLAMA_BASE_URL to a model server reachable from JARVIS and confirm the model is installed."
         });
       }
 
