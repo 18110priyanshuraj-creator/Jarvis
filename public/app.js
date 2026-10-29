@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { chats: [], memories: [], tasks: [], activeView: "chat" };
+const state = { chats: [], memories: [], tasks: [], feedback: [], skills: [], activeView: "chat" };
 let toastTimer;
 
 function toast(message, isError = false) {
@@ -48,9 +48,12 @@ async function refreshState() {
   state.chats = data.chats || [];
   state.memories = data.memories || [];
   state.tasks = data.tasks || [];
+  state.feedback = data.feedback || [];
+  state.skills = data.skills || [];
   renderChats();
   renderMemories();
   renderTasks();
+  renderSkills();
 }
 
 function setView(name) {
@@ -107,6 +110,36 @@ function renderChats() {
     time.className = "message-time";
     time.textContent = item.createdAt ? new Date(item.createdAt).toLocaleString() : "";
     wrap.append(time);
+    if (item.role === "assistant") {
+      const previousUser = [...messages.slice(0, index)].reverse().find((entry) => entry.role === "user");
+      if (previousUser) {
+        const feedback = document.createElement("div");
+        feedback.className = "message-feedback";
+        const existing = state.feedback.find((entry) => entry.prompt === previousUser.content);
+        for (const [rating, label] of [["up", "Helpful"], ["down", "Needs work"]]) {
+          const action = document.createElement("button");
+          action.type = "button";
+          action.className = "item-action";
+          action.textContent = (existing?.rating === rating ? "✓ " : "") + label;
+          action.setAttribute("aria-label", "Mark this response " + label.toLowerCase());
+          action.addEventListener("click", async () => {
+            action.disabled = true;
+            try {
+              await api("/api/feedback", {
+                method: "POST",
+                body: JSON.stringify({ prompt: previousUser.content, rating })
+              });
+              state.feedback.push({ id: "local-" + Date.now(), prompt: previousUser.content, rating, note: "", createdAt: new Date().toISOString() });
+              toast("Feedback saved. It can guide future replies.");
+              renderChats();
+            } catch (error) { toast(error.message, true); }
+            finally { action.disabled = false; }
+          });
+          feedback.append(action);
+        }
+        wrap.append(feedback);
+      }
+    }
     row.append(mark, wrap);
     target.append(row);
   }
@@ -144,6 +177,45 @@ function renderMemories() {
         state.memories = state.memories.filter((m) => m.id !== item.id);
         renderMemories();
         toast("Memory deleted.");
+      } catch (error) { toast(error.message, true); }
+    });
+    row.append(main, del);
+    target.append(row);
+  }
+}
+
+function renderSkills() {
+  const target = $("#skill-list");
+  if (!target) return;
+  target.replaceChildren();
+  if (!state.skills.length) {
+    target.append(makeEmpty("No custom skills saved. Add a short, safe instruction that JARVIS can use as context."));
+    return;
+  }
+  for (const skill of [...state.skills].reverse()) {
+    const row = document.createElement("article");
+    row.className = "list-item";
+    const main = document.createElement("div");
+    main.className = "list-item-main";
+    const title = document.createElement("strong");
+    title.textContent = skill.name;
+    const details = document.createElement("p");
+    details.textContent = skill.instructions;
+    const meta = document.createElement("div");
+    meta.className = "list-item-meta";
+    meta.textContent = "Saved instruction · " + new Date(skill.createdAt).toLocaleDateString();
+    main.append(title, details, meta);
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "item-action";
+    del.textContent = "Delete";
+    del.addEventListener("click", async () => {
+      if (!confirm("Delete this skill?")) return;
+      try {
+        await api("/api/skills/" + encodeURIComponent(skill.id), { method: "DELETE" });
+        state.skills = state.skills.filter((entry) => entry.id !== skill.id);
+        renderSkills();
+        toast("Skill deleted.");
       } catch (error) { toast(error.message, true); }
     });
     row.append(main, del);
@@ -318,6 +390,27 @@ $("#memory-form").addEventListener("submit", async (event) => {
     $("#memory-content").value = "";
     renderMemories();
     toast("Memory saved.");
+  } catch (error) { toast(error.message, true); }
+  finally { button.disabled = false; }
+});
+
+$("#skill-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = event.submitter;
+  button.disabled = true;
+  try {
+    const data = await api("/api/skills", {
+      method: "POST",
+      body: JSON.stringify({
+        name: $("#skill-name").value,
+        instructions: $("#skill-instructions").value
+      })
+    });
+    state.skills.push(data.skill);
+    $("#skill-name").value = "";
+    $("#skill-instructions").value = "";
+    renderSkills();
+    toast("Skill saved. It will be supplied as guidance to the local model.");
   } catch (error) { toast(error.message, true); }
   finally { button.disabled = false; }
 });
