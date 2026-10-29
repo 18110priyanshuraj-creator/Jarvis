@@ -11,9 +11,3 @@ services:
         value: production
       - key: JARVIS_PASSWORD
         sync: false
-      - key: AI_PROVIDER
-        value: ollama
-      - key: OLLAMA_BASE_URL
-        sync: false
-      - key: JARVIS_MODEL
-        value: qwen2.5:7b
