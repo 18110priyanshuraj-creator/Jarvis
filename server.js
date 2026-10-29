@@ -164,6 +164,9 @@ app.post("/api/login", loginLimiter, (req, res) => {
   if (!PASSWORD || !candidate || !passwordsMatch(candidate, PASSWORD)) {
     return res.status(401).json({ error: "Incorrect password or server password is not configured." });
   }
+  for (const [sessionId, session] of sessions) {
+    if (session.expiresAt <= Date.now()) sessions.delete(sessionId);
+  }
   const token = crypto.randomBytes(32).toString("base64url");
   sessions.set(token, { createdAt: Date.now(), expiresAt: Date.now() + SESSION_TTL_MS });
   setSessionCookie(res, token);
