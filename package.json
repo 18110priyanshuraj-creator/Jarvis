@@ -2,11 +2,11 @@
   "name": "jarvis-personal-assistant",
   "version": "0.1.0",
   "private": true,
-  "description": "Private, self-hostable JARVIS assistant dashboard with an Ollama-compatible model adapter.",
+  "description": "Private JARVIS dashboard with a self-contained, rule-based offline assistant core.",
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check public/app.js && node --test"
+    "check": "node --check server.js && node --check brain.js && node --check public/app.js && node --test"
   },
   "engines": {
     "node": ">=22"
