@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: jarvis-assistant
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JARVIS_PASSWORD
+        sync: false
+      - key: OLLAMA_BASE_URL
+        sync: false
+      - key: JARVIS_MODEL
+        value: qwen2.5:7b
