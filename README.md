@@ -7,7 +7,7 @@ JARVIS is a self-hostable starting point for a personal assistant dashboard. Thi
 ## Features in this branch
 
 - Password login with an HttpOnly, SameSite session cookie and rate-limited login attempts.
-- Chat requests sent from the backend to an Ollama server; no Gemini API key is required.
+- Chat requests can use the Google Gemini API or an Ollama server; choose the backend with `AI_PROVIDER`.
 - User-editable memory notes and task list stored in a local JSON file.
 - Optional server-configured web research through SearXNG.
 - Optional browser speech recognition and text-to-speech.
