@@ -3,7 +3,7 @@ services:
     name: jarvis-assistant
     runtime: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm install && npm run check
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
