@@ -45,7 +45,8 @@ before(async () => {
       PORT: String(port),
       JARVIS_PASSWORD: "test-only-password-2026",
       JARVIS_DATA_DIR: tempDir,
-      DATABASE_URL: ""
+      DATABASE_URL: "",
+      GEMINI_API_KEY: ""
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -132,6 +133,14 @@ test("paired Android devices can authenticate, use voice chat, and be revoked", 
   });
   assert.equal(heartbeat.status, 200);
   assert.equal((await heartbeat.json()).device.accessibilityEnabled, true);
+
+  const noGeminiPlan = await request("/api/devices/plan", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + paired.deviceToken },
+    body: JSON.stringify({ message: "Open YouTube and search JEE Physics" })
+  });
+  assert.equal(noGeminiPlan.status, 503);
+  assert.equal((await noGeminiPlan.json()).code, "AI_NOT_CONFIGURED");
 
   const voice = await request("/api/devices/voice-command", {
     method: "POST",

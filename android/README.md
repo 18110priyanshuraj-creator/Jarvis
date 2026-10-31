@@ -1,4 +1,4 @@
-# JARVIS Companion — Phase 1 and Phase 2
+# JARVIS Companion — Phase 1, Phase 2 and Phase 3
 
 This is an additive native Android companion for the existing JARVIS Node.js application. It does not replace the web dashboard or the existing offline brain.
 
@@ -9,7 +9,7 @@ This is an additive native Android companion for the existing JARVIS Node.js app
 - Server stores only the token hash and supports device revocation.
 - Authenticated heartbeat and voice-chat requests.
 
-## Phase 2 Android Control Engine
+## Phase 2 Android Control Engine and Phase 3 AI Planner
 
 - User-started microphone foreground service with an ongoing notification and Stop action.
 - Hindi (hi-IN) speech recognition; on-device recognition is preferred when Android reports it is available.
@@ -88,3 +88,24 @@ Android's configured speech-recognition provider processes the microphone audio.
 - The server stores only the token hash.
 - Pairing codes expire after three minutes and can be used once.
 - Consequential actions and sensitive fields remain manual.
+
+
+## Phase 3 — AI planning and permission setup
+
+The server can use the official Google Gen AI JavaScript SDK when GEMINI_API_KEY is configured. Set GEMINI_API_KEY and GEMINI_MODEL in the hosting provider's secret environment settings; never place the real key in source control or the Android app. The current model default in the environment example is gemini-3.8-flash and is configurable.
+
+The Android app sends only the spoken transcript to the authenticated server planning endpoint. It does not upload screenshots, accessibility text or app contents. Gemini returns JSON containing up to six actions from a fixed allow-list. The server validates the schema and the Android app validates the actions again before executing them locally. If Gemini is not configured or is unavailable, voice chat falls back to the existing offline JARVIS core; the offline core is not a general-purpose model.
+
+### Permission checklist
+
+The app distinguishes required permissions from optional or unnecessary access:
+
+- Microphone: required for voice recognition.
+- Accessibility: required for reading visible accessibility labels and performing supported screen actions. The user must enable it manually in Android Settings.
+- Notifications: recommended so the hands-free session's Stop notification is easy to access. It is not treated as a microphone permission.
+- Server pairing: required for remote Gemini planning; basic local app launching does not need pairing.
+- Storage and Downloads: not needed by the current Companion.
+- Display over other apps: not needed; the Companion does not use a floating overlay.
+- Install unknown apps: controlled by the source app (such as the browser or file manager) used to open a manually downloaded APK. JARVIS itself does not request package-install permission.
+
+Android system permission dialogs and protected settings cannot be silently accepted by JARVIS. The checklist opens the relevant Settings page and asks the user to grant access themselves. Do not enable permissions that the checklist marks Not required.
