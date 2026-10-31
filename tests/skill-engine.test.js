@@ -118,6 +118,22 @@ test("new version requires its own validation and approval before activation", (
   assert.equal(approved.activeVersion, 2);
 });
 
+test("editing a paused skill does not silently reactivate it", () => {
+  const active = approveSkill(validateSkill(validCandidate()).skill);
+  const paused = pauseSkill(active);
+  const updated = createSkillVersion(paused, {
+    name: "JEE question explainer v2",
+    instructions: "Explain JEE questions step by step, check units, and verify the final answer.",
+    triggers: ["explain JEE question"],
+    testCases: [
+      { input: "Explain JEE question", shouldMatch: true },
+      { input: "How is the weather?", shouldMatch: false }
+    ]
+  });
+  assert.equal(updated.status, "paused");
+  assert.equal(getActiveSkillContext([updated], "Explain JEE question").length, 0);
+});
+
 test("paused skills stop matching until re-approved", () => {
   const active = approveSkill(validateSkill(validCandidate()).skill);
   const paused = pauseSkill(active);
