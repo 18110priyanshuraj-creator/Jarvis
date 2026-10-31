@@ -45,7 +45,7 @@ async function requestJson(url, headers, fetchImpl) {
   try {
     response = await fetchImpl(url, {
       method: "GET",
-      headers: { Accept: "application/json", ...headers },
+      headers: { Accept: "application/vnd.github+json", ...headers },
       redirect: "error",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
     });
@@ -74,7 +74,7 @@ async function githubRequest(path, env, fetchImpl) {
   const token = requireCredential("github", env);
   return requestJson("https://api.github.com" + path, {
     Authorization: "Bearer " + token,
-    "X-GitHub-Api-Version": "2022-11-28"
+    "X-GitHub-Api-Version": "2026-03-10"
   }, fetchImpl);
 }
 
@@ -166,7 +166,11 @@ export async function probeIntegration(provider, options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   let details;
   if (provider === "github") {
-    details = sanitizeGitHubProfile(await githubRequest("/user", env, fetchImpl));
+    const repositories = sanitizeGitHubRepos(await githubRequest("/user/repos?per_page=1&sort=updated", env, fetchImpl));
+    details = {
+      recentRepositories: repositories.length,
+      latestRepository: repositories[0]?.fullName || ""
+    };
   } else if (provider === "google_drive") {
     details = { recentFiles: sanitizeDriveFiles(await driveRequest(env, fetchImpl)).length };
   } else if (provider === "telegram") {
