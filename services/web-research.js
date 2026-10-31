@@ -35,7 +35,7 @@ export function isRestrictedResearchQuery(query) {
 export function shouldUseLiveWebResearch(message) {
   const query = cleanText(message, MAX_QUERY_LENGTH);
   if (!query) return false;
-  const explicitWebRequest = /\b(?:search|look up|check|verify|research|find)\b.{0,50}\b(?:web|internet|online|google)\b|\b(?:internet pe|web pe|online check|google par|live web)\b/i.test(query);
+  const explicitWebRequest = /\b(?:search|look up|check|verify|research|find|learn|get information)\b.{0,50}\b(?:web|internet|online|google)\b|\b(?:internet pe|web pe|online check|google par|live web|internet se seekh)\b/i.test(query);
   const timeSensitiveRequest = /\b(?:latest|current|today|tonight|yesterday|this week|this month|this year|recent|right now|as of now|breaking|news|weather|forecast|price today|current price|exchange rate|schedule|opening hours|release date|new version|latest version|election result|live score|updated rules)\b/i.test(query);
   return explicitWebRequest || timeSensitiveRequest;
 }
