@@ -797,6 +797,95 @@ function renderExperience(summary = null) {
 }
 
 
+async function refreshIntegrations() {
+  const data = await api("/api/integrations");
+  state.integrations = data.providers || [];
+  renderIntegrations();
+}
+
+function integrationDetailText(provider, result) {
+  const details = result?.details || {};
+  if (provider === "github") {
+    return details.login
+      ? "Signed in as " + details.login + (details.publicRepos === null ? "" : " · " + details.publicRepos + " public repositories")
+      : "GitHub connection verified.";
+  }
+  if (provider === "google_drive") return "Connection verified · " + (details.recentFiles ?? 0) + " recent files listed.";
+  if (provider === "telegram") return details.username ? "Connected to bot @" + details.username : "Telegram bot connection verified.";
+  if (provider === "elevenlabs") return "Account verified · Plan: " + (details.tier || "unknown");
+  return "Connection verified.";
+}
+
+function renderIntegrations() {
+  const target = $("#integration-provider-list");
+  if (!target) return;
+  target.replaceChildren();
+  if (!state.integrations.length) {
+    target.append(makeEmpty("Integration catalogue is unavailable."));
+    return;
+  }
+  for (const provider of state.integrations) {
+    const row = document.createElement("article");
+    row.className = "list-item integration-provider";
+    const main = document.createElement("div");
+    main.className = "list-item-main";
+    const title = document.createElement("strong");
+    title.textContent = provider.name;
+    const status = document.createElement("span");
+    const lastResult = state.integrationResults[provider.id];
+    status.className = "integration-status " + (lastResult?.connected ? "connected" : provider.configured ? "configured" : "not-configured");
+    status.textContent = lastResult?.connected ? "Connected" : provider.configured ? "Configured · not tested" : "Not configured";
+    const access = document.createElement("p");
+    access.textContent = provider.access;
+    const variable = document.createElement("code");
+    variable.textContent = provider.environmentVariable;
+    const meta = document.createElement("div");
+    meta.className = "list-item-meta";
+    meta.textContent = provider.capabilities.map((item) => item.replaceAll("_", " ")).join(" · ");
+    main.append(title, status, access, variable, meta);
+
+    const actions = document.createElement("div");
+    actions.className = "integration-actions";
+    const test = document.createElement("button");
+    test.type = "button";
+    test.className = "item-action";
+    test.textContent = "Test connection";
+    test.disabled = !provider.configured;
+    test.addEventListener("click", async () => {
+      test.disabled = true;
+      test.textContent = "Testing…";
+      try {
+        const result = await api("/api/integrations/" + encodeURIComponent(provider.id) + "/test", {
+          method: "POST",
+          body: JSON.stringify({})
+        });
+        state.integrationResults[provider.id] = result;
+        renderIntegrations();
+        toast(provider.name + " connection verified.");
+      } catch (error) {
+        state.integrationResults[provider.id] = { connected: false, error: error.message };
+        renderIntegrations();
+        toast(error.message, true);
+      }
+    });
+    actions.append(test);
+    row.append(main, actions);
+    target.append(row);
+
+    if (lastResult?.error) {
+      const message = document.createElement("p");
+      message.className = "integration-error";
+      message.textContent = lastResult.error;
+      main.append(message);
+    } else if (lastResult?.connected) {
+      const detail = document.createElement("p");
+      detail.className = "integration-success";
+      detail.textContent = integrationDetailText(provider.id, lastResult);
+      main.append(detail);
+    }
+  }
+}
+
 function workflowStepLabel(type) {
   return ({
     create_task: "Create local task",
