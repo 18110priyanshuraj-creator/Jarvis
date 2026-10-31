@@ -32,14 +32,28 @@ class VoiceControlService : Service() {
     private var ttsReady = false
     private var running = false
     private var stopAfterSpeech = false
+    private var recognitionLanguage = "hi-IN"
+    private var voiceStatus = "Microphone session is active. Speak a command or use Stop to end it."
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         textToSpeech = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                ttsReady = true
-                textToSpeech?.language = Locale("hi", "IN")
+                val hindi = Locale("hi", "IN")
+                val hindiStatus = textToSpeech?.isLanguageAvailable(hindi) ?: TextToSpeech.LANG_NOT_SUPPORTED
+                val selected = if (hindiStatus >= TextToSpeech.LANG_AVAILABLE) hindi else Locale("en", "IN")
+                val selectedStatus = textToSpeech?.isLanguageAvailable(selected) ?: TextToSpeech.LANG_NOT_SUPPORTED
+                ttsReady = selectedStatus >= TextToSpeech.LANG_AVAILABLE
+                if (ttsReady) {
+                    textToSpeech?.language = selected
+                    updateVoiceStatus(if (selected == hindi) "Hindi voice output ready. Listening when active." else "Hindi voice data unavailable; using English (India) voice.")
+                } else {
+                    updateVoiceStatus("No supported text-to-speech voice is installed. Install Hindi or English voice data in Android settings.")
+                }
+            } else {
+                ttsReady = false
+                updateVoiceStatus("Android text-to-speech could not initialize (code " + status + ").")
             }
         }
         textToSpeech?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
@@ -101,6 +115,13 @@ class VoiceControlService : Service() {
         }
     }
 
+    private fun updateVoiceStatus(message: String) {
+        voiceStatus = message.take(180)
+        if (running) {
+            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
+        }
+    }
+
     private fun buildNotification(): Notification {
         val stopIntent = Intent(this, VoiceControlService::class.java).setAction(ACTION_STOP)
         val stopPendingIntent = PendingIntent.getService(
@@ -112,7 +133,7 @@ class VoiceControlService : Service() {
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("JARVIS hands-free control is active")
-            .setContentText("Microphone is active. Say a command or use Stop to end the session.")
+            .setContentText(voiceStatus)
             .setCategory(Notification.CATEGORY_SERVICE)
             .setOngoing(true)
             .addAction(
@@ -144,6 +165,14 @@ class VoiceControlService : Service() {
             return
         }
 
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            updateVoiceStatus("Speech recognition is unavailable. Enable a speech service on this tablet, then restart voice control.")
+            running = false
+            stopSelf()
+            return
+        }
+
+        updateVoiceStatus("Listening in " + recognitionLanguage + ". Speak a short command.")
         try {
             recognizer?.destroy()
             recognizer = if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
@@ -161,10 +190,25 @@ class VoiceControlService : Service() {
                 override fun onError(error: Int) {
                     if (!running) return
                     if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                        updateVoiceStatus("Microphone permission is missing. Stop voice control and review Android app permissions.")
                         running = false
                         stopSelf()
+                    } else if ((error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED ||
+                                error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) && recognitionLanguage == "hi-IN") {
+                        recognitionLanguage = "en-IN"
+                        updateVoiceStatus("Hindi speech recognition is unavailable. Trying English (India) instead.")
+                        scheduleListening(700)
                     } else {
-                        scheduleListening(1200)
+                        val detail = when (error) {
+                            SpeechRecognizer.ERROR_NO_MATCH -> "No speech was detected clearly. Try speaking closer to the microphone."
+                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech detected. Listening again."
+                            SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Speech recognition needs a working internet connection."
+                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Speech service is busy. Retrying."
+                            SpeechRecognizer.ERROR_SERVER -> "Android speech service returned an error. Retrying."
+                            else -> "Speech recognition error code " + error + ". Check the speech service and try again."
+                        }
+                        updateVoiceStatus(detail)
+                        scheduleListening(1600)
                     }
                 }
 
@@ -184,12 +228,13 @@ class VoiceControlService : Service() {
 
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognitionLanguage)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
             }
             recognizer?.startListening(intent)
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            updateVoiceStatus("Could not start speech recognition: " + (error.message ?: "Android speech service error."))
             scheduleListening(1800)
         }
     }
@@ -256,6 +301,7 @@ class VoiceControlService : Service() {
     private fun speak(text: String) {
         if (!running) return
         if (!ttsReady || textToSpeech == null) {
+            updateVoiceStatus("Voice output is unavailable. Install Hindi or English text-to-speech data in Android settings.")
             if (stopAfterSpeech) mainHandler.postDelayed({ stopSelf() }, 1200)
             else scheduleListening(900)
             return
@@ -263,7 +309,13 @@ class VoiceControlService : Service() {
 
         recognizer?.cancel()
         val utteranceId = "jarvis-" + System.currentTimeMillis()
-        textToSpeech?.speak(text.take(1200), TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        updateVoiceStatus("Speaking the JARVIS response.")
+        val speechResult = textToSpeech?.speak(text.take(1200), TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        if (speechResult == TextToSpeech.ERROR) {
+            updateVoiceStatus("Android could not play the response. Check installed Hindi or English voice data.")
+            scheduleListening(1200)
+            return
+        }
         mainHandler.postDelayed({
             if (!running) return@postDelayed
             if (stopAfterSpeech && textToSpeech?.isSpeaking != true) {
