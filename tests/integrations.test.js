@@ -22,25 +22,22 @@ test("integration catalogue reports configuration without including credential v
 });
 
 test("GitHub profile probe uses a fixed GET endpoint and returns bounded profile data", async () => {
-  const { fetchImpl, calls } = fakeFetch({
-    login: "jarvis-user",
-    name: "JARVIS User",
-    public_repos: 12,
-    html_url: "https://github.com/jarvis-user",
-    extra_data: "not returned"
-  });
+  const { fetchImpl, calls } = fakeFetch([
+    { name: "Jarvis", full_name: "jarvis-user/Jarvis", private: true, updated_at: "2026-10-30T10:00:00Z", html_url: "https://github.com/jarvis-user/Jarvis" }
+  ]);
   const result = await probeIntegration("github", {
     env: { JARVIS_GITHUB_TOKEN: "demo-github-value" },
     fetchImpl
   });
   assert.equal(result.connected, true);
-  assert.equal(result.details.login, "jarvis-user");
-  assert.equal(result.details.publicRepos, 12);
-  assert.equal(Object.hasOwn(result.details, "extra_data"), false);
+  assert.equal(result.details.recentRepositories, 1);
+  assert.equal(result.details.latestRepository, "jarvis-user/Jarvis");
   assert.equal(JSON.stringify(result).includes("demo-github-value"), false);
-  assert.equal(calls[0].url, "https://api.github.com/user");
+  assert.equal(calls[0].url, "https://api.github.com/user/repos?per_page=1&sort=updated");
   assert.equal(calls[0].options.method, "GET");
   assert.equal(calls[0].options.headers.Authorization, "Bearer demo-github-value");
+  assert.equal(calls[0].options.headers["X-GitHub-Api-Version"], "2026-03-10");
+  assert.equal(calls[0].options.headers.Accept, "application/vnd.github+json");
   assert.equal(calls[0].options.redirect, "error");
 });
 
