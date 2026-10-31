@@ -261,7 +261,7 @@ export function getActiveSkillContext(skills, message, limit = 3) {
     try { skill = normalizeSkill(raw); } catch { return []; }
     if (skill.paused || !skill.activeVersion) return [];
     const active = skill.versions.find((entry) => entry.version === skill.activeVersion);
-    if (!active || !matchesTrigger(input, active.triggers)) return [];
+    if (!active || !safeContent(active.name + "\n" + active.instructions) || !matchesTrigger(input, active.triggers)) return [];
     return [{
       name: active.name,
       version: active.version,
