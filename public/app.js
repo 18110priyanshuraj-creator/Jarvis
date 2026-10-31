@@ -333,6 +333,7 @@ function renderSkills() {
   target.replaceChildren();
   if (!state.skills.length) {
     target.append(makeEmpty("No custom skills saved. Add a short, safe instruction that JARVIS can use as context."));
+    renderStorageOverview();
     return;
   }
   for (const skill of [...state.skills].reverse()) {
@@ -373,6 +374,7 @@ function renderTasks() {
   $("#task-count").textContent = state.tasks.filter((item) => !item.done).length;
   if (!state.tasks.length) {
     target.append(makeEmpty("Your list is clear. Add one small next step above."));
+    renderStorageOverview();
     return;
   }
   const sorted = [...state.tasks].sort((a, b) => Number(a.done) - Number(b.done) || String(b.createdAt).localeCompare(String(a.createdAt)));
@@ -629,7 +631,7 @@ $("#export-data-button").addEventListener("click", async (event) => {
   button.disabled = true;
   try {
     const data = await api("/api/export");
-    const blob = new Blob([JSON.stringify(data, null, 2) + "\\n"], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(data, null, 2) + "\n"], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -637,7 +639,7 @@ $("#export-data-button").addEventListener("click", async (event) => {
     document.body.append(link);
     link.click();
     link.remove();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     toast("Your JARVIS data export is ready.");
   } catch (error) {
     toast(error.message, true);
