@@ -112,6 +112,7 @@ JARVIS is a private, single-owner assistant with a web dashboard and an Android 
 - Telegram: checks the configured bot profile using the read-only getMe endpoint. It does not send messages.
 - ElevenLabs: reads a limited account/subscription summary. It does not generate audio or consume generation credits.
 - Each provider can be tested from the Connections dashboard. A configured credential does not mean the provider has been verified; use **Test connection** to check it.
+- Connections can be disabled/re-enabled inside JARVIS. Disabling blocks future tests and workflow actions; to revoke a credential fully, remove it from the host environment and rotate it at the provider.
 - The Workflow builder includes four read-only integration steps. Each executes only as part of a workflow that has been validated, explicitly approved, and separately run by the user.
 - Providers that are not configured fail their workflow step safely; later steps do not execute after the failure. No credential value is included in the result.
 - Limits: the connection-test endpoint is rate limited; provider calls are bounded to eight seconds and each list result is capped at eight records.
