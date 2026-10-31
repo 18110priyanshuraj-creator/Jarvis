@@ -4,7 +4,7 @@ JARVIS is a private dashboard with login, saved chats, memories, tasks, feedback
 
 ## Important capability boundary
 
-This version is **not a general-purpose trained AI model**. A sophisticated, open-ended language model cannot be created merely by deleting an API URL. This build uses explicit rules, a safe arithmetic parser and curated offline notes. It can help with supported operations, but it cannot reliably answer arbitrary questions, follow open-ended custom instructions like an LLM, access live news, or learn new facts from the internet. It tells the user when a request is outside the built-in knowledge instead of inventing a response.
+The built-in offline mode is **not a general-purpose trained AI model**. A sophisticated, open-ended language model cannot be created merely by deleting an API URL. Offline mode uses explicit rules, a safe arithmetic parser and curated notes; optional Gemini conversation mode is described below. It can help with supported operations, but it cannot reliably answer arbitrary questions, follow open-ended custom instructions like an LLM, access live news, or learn new facts from the internet. It tells the user when a request is outside the built-in knowledge instead of inventing a response.
 
 ## Optional Gemini conversation mode
 
@@ -20,7 +20,7 @@ This version is **not a general-purpose trained AI model**. A sophisticated, ope
 - Bundled notes for Newton's laws, units and dimensions, mole concept, sets, circular motion, Ohm's law, basic JavaScript/debugging and study planning.
 - Local search across the embedded knowledge pack (not the web).
 - Saved chat history, editable memories, tasks, response feedback and custom skill notes.
-- No Gemini/Ollama/model/search service URL or AI API key is required by the application.
+- No AI API key is required to use the built-in offline mode; Gemini conversation is optional and opt-in.
 
 Memory and feedback are stored context, not model training. Custom skill notes are saved notes; without a language model, they cannot make the engine generally follow arbitrary instructions. JARVIS does not execute shell commands, modify its own code autonomously, or operate external accounts.
 
