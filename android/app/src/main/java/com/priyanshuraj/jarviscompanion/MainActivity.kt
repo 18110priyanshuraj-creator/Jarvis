@@ -37,6 +37,7 @@ class MainActivity : Activity() {
     private lateinit var voiceButton: Button
     private var speechRecognizer: SpeechRecognizer? = null
     private var textToSpeech: TextToSpeech? = null
+    private var recognitionLanguage = "hi-IN"
     private var pendingVoicePermission = false
     private var pendingHandsFreeStart = false
     private var pendingVoiceOnlyStart = false
@@ -159,7 +160,18 @@ class MainActivity : Activity() {
 
         textToSpeech = TextToSpeech(this) { result ->
             if (result == TextToSpeech.SUCCESS) {
-                textToSpeech?.language = Locale("hi", "IN")
+                val hindi = Locale("hi", "IN")
+                val hindiStatus = textToSpeech?.isLanguageAvailable(hindi) ?: TextToSpeech.LANG_NOT_SUPPORTED
+                val english = Locale("en", "IN")
+                val selected = if (hindiStatus >= TextToSpeech.LANG_AVAILABLE) hindi else english
+                val selectedStatus = textToSpeech?.isLanguageAvailable(selected) ?: TextToSpeech.LANG_NOT_SUPPORTED
+                if (selectedStatus >= TextToSpeech.LANG_AVAILABLE) {
+                    textToSpeech?.language = selected
+                } else {
+                    refreshStatus("No supported voice data is installed. Install Hindi or English text-to-speech data in Android settings.")
+                }
+            } else {
+                refreshStatus("Android text-to-speech could not initialize (code " + result + ").")
             }
         }
         refreshStatus()
@@ -340,7 +352,29 @@ class MainActivity : Activity() {
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() { refreshStatus("Processing voice command…") }
-            override fun onError(error: Int) { refreshStatus("Speech recognition stopped (code " + error + "). Tap Speak once to try again.") }
+            override fun onError(error: Int) {
+                if ((error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED ||
+                     error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) && recognitionLanguage == "hi-IN") {
+                    recognitionLanguage = "en-IN"
+                    refreshStatus("Hindi speech recognition is unavailable. Retrying once in English (India)…")
+                    val retryIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognitionLanguage)
+                        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+                    }
+                    speechRecognizer?.startListening(retryIntent)
+                } else {
+                    val detail = when (error) {
+                        SpeechRecognizer.ERROR_NO_MATCH -> "No speech was detected clearly. Try speaking closer to the microphone."
+                        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech detected. Tap Speak once and try again."
+                        SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Speech recognition needs a working internet connection."
+                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission is missing. Review JARVIS app permissions."
+                        else -> "Speech recognition stopped (code " + error + "). Check the Android speech service."
+                    }
+                    refreshStatus(detail)
+                }
+            }
             override fun onResults(results: Bundle?) {
                 val message = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
                 if (message.isBlank()) {
@@ -361,7 +395,7 @@ class MainActivity : Activity() {
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognitionLanguage)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
         }
