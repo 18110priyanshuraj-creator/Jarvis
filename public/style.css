@@ -98,6 +98,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .section-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 26px; }
 .section-heading h1 { margin: 0; font-size: clamp(1.8rem, 3vw, 2.3rem); letter-spacing: -.06em; }
 .section-heading p:not(.eyebrow) { line-height: 1.6; margin: 10px 0 0; font-size: .88rem; }
+.memory-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; flex-wrap: wrap; }
+.memory-edit-form { width: 100%; min-width: 0; }
+.search-form select { max-width: 170px; min-width: 110px; }
+@media (max-width: 640px) {
+  .memory-header-actions { justify-content: flex-start; }
+  .search-form { flex-wrap: wrap; }
+  .search-form input { flex-basis: 100%; }
+  .search-form select { flex: 1; max-width: none; }
+}
 .counter { padding: 9px 12px; border: 1px solid var(--line); border-radius: 20px; color: #b2c2e3; white-space: nowrap; font-size: .75rem; }
 .form-card { display: grid; gap: 11px; border: 1px solid var(--line); border-radius: 16px; padding: 19px; background: #101827c9; }
 .form-card textarea { resize: vertical; min-height: 70px; }
