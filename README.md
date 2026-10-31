@@ -107,8 +107,8 @@ JARVIS is a private, single-owner assistant with a web dashboard and an Android 
 - The Connections dashboard lists four optional read-only providers: GitHub, Google Drive, Telegram, and ElevenLabs.
 - Credentials are read only from server environment variables. They are never entered into browser forms or stored in the app JSON/Neon state, workflow definitions, run logs, or data export.
 - All provider requests use fixed HTTPS endpoints and GET only, with an eight-second request timeout, redirect blocking, safe response summaries, and no raw provider error bodies returned to the dashboard.
-- GitHub: checks the authenticated profile and can list up to eight recently updated repositories.
-- Google Drive: lists up to eight recent file metadata records. The configured access token must have read-only Drive metadata scope. Access tokens expire; refresh-token OAuth is not implemented.
+- GitHub: checks repository metadata access and can list up to eight recently updated repositories. For a fine-grained personal access token, grant only **Metadata: read** for the repositories you select.
+- Google Drive: lists up to eight recent file metadata records. The configured access token should use the `https://www.googleapis.com/auth/drive.metadata.readonly` scope. Access tokens expire; refresh-token OAuth is not implemented.
 - Telegram: checks the configured bot profile using the read-only getMe endpoint. It does not send messages.
 - ElevenLabs: reads a limited account/subscription summary. It does not generate audio or consume generation credits.
 - Each provider can be tested from the Connections dashboard. A configured credential does not mean the provider has been verified; use **Test connection** to check it.
