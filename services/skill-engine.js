@@ -6,7 +6,7 @@ const MAX_INSTRUCTIONS = 2500;
 const MAX_TRIGGERS = 8;
 const MAX_TEST_CASES = 12;
 const VALID_STATUSES = new Set(["draft", "active", "update-pending", "paused"]);
-const UNSAFE_SKILL_PATTERN = /\b(?:ignore (?:all |previous )?instructions|reveal (?:the )?(?:password|api key|secret|credentials)|bypass (?:authentication|security|permissions|the lock)|steal (?:data|credentials)|exfiltrat\w*|execute (?:arbitrary )?(?:code|shell)|run (?:shell|terminal|powershell) commands?|delete (?:all )?(?:files|data)|transfer money|make (?:a )?payment|place (?:an )?order|send (?:a )?(?:message|email|sms) automatically)\b/i;
+const UNSAFE_SKILL_PATTERN = /\b(?:ignore (?:all )?(?:previous )?(?:system )?instructions|reveal (?:the )?(?:password|api key|secret|credentials)|bypass (?:authentication|security|permissions|the lock)|steal (?:data|credentials)|exfiltrat\w*|execute (?:arbitrary )?(?:code|shell)|run (?:shell|terminal|powershell) commands?|delete (?:all )?(?:files|data)|transfer money|make (?:a )?payment|place (?:an )?order|send (?:a )?(?:message|email|sms) automatically)\b/i;
 
 function cleanText(value, maxLength) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
