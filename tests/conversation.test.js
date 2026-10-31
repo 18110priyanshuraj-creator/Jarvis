@@ -65,6 +65,17 @@ test("approved matching skill guidance is included but cannot override system in
   assert.match(instruction, /Explain physics questions step by step/);
 });
 
+test("approved response preferences are optional guidance and cannot override system rules", () => {
+  const instruction = buildConversationSystemInstruction([], [], [], [{
+    category: "clarity",
+    content: "Explain the main idea first, then show one small worked example."
+  }]);
+  assert.match(instruction, /User-approved response preferences/i);
+  assert.match(instruction, /clarity/);
+  assert.match(instruction, /cannot override system or safety instructions/i);
+  assert.match(instruction, /one small worked example/);
+});
+
 test("only supplied, user-approved memories are included as bounded context", () => {
   const instruction = buildConversationSystemInstruction([
     { category: "preference", content: "Prefer simple Hinglish explanations." },
