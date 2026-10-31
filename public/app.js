@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], skills: [], editingSkillId: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
+const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
 let toastTimer;
 let activeRecognition = null;
 
@@ -50,13 +50,16 @@ async function refreshState() {
   state.memories = data.memories || [];
   state.memoryTotal = state.memories.length;
   state.tasks = data.tasks || [];
-  state.feedback = data.feedback || [];
+  const experience = await api("/api/experience");
+  state.feedback = experience.feedback || data.feedback || [];
+  state.experiencePreferences = experience.preferences || data.experiencePreferences || [];
   state.skills = data.skills || [];
   state.research = data.research || [];
   renderChats();
   renderMemories();
   renderTasks();
   renderSkills();
+  renderExperience(experience.summary);
   renderSavedResearch();
   await refreshKnowledge();
 }
@@ -74,7 +77,8 @@ function setView(name) {
     memory: ["PERSONAL CONTEXT", "Memory"],
     tasks: ["ORGANIZATION", "Tasks"],
     research: ["WEB DISCOVERY", "Research"],
-    knowledge: ["PERSONAL KNOWLEDGE LIBRARY", "Knowledge"]
+    knowledge: ["PERSONAL KNOWLEDGE LIBRARY", "Knowledge"],
+    experience: ["EXPERIENCE & SELF-IMPROVEMENT", "Experience"]
   };
   $("#page-kicker").textContent = titles[name][0];
   $("#page-title").textContent = titles[name][1];
@@ -189,6 +193,7 @@ function renderStorageOverview() {
     "Saved research: " + state.research.length,
     "Tasks: " + state.tasks.length,
     "Custom skills: " + state.skills.length,
+    "Approved response preferences: " + state.experiencePreferences.length,
     "Temporary chats: not stored in the persistent database"
   ].join(" · ");
 }
@@ -583,6 +588,8 @@ $("#logout-button").addEventListener("click", async () => {
   state.knowledgeTotal = 0;
   state.research = [];
   state.skills = [];
+  state.feedback = [];
+  state.experiencePreferences = [];
   state.tasks = [];
   renderStorageOverview();
   showLogin();
