@@ -287,3 +287,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .experience-item { flex-direction: column; }
   .experience-actions { max-width: none; justify-content: flex-start; }
 }
+
+
+.experience-categories { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -8px 0 22px; }
+.experience-categories strong { width: 100%; color: #9aaac4; font-size: .75rem; }
+.experience-category { padding: 6px 9px; border: 1px solid var(--line); border-radius: 999px; color: #aebbd1; background: #0d1727; font-size: .7rem; }
