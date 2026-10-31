@@ -30,6 +30,8 @@ Set these server environment variables:
 ```dotenv
 GEMINI_API_KEY=your-server-side-key
 GEMINI_MODEL=gemini-3.8-flash
+GEMINI_REQUEST_TIMEOUT_MS=25000
+GEMINI_RETRY_ATTEMPTS=2
 GEMINI_CHAT_ENABLED=true
 GEMINI_WEB_RESEARCH_ENABLED=true
 ```
@@ -37,6 +39,8 @@ GEMINI_WEB_RESEARCH_ENABLED=true
 - `GEMINI_CHAT_ENABLED=true` enables open-ended conversational replies.
 - `GEMINI_WEB_RESEARCH_ENABLED=true` enables grounded live web research for prompts that need current information or explicitly ask to search online.
 - Both features also require a valid `GEMINI_API_KEY`. If Gemini is unavailable, JARVIS falls back to its limited offline brain and must not claim that an internet search occurred.
+- Chat, planning and research share one server-side Gemini client with a bounded request timeout and a small retry budget for temporary HTTP errors (including rate limiting). Retries improve resilience; they do not increase project quota or rotate keys.
+- The public `/api/health` endpoint reports only safe provider readiness metadata (configured state, model identifier and retry settings); it never returns the API key.
 - Google Search grounding may have usage limits or costs under the provider's current billing terms. Review the current terms before enabling paid billing.
 
 ## Persistent data
