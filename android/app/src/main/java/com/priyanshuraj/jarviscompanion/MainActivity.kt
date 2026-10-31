@@ -33,6 +33,7 @@ class MainActivity : Activity() {
     private lateinit var serverUrlInput: EditText
     private lateinit var pairingCodeInput: EditText
     private lateinit var statusText: TextView
+    private lateinit var permissionChecklistText: TextView
     private lateinit var voiceButton: Button
     private var speechRecognizer: SpeechRecognizer? = null
     private var textToSpeech: TextToSpeech? = null
@@ -60,6 +61,11 @@ class MainActivity : Activity() {
             setPadding(0, 16, 0, 16)
         }
 
+        permissionChecklistText = TextView(this).apply {
+            textSize = 13f
+            setPadding(0, 8, 0, 12)
+        }
+
         val pairButton = Button(this).apply {
             text = "Pair with JARVIS"
             setOnClickListener { pairDevice() }
@@ -80,6 +86,27 @@ class MainActivity : Activity() {
         val accessibilityButton = Button(this).apply {
             text = "Review screen-access permission"
             setOnClickListener { showAccessibilityDisclosure() }
+        }
+
+        val checkPermissionsButton = Button(this).apply {
+            text = "Refresh permission checklist"
+            setOnClickListener { refreshPermissionChecklist() }
+        }
+        val appSettingsButton = Button(this).apply {
+            text = "Open JARVIS app permissions"
+            setOnClickListener { openAppSettings() }
+        }
+        val notificationSettingsButton = Button(this).apply {
+            text = "Open notification settings"
+            setOnClickListener { openNotificationSettings() }
+        }
+        val requestNotificationsButton = Button(this).apply {
+            text = "Request notification permission"
+            setOnClickListener { requestNotificationPermission() }
+        }
+        val apkInstallHelpButton = Button(this).apply {
+            text = "APK installation help"
+            setOnClickListener { showApkInstallHelp() }
         }
         val forgetButton = Button(this).apply {
             text = "Forget this device on this tablet"
@@ -113,6 +140,17 @@ class MainActivity : Activity() {
             addView(handsFreeButton, matchWidth())
             addView(stopHandsFreeButton, matchWidth())
             addView(accessibilityButton, matchWidth())
+            addView(TextView(this@MainActivity).apply {
+                text = "SETUP & PERMISSIONS"
+                textSize = 18f
+                setPadding(0, 24, 0, 8)
+            })
+            addView(permissionChecklistText, matchWidth())
+            addView(checkPermissionsButton, matchWidth())
+            addView(appSettingsButton, matchWidth())
+            addView(notificationSettingsButton, matchWidth())
+            addView(requestNotificationsButton, matchWidth())
+            addView(apkInstallHelpButton, matchWidth())
             addView(forgetButton, matchWidth())
             addView(statusText, matchWidth())
         }
@@ -129,11 +167,59 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         refreshStatus()
+        refreshPermissionChecklist()
         sendHeartbeat()
     }
 
     private fun matchWidth(): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+
+
+    private fun refreshPermissionChecklist() {
+        permissionChecklistText.text = PermissionSetup.render(this)
+    }
+
+    private fun openAppSettings() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = android.net.Uri.parse("package:" + packageName)
+        }
+        startActivity(intent)
+    }
+
+    private fun openNotificationSettings() {
+        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        }
+        try {
+            startActivity(intent)
+        } catch (_: Exception) {
+            openAppSettings()
+        }
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
+        } else {
+            openNotificationSettings()
+        }
+    }
+
+    private fun showApkInstallHelp() {
+        AlertDialog.Builder(this)
+            .setTitle("APK installation on Android")
+            .setMessage(
+                "JARVIS does not need permission to install other apps and does not access your Downloads folder. " +
+                    "When you manually install this APK, Android may ask whether the app you used to open it " +
+                    "(such as Chrome or My Files) can install unknown apps. Review that source app in Settings, " +
+                    "allow it only if you trust the APK source, install the Companion, then switch the setting off again. " +
+                    "Do not enable broad storage access or overlay access for JARVIS; this app does not need them."
+            )
+            .setPositiveButton("Open app settings") { _, _ -> openAppSettings() }
+            .setNegativeButton("Close", null)
+            .show()
+    }
 
     private fun pairDevice() {
         val serverUrl = serverUrlInput.text.toString().trim()
@@ -175,16 +261,11 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun isAccessibilityServiceEnabled(): Boolean {
-        val expected = ComponentName(this, JarvisAccessibilityService::class.java).flattenToString()
-        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
-        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
-    }
-
     private fun refreshStatus(message: String? = null) {
         val paired = !DeviceTokenStore.read(applicationContext).isNullOrBlank()
         voiceButton.isEnabled = true
-        val accessibility = if (isAccessibilityServiceEnabled()) "enabled" else "not enabled"
+        val accessibility = if (PermissionSetup.isAccessibilityEnabled(this)) "enabled" else "not enabled"
+        refreshPermissionChecklist()
         statusText.text = message ?: buildString {
             append(if (paired) "Paired with JARVIS server." else "Not paired with the JARVIS server.")
             append(" Screen access: ")
@@ -210,23 +291,14 @@ class MainActivity : Activity() {
     }
 
     private fun startHandsFreeControl() {
-        if (!isAccessibilityServiceEnabled()) {
+        if (!PermissionSetup.isAccessibilityEnabled(this)) {
             showAccessibilityDisclosure()
             return
         }
 
-        val missingPermissions = mutableListOf<String>()
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            missingPermissions.add(Manifest.permission.RECORD_AUDIO)
-        }
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            missingPermissions.add(Manifest.permission.POST_NOTIFICATIONS)
-        }
-
-        if (missingPermissions.isNotEmpty()) {
             pendingHandsFreeStart = true
-            requestPermissions(missingPermissions.toTypedArray(), REQUEST_HANDS_FREE_PERMISSIONS)
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_HANDS_FREE_PERMISSIONS)
             return
         }
 
@@ -327,11 +399,17 @@ class MainActivity : Activity() {
                 refreshStatus("Microphone permission was not granted.")
             }
         } else if (requestCode == REQUEST_HANDS_FREE_PERMISSIONS) {
-            val allGranted = grantResults.isNotEmpty() &&
-                grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
             pendingHandsFreeStart = false
-            if (allGranted) startHandsFreeControl()
-            else refreshStatus("Microphone and notification permissions are needed for a visible hands-free session.")
+            if (granted) startHandsFreeControl()
+            else refreshStatus("Microphone permission is required for voice control.")
+        } else if (requestCode == REQUEST_NOTIFICATIONS) {
+            refreshPermissionChecklist()
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+                refreshStatus("Notification permission is enabled.")
+            } else {
+                refreshStatus("Notifications remain optional. Voice control can still run with Android's foreground-service status.")
+            }
         }
     }
 
@@ -345,5 +423,6 @@ class MainActivity : Activity() {
     companion object {
         private const val REQUEST_MICROPHONE = 7001
         private const val REQUEST_HANDS_FREE_PERMISSIONS = 7002
+        private const val REQUEST_NOTIFICATIONS = 7003
     }
 }
