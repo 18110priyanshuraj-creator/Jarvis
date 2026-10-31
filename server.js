@@ -14,6 +14,7 @@ import { createConversationReply, isConversationAIEnabled } from "./services/con
 import { createGroundedResearch, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
 import { getGeminiRuntimeStatus } from "./services/gemini-client.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
+import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, searchMemories } from "./services/memory.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -86,7 +87,9 @@ function getNeonSql() {
 function normalizeStore(parsed = {}) {
   return {
     memories: Array.isArray(parsed.memories)
-      ? parsed.memories.filter((item) => item && ["preference", "goal", "fact"].includes(item.category) && isSafeMemoryContent(item.content)).slice(-200)
+      ? parsed.memories.slice(-MEMORY_LIMITS.items).flatMap((item) => {
+          try { return [normalizeMemory(item)]; } catch { return []; }
+        })
       : [],
     tasks: Array.isArray(parsed.tasks) ? parsed.tasks.slice(-200) : [],
     // Keep legacy rating metadata only; strip old prompt text and free-form feedback notes.
@@ -263,13 +266,6 @@ function appendConversationTurn(key, message, result) {
   }
 }
 
-const SENSITIVE_MEMORY_PATTERN = /\b(password|passcode|pin|otp|one[- ]time code|api key|secret|access token|private key|bank account|card number|medical|health|diagnos(?:is|ed)|medicine|medication|home address|exact address|phone number|email address)\b/i;
-
-function isSafeMemoryContent(content) {
-  return typeof content === "string" && content.trim().length >= 3 &&
-    content.trim().length <= 500 && !SENSITIVE_MEMORY_PATTERN.test(content);
-}
-
 function parseExplicitMemoryIntent(message) {
   const normalized = cleanText(message, 4000).replace(/^jarvis[,:]?\s*/i, "");
   const match = normalized.match(/^(?:please\s+)?remember(?:\s+that)?\s*[:,-]?\s*(.+)$/i) ||
@@ -301,18 +297,14 @@ async function processAssistantTurn(message, conversationKey) {
       externalAI: false
     };
   } else if (memoryIntent) {
-    const existing = store.memories.find((item) => item.content.toLowerCase() === memoryIntent.content.toLowerCase());
+    const candidate = normalizeMemory({ content: memoryIntent.content, category: memoryIntent.category });
+    const existing = store.memories.find((item) => isDuplicateMemory([item], candidate));
     if (existing) {
       result = { answer: "That preference or fact is already in your saved memory.", engine: "memory", externalAI: false };
     } else if (store.memories.length >= 200) {
       result = { answer: "Your memory list is full. Delete an old note before saving another.", engine: "memory", externalAI: false };
     } else {
-      const memory = {
-        id: newId(),
-        content: memoryIntent.content,
-        category: memoryIntent.category,
-        createdAt: new Date().toISOString()
-      };
+      const memory = candidate;
       store.memories.push(memory);
       await saveStore();
       result = { answer: "I’ll remember this preference or fact because you explicitly asked me to. You can review or delete it in Memory.", engine: "memory", externalAI: false };
@@ -355,7 +347,8 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
   if (conversationAIEnabled) {
     try {
       const knowledgeContext = buildKnowledgeContext(store.knowledge, message, 3);
-      const answer = await createConversationReply(message, history, memories, knowledgeContext);
+      const approvedMemoryContext = buildMemoryContext(memories, message, 5);
+      const answer = await createConversationReply(message, history, approvedMemoryContext, knowledgeContext);
       return {
         answer: webNotice ? webNotice + "\n\n" + answer : answer,
         engine: "gemini-conversation",
@@ -391,7 +384,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     service: "jarvis",
-    version: "0.7.0-knowledge-library",
+    version: "0.8.0-memory-storage",
     brain: conversationAIEnabled ? "gemini-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
@@ -449,6 +442,30 @@ app.delete("/api/chat/history", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/api/export", requireAuth, (req, res) => {
+  const payload = {
+    format: "jarvis-personal-data",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    data: {
+      memories: store.memories,
+      knowledge: store.knowledge,
+      research: store.research,
+      tasks: store.tasks,
+      skills: store.skills
+    },
+    excluded: [
+      "temporary conversation history",
+      "device credentials and pairing records",
+      "server environment variables and API credentials",
+      "anonymous feedback ratings"
+    ]
+  };
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Disposition", 'attachment; filename="jarvis-personal-data.json"');
+  res.json(payload);
+});
+
 app.post("/api/chat", requireAuth, async (req, res) => {
   const message = cleanText(req.body?.message, 4000);
   if (!message) return res.status(400).json({ error: "Enter a message first." });
@@ -461,22 +478,63 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   }
 });
 
+app.get("/api/memories", requireAuth, (req, res) => {
+  const query = cleanText(req.query.q, 300);
+  const category = cleanText(req.query.category, 30);
+  const requestedLimit = Number.parseInt(String(req.query.limit || "100"), 10);
+  const limit = Number.isFinite(requestedLimit) ? Math.min(100, Math.max(1, requestedLimit)) : 100;
+  const items = searchMemories(store.memories, query, category, limit);
+  res.json({ query, category, total: store.memories.length, count: items.length, items });
+});
+
 app.post("/api/memories", requireAuth, async (req, res) => {
-  const content = cleanText(req.body?.content, 1000);
-  const allowed = ["preference", "goal", "fact"];
-  const category = allowed.includes(req.body?.category) ? req.body.category : "fact";
-  if (!content) return res.status(400).json({ error: "Memory text cannot be empty." });
-  if (!isSafeMemoryContent(content)) return res.status(400).json({ error: "For privacy, JARVIS does not save secrets or sensitive personal information as memory." });
-  if (store.memories.length >= 200) return res.status(409).json({ error: "Memory limit reached. Delete an old note first." });
-  const memory = { id: newId(), content, category, createdAt: new Date().toISOString() };
+  let memory;
+  try {
+    memory = normalizeMemory(req.body);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Memory is invalid." });
+  }
+
+  const duplicate = store.memories.find((item) => isDuplicateMemory([item], memory));
+  if (duplicate) return res.status(200).json({ memory: duplicate, duplicate: true });
+  if (store.memories.length >= MEMORY_LIMITS.items) {
+    return res.status(409).json({ error: "Memory limit reached. Delete an old note first." });
+  }
+
   store.memories.push(memory);
   await saveStore();
-  res.status(201).json({ memory });
+  res.status(201).json({ memory, duplicate: false });
+});
+
+app.patch("/api/memories/:id", requireAuth, async (req, res) => {
+  const existing = store.memories.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Memory not found." });
+
+  let updated;
+  try {
+    updated = normalizeMemory({
+      ...existing,
+      content: typeof req.body?.content === "string" ? req.body.content : existing.content,
+      category: typeof req.body?.category === "string" ? req.body.category : existing.category,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Memory is invalid." });
+  }
+
+  const duplicate = store.memories.find((item) =>
+    item.id !== existing.id && isDuplicateMemory([item], updated)
+  );
+  if (duplicate) return res.status(409).json({ error: "Another saved memory already contains the same note." });
+
+  store.memories = store.memories.map((item) => item.id === existing.id ? updated : item);
+  await saveStore();
+  res.json({ memory: updated });
 });
 
 app.delete("/api/memories/:id", requireAuth, async (req, res) => {
   const before = store.memories.length;
-  store.memories = store.memories.filter((m) => m.id !== req.params.id);
+  store.memories = store.memories.filter((item) => item.id !== req.params.id);
   if (store.memories.length === before) return res.status(404).json({ error: "Memory not found." });
   await saveStore();
   res.json({ ok: true });

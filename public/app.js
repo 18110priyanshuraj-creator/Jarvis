@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { chats: [], memories: [], tasks: [], feedback: [], skills: [], devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
+const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], skills: [], devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
 let toastTimer;
 let activeRecognition = null;
 
@@ -48,6 +48,7 @@ async function refreshState() {
   const data = await api("/api/state");
   state.chats = data.chats || [];
   state.memories = data.memories || [];
+  state.memoryTotal = state.memories.length;
   state.tasks = data.tasks || [];
   state.feedback = data.feedback || [];
   state.skills = data.skills || [];
@@ -79,6 +80,7 @@ function setView(name) {
   $("#page-title").textContent = titles[name][1];
   if (name === "chat") setTimeout(() => $("#chat-input").focus(), 0);
   if (name === "devices") refreshDevices().catch((error) => toast(error.message, true));
+  if (name === "memory") refreshMemories().catch((error) => toast(error.message, true));
 }
 
 function makeEmpty(message) {
@@ -178,42 +180,151 @@ function renderChats() {
   target.scrollTop = target.scrollHeight;
 }
 
+function renderStorageOverview() {
+  const target = $("#storage-overview-text");
+  if (!target) return;
+  target.textContent = [
+    "Personal memories: " + state.memoryTotal,
+    "Knowledge notes: " + state.knowledgeTotal,
+    "Saved research: " + state.research.length,
+    "Tasks: " + state.tasks.length,
+    "Custom skills: " + state.skills.length,
+    "Temporary chats: not stored in the persistent database"
+  ].join(" · ");
+}
+
 function renderMemories() {
   const target = $("#memory-list");
+  if (!target) return;
   target.replaceChildren();
-  $("#memory-count").textContent = state.memories.length + " saved";
+  $("#memory-count").textContent = state.memoryQuery || state.memoryCategory
+    ? state.memories.length + " shown · " + state.memoryTotal + " total"
+    : state.memoryTotal + " saved";
+
   if (!state.memories.length) {
-    target.append(makeEmpty("No saved memories yet. Add a preference, goal, or useful fact above."));
+    target.append(makeEmpty(state.memoryQuery || state.memoryCategory
+      ? "No memories matched this search or category."
+      : "No saved memories yet. Add a preference, goal, or useful fact above."));
+    renderStorageOverview();
     return;
   }
-  for (const item of [...state.memories].reverse()) {
+
+  for (const item of state.memories) {
     const row = document.createElement("article");
     row.className = "list-item";
     const main = document.createElement("div");
     main.className = "list-item-main";
     const title = document.createElement("strong");
-    title.textContent = item.content;
+    title.textContent = item.content || "";
     const meta = document.createElement("div");
     meta.className = "list-item-meta";
-    meta.textContent = (item.category || "fact") + " · " + new Date(item.createdAt).toLocaleDateString();
+    const created = item.createdAt ? new Date(item.createdAt).toLocaleDateString() : "";
+    const updated = item.updatedAt && item.updatedAt !== item.createdAt
+      ? " · Updated " + new Date(item.updatedAt).toLocaleDateString()
+      : "";
+    meta.textContent = (item.category || "fact") + " · Saved " + created + updated;
     main.append(title, meta);
-    const del = document.createElement("button");
-    del.className = "item-action";
-    del.type = "button";
-    del.textContent = "Delete";
-    del.setAttribute("aria-label", "Delete saved memory");
-    del.addEventListener("click", async () => {
+
+    const actions = document.createElement("div");
+    actions.className = "device-actions";
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "item-action";
+    edit.textContent = "Edit";
+    edit.addEventListener("click", () => {
+      const editor = document.createElement("form");
+      editor.className = "memory-edit-form form-card";
+      const contentLabel = document.createElement("label");
+      contentLabel.textContent = "Edit saved memory";
+      const content = document.createElement("textarea");
+      content.rows = 3;
+      content.maxLength = 500;
+      content.required = true;
+      content.value = item.content || "";
+      contentLabel.append(content);
+
+      const categoryLabel = document.createElement("label");
+      categoryLabel.textContent = "Category";
+      const category = document.createElement("select");
+      for (const [value, label] of [["preference", "Preference"], ["goal", "Goal"], ["fact", "Fact"]]) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        category.append(option);
+      }
+      category.value = item.category || "fact";
+      categoryLabel.append(category);
+
+      const controls = document.createElement("div");
+      controls.className = "form-row";
+      const save = document.createElement("button");
+      save.type = "submit";
+      save.className = "primary";
+      save.textContent = "Save changes";
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "item-action";
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("click", () => row.replaceChildren(main, actions));
+      controls.append(cancel, save);
+      editor.append(contentLabel, categoryLabel, controls);
+      row.replaceChildren(main, editor);
+      content.focus();
+
+      editor.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        save.disabled = true;
+        try {
+          await api("/api/memories/" + encodeURIComponent(item.id), {
+            method: "PATCH",
+            body: JSON.stringify({ content: content.value, category: category.value })
+          });
+          await refreshMemories(state.memoryQuery, state.memoryCategory);
+          toast("Memory updated.");
+        } catch (error) {
+          toast(error.message, true);
+          save.disabled = false;
+        }
+      });
+    });
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "item-action";
+    remove.textContent = "Delete";
+    remove.setAttribute("aria-label", "Delete saved memory");
+    remove.addEventListener("click", async () => {
       if (!confirm("Delete this saved memory?")) return;
+      remove.disabled = true;
       try {
         await api("/api/memories/" + encodeURIComponent(item.id), { method: "DELETE" });
-        state.memories = state.memories.filter((m) => m.id !== item.id);
-        renderMemories();
+        state.memoryTotal = Math.max(0, state.memoryTotal - 1);
+        await refreshMemories(state.memoryQuery, state.memoryCategory);
         toast("Memory deleted.");
-      } catch (error) { toast(error.message, true); }
+      } catch (error) {
+        toast(error.message, true);
+        remove.disabled = false;
+      }
     });
-    row.append(main, del);
+
+    actions.append(edit, remove);
+    row.append(main, actions);
     target.append(row);
   }
+  renderStorageOverview();
+}
+
+async function refreshMemories(query = state.memoryQuery, category = state.memoryCategory) {
+  state.memoryQuery = String(query || "").trim();
+  state.memoryCategory = String(category || "");
+  const params = new URLSearchParams();
+  if (state.memoryQuery) params.set("q", state.memoryQuery);
+  if (state.memoryCategory) params.set("category", state.memoryCategory);
+  const suffix = params.toString() ? "?" + params.toString() : "";
+  const data = await api("/api/memories" + suffix);
+  state.memories = Array.isArray(data.items) ? data.items : [];
+  state.memoryTotal = Number(data.total) || 0;
+  renderMemories();
 }
 
 function renderSkills() {
@@ -222,6 +333,7 @@ function renderSkills() {
   target.replaceChildren();
   if (!state.skills.length) {
     target.append(makeEmpty("No custom skills saved. Add a short, safe instruction that JARVIS can use as context."));
+    renderStorageOverview();
     return;
   }
   for (const skill of [...state.skills].reverse()) {
@@ -253,6 +365,7 @@ function renderSkills() {
     row.append(main, del);
     target.append(row);
   }
+  renderStorageOverview();
 }
 
 function renderTasks() {
@@ -261,6 +374,7 @@ function renderTasks() {
   $("#task-count").textContent = state.tasks.filter((item) => !item.done).length;
   if (!state.tasks.length) {
     target.append(makeEmpty("Your list is clear. Add one small next step above."));
+    renderStorageOverview();
     return;
   }
   const sorted = [...state.tasks].sort((a, b) => Number(a.done) - Number(b.done) || String(b.createdAt).localeCompare(String(a.createdAt)));
@@ -312,6 +426,7 @@ function renderTasks() {
     row.append(check, main, del);
     target.append(row);
   }
+  renderStorageOverview();
 }
 
 $("#login-form").addEventListener("submit", async (event) => {
@@ -332,7 +447,13 @@ $("#logout-button").addEventListener("click", async () => {
   try { await api("/api/logout", { method: "POST", body: JSON.stringify({}) }); } catch { /* always return to sign-in */ }
   state.chats = [];
   state.memories = [];
+  state.memoryTotal = 0;
+  state.knowledge = [];
+  state.knowledgeTotal = 0;
+  state.research = [];
+  state.skills = [];
   state.tasks = [];
+  renderStorageOverview();
   showLogin();
   toast("Signed out.");
 });
@@ -488,12 +609,43 @@ $("#memory-form").addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify({ content: $("#memory-content").value, category: $("#memory-category").value })
     });
-    state.memories.push(data.memory);
     $("#memory-content").value = "";
-    renderMemories();
-    toast("Memory saved.");
+    await refreshMemories("", "");
+    toast(data.duplicate ? "That memory is already saved." : "Memory saved.");
   } catch (error) { toast(error.message, true); }
   finally { button.disabled = false; }
+});
+
+$("#memory-search-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = event.currentTarget.querySelector("button[type=submit]");
+  button.disabled = true;
+  try {
+    await refreshMemories($("#memory-search-input").value, $("#memory-category-filter").value);
+  } catch (error) { toast(error.message, true); }
+  finally { button.disabled = false; }
+});
+
+$("#export-data-button").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const data = await api("/api/export");
+    const blob = new Blob([JSON.stringify(data, null, 2) + "\n"], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "jarvis-personal-data.json";
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("Your JARVIS data export is ready.");
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
 });
 
 $("#skill-form").addEventListener("submit", async (event) => {
@@ -800,6 +952,7 @@ async function refreshKnowledge(query = state.knowledgeQuery) {
   state.knowledge = Array.isArray(data.items) ? data.items : [];
   state.knowledgeTotal = Number(data.total) || 0;
   renderKnowledge();
+  renderStorageOverview();
 }
 
 function renderSavedResearch() {
@@ -808,6 +961,7 @@ function renderSavedResearch() {
   target.replaceChildren();
   if (!state.research.length) {
     target.append(makeEmpty("Nothing saved yet. Live research is never saved automatically."));
+    renderStorageOverview();
     return;
   }
 
@@ -853,6 +1007,7 @@ function renderSavedResearch() {
     row.append(main, actions);
     target.append(row);
   }
+  renderStorageOverview();
 }
 
 $("#search-form").addEventListener("submit", async (event) => {
