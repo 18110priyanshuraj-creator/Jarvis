@@ -47,7 +47,8 @@ before(async () => {
       JARVIS_DATA_DIR: tempDir,
       DATABASE_URL: "",
       GEMINI_API_KEY: "",
-      GEMINI_CHAT_ENABLED: "false"
+      GEMINI_CHAT_ENABLED: "false",
+      GEMINI_WEB_RESEARCH_ENABLED: "false"
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
