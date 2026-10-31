@@ -16,6 +16,8 @@ The automated suite covers the authenticated dashboard API, session protections,
 
 ## Device acceptance matrix — requires a real Android device
 
+**User-reported update (31 October 2026):** the tablet's microphone and Accessibility permissions have been granted. This records the user's report; it does not independently verify the live permission state. Confirm it after pairing by refreshing Device Control and checking the device heartbeat before marking the permission test fully passed.
+
 CI compiles the APK but does not operate a physical tablet or third-party apps. Run these checks on the target Android device before treating Phase 6 as fully accepted.
 
 | Test | Procedure | Pass condition | Status |
@@ -23,7 +25,7 @@ CI compiles the APK but does not operate a physical tablet or third-party apps. 
 | Install and launch | Install the CI debug APK manually and open JARVIS Companion | App opens without crashing | Pending device test |
 | Pairing | Generate a short-lived code in the authenticated dashboard; pair the app over HTTPS | Device appears in dashboard; raw token is not displayed again | Pending device test |
 | Revocation | Revoke the paired device from the dashboard, then try a heartbeat | Revoked token is rejected | Backend automated test passed; device confirmation pending |
-| Permissions | Review the disclosure; grant microphone and Accessibility manually; leave unneeded permissions off | App reports the actual permission state; no system permission is silently granted | Pending device test |
+| Permissions | Review the disclosure; grant microphone and Accessibility manually; leave unneeded permissions off | User reports microphone and Accessibility permissions granted; paired-device heartbeat and in-app state still need confirmation | User-reported complete; verification pending |
 | Voice basics | Try one-shot and hands-free voice, including Hindi and English | Recognized commands are handled or a clear fallback is spoken | Pending device test |
 | Telegram navigation | Say “Telegram kholo”, then navigate only using visible, unique, non-sensitive labels | App opens and safe navigation works; no message is sent | Pending device test |
 | YouTube navigation | Say “Open YouTube”; use a harmless educational search in the visible search field | App opens and search text is entered; no account, purchase or submission action is taken | Pending device test |
