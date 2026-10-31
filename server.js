@@ -472,7 +472,7 @@ app.get("/api/export", requireAuth, (req, res) => {
       "temporary conversation history",
       "device credentials and pairing records",
       "server environment variables and API credentials",
-      "anonymous feedback ratings"
+      "chat prompts and assistant replies are not stored as feedback records"
     ]
   };
   res.setHeader("Cache-Control", "no-store");
