@@ -205,13 +205,13 @@ export function runLocalBrain({ message, memories = [], tasks = [], skills = [],
 
   if (Array.isArray(knowledge) && knowledge.length) {
     const entries = knowledge.slice(0, 3);
-    return "Saved Knowledge Library se relevant notes mile (offline reference; independently verified nahi):\\n\\n" +
+    return "Saved Knowledge Library se relevant notes mile (offline reference; independently verified nahi):\n\n" +
       entries.map((item) => {
-        const sources = Array.isArray(item.sources) ? item.sources.slice(0, 4).map((source) => source.url).join("\\n") : "";
-        return "**" + String(item.title || "Saved note") + "**\\n" +
+        const sources = Array.isArray(item.sources) ? item.sources.slice(0, 4).map((source) => source.url).join("\n") : "";
+        return "**" + String(item.title || "Saved note") + "**\n" +
           String(item.content || "").slice(0, 1800) +
-          (sources ? "\\nSources:\\n" + sources : "");
-      }).join("\\n\\n");
+          (sources ? "\nSources:\n" + sources : "");
+      }).join("\n\n");
   }
 
   if (/(newton|law of motion|laws of motion|inertia|force)/.test(q)) {
