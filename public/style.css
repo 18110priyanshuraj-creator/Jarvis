@@ -236,6 +236,19 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .research-source { display: flex; flex-direction: column; gap: 3px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: #0c1422; }
 .research-source a { color: #b5c8ff; font-size: .8rem; font-weight: 700; overflow-wrap: anywhere; }
 .research-source span { color: #6e9e8e; font-size: .67rem; overflow-wrap: anywhere; }
+.skill-item { align-items: flex-start; }
+.skill-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; max-width: 230px; }
+.skill-status { display: inline-flex; margin-top: 8px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px; color: #b2c2e3; font-size: .68rem; text-transform: capitalize; }
+.skill-status-active { color: #91e5c5; border-color: #91e5c54a; }
+.skill-status-paused { color: #f0c27b; border-color: #f0c27b55; }
+.skill-status-draft, .skill-status-update-pending { color: #b5c8ff; }
+.skill-history { margin-top: 9px; color: #a9b8d2; font-size: .75rem; }
+.skill-history summary { cursor: pointer; }
+.skill-history .list-item-meta { margin-top: 6px; }
+@media (max-width: 680px) {
+  .skill-item { flex-direction: column; }
+  .skill-actions { max-width: none; justify-content: flex-start; }
+}
 .research-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 15px; }
 .research-citations { margin-top: 12px; color: #90a1bd; font-size: .74rem; line-height: 1.6; }
 @media (max-width: 680px) {
