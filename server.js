@@ -18,6 +18,7 @@ import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMI
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeSkill, pauseSkill, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
 import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, createWorkflowDraft, createWorkflowRun, normalizeWorkflow, pauseWorkflow, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
+import { getIntegrationCatalog, probeIntegration, runIntegrationAction } from "./services/integrations.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -71,6 +72,13 @@ const webResearchLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Web research rate limit reached. Please try again later." }
+});
+const integrationTestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 8,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Integration test limit reached. Please try again later." }
 });
 app.use("/api", apiLimiter);
 
@@ -762,6 +770,24 @@ app.delete("/api/tasks/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/api/integrations", requireAuth, (_req, res) => {
+  res.json({
+    providers: getIntegrationCatalog(),
+    credentialStorage: "server-environment-only",
+    supportedOperations: "read-only"
+  });
+});
+
+app.post("/api/integrations/:provider/test", requireAuth, integrationTestLimiter, async (req, res) => {
+  try {
+    const result = await probeIntegration(req.params.provider);
+    res.json(result);
+  } catch (error) {
+    const status = error instanceof TypeError ? 400 : 502;
+    res.status(status).json({ error: error.message || "Integration test failed." });
+  }
+});
+
 app.get("/api/workflows", requireAuth, (_req, res) => {
   res.json({
     workflows: store.workflows.slice().reverse(),
@@ -893,7 +919,11 @@ function workflowStepHandlers() {
     draft_text: async (step) => ({
       draft: step.content,
       summary: "Draft prepared locally. Nothing was sent or published."
-    })
+    }),
+    github_list_repositories: async () => runIntegrationAction("github_list_repositories"),
+    google_drive_list_files: async () => runIntegrationAction("google_drive_list_files"),
+    telegram_get_bot_profile: async () => runIntegrationAction("telegram_get_bot_profile"),
+    elevenlabs_get_account: async () => runIntegrationAction("elevenlabs_get_account")
   };
 }
 
