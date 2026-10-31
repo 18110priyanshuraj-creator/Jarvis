@@ -892,7 +892,11 @@ function workflowStepLabel(type) {
     save_memory: "Save personal memory",
     search_knowledge: "Search saved Knowledge",
     draft_text: "Prepare text draft",
-    review_checkpoint: "Pause for review"
+    review_checkpoint: "Pause for review",
+    github_list_repositories: "Read GitHub repositories",
+    google_drive_list_files: "Read recent Google Drive files",
+    telegram_get_bot_profile: "Check Telegram bot profile",
+    elevenlabs_get_account: "Read ElevenLabs account summary"
   })[type] || "Workflow step";
 }
 
@@ -901,6 +905,10 @@ function workflowStepDetail(step) {
   if (step.type === "save_memory") return "[" + step.category + "] " + step.content;
   if (step.type === "search_knowledge") return "Search: " + step.query;
   if (step.type === "draft_text") return step.content;
+  if (step.type === "github_list_repositories") return "Read-only · Lists up to eight recently updated repositories using the configured GitHub token.";
+  if (step.type === "google_drive_list_files") return "Read-only · Lists up to eight recent Drive file names and metadata.";
+  if (step.type === "telegram_get_bot_profile") return "Read-only · Checks the configured Telegram bot identity. It does not send messages.";
+  if (step.type === "elevenlabs_get_account") return "Read-only · Reads a limited account and subscription summary.";
   return step.message || "Wait for your review before continuing.";
 }
 
@@ -1581,10 +1589,18 @@ $("#workflow-step-type").addEventListener("change", () => {
     save_memory: ["Memory content", "Write the fact, preference, or goal to save…"],
     search_knowledge: ["Search query", "Example: mole concept or circular motion…"],
     draft_text: ["Draft text", "Write the text to prepare locally. It will not be sent or published…"],
-    review_checkpoint: ["Review note (optional)", "What should you review before continuing?…"]
+    review_checkpoint: ["Review note (optional)", "What should you review before continuing?…"],
+    github_list_repositories: ["No input required", "This read-only integration uses the configured GitHub connection."],
+    google_drive_list_files: ["No input required", "This read-only integration uses the configured Google Drive connection."],
+    telegram_get_bot_profile: ["No input required", "This read-only integration uses the configured Telegram bot."],
+    elevenlabs_get_account: ["No input required", "This read-only integration uses the configured ElevenLabs connection."]
   };
-  $("#workflow-step-value-label").textContent = labels[type][0];
-  $("#workflow-step-value").placeholder = labels[type][1];
+  const label = labels[type];
+  const integrationAction = type.startsWith("github_") || type.startsWith("google_drive_") ||
+    type.startsWith("telegram_") || type.startsWith("elevenlabs_");
+  $("#workflow-step-value-label").textContent = label[0];
+  $("#workflow-step-value").placeholder = label[1];
+  $("#workflow-step-value").disabled = integrationAction;
   $("#workflow-step-category").disabled = type !== "save_memory";
 });
 
@@ -1605,6 +1621,7 @@ $("#workflow-add-step").addEventListener("click", () => {
   else if (type === "save_memory") step = { type, title, content: value, category: $("#workflow-step-category").value };
   else if (type === "search_knowledge") step = { type, title, query: value };
   else if (type === "draft_text") step = { type, title, content: value };
+  else if (["github_list_repositories", "google_drive_list_files", "telegram_get_bot_profile", "elevenlabs_get_account"].includes(type)) step = { type, title };
   else step = { type, title, message: value };
   state.workflowSteps.push(step);
   $("#workflow-step-title").value = "";
@@ -1660,6 +1677,9 @@ function resetWorkflowForm() {
   $("#workflow-save-button").textContent = "Save workflow draft";
   $("#workflow-cancel-edit").classList.add("hidden");
   $("#workflow-step-category").disabled = true;
+  $("#workflow-step-value").disabled = false;
+  $("#workflow-step-type").value = "create_task";
+  $("#workflow-step-type").dispatchEvent(new Event("change"));
   renderWorkflowBuilderSteps();
 }
 
