@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildConversationContents, isConversationAIEnabled } from "../services/conversation.js";
+import { buildConversationContents, buildConversationSystemInstruction, isConversationAIEnabled } from "../services/conversation.js";
 
 test("conversation context is bounded and only includes user and assistant text", () => {
   const history = [
@@ -36,4 +36,16 @@ test("conversation mode stays disabled unless both opt-in and API key are presen
     if (oldKey === undefined) delete process.env.GEMINI_API_KEY;
     else process.env.GEMINI_API_KEY = oldKey;
   }
+});
+
+test("only supplied, user-approved memories are included as bounded context", () => {
+  const instruction = buildConversationSystemInstruction([
+    { category: "preference", content: "Prefer simple Hinglish explanations." },
+    { category: "task", content: "This category must be ignored." },
+    { category: "goal", content: "Learn algebra step by step." }
+  ]);
+  assert.match(instruction, /Prefer simple Hinglish explanations/);
+  assert.match(instruction, /Learn algebra step by step/);
+  assert.doesNotMatch(instruction, /This category must be ignored/);
+  assert.match(instruction, /Do not automatically save questions/);
 });
