@@ -203,6 +203,13 @@ export async function advanceWorkflowRun(runInput, handlers) {
   if (run.status !== "running") throw new Error("Only a running workflow can advance.");
   if (!handlers || typeof handlers !== "object") throw new TypeError("Workflow handlers are required.");
 
+  for (const step of run.steps) {
+    if (step.status === "waiting_review") {
+      step.status = "completed";
+      step.result = { ...(step.result || {}), decision: "continued after user review" };
+    }
+  }
+
   for (let index = run.nextStepIndex; index < run.steps.length; index++) {
     const step = run.steps[index];
     if (step.type === "review_checkpoint") {
