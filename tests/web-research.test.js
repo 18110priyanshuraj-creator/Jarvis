@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   isRestrictedResearchQuery,
   isWebResearchEnabled,
+  shouldUseLiveWebResearch,
   normalizeGroundedResearchResponse,
   normalizeSavedResearch
 } from "../services/web-research.js";
@@ -62,6 +63,13 @@ test("research feature requires both explicit enablement and a server API key", 
     if (oldKey === undefined) delete process.env.GEMINI_API_KEY;
     else process.env.GEMINI_API_KEY = oldKey;
   }
+});
+
+test("live web search is used for explicit internet requests and time-sensitive topics", () => {
+  assert.equal(shouldUseLiveWebResearch("Please search the internet for the latest JEE notification"), true);
+  assert.equal(shouldUseLiveWebResearch("Internet se seekh kar latest update batao"), true);
+  assert.equal(shouldUseLiveWebResearch("What is the weather today?"), true);
+  assert.equal(shouldUseLiveWebResearch("Explain Newton's second law with an example"), false);
 });
 
 test("research blocks requests to locate or use dangerous and age-restricted items", () => {
