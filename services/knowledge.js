@@ -6,7 +6,7 @@ const MAX_TAGS = 10;
 const MAX_SOURCES = 10;
 const MAX_CITATIONS = 20;
 const CATEGORIES = new Set(["general", "education", "science", "technology", "project", "other"]);
-const SECRET_ASSIGNMENT = /\b(?:api[_ -]?key|access[_ -]?token|password|passcode|one[- ]time code|otp|private key)\b\s*[:=]\s*\S+/i;
+const SECRET_ASSIGNMENT = /(?:\b|_)(?:api[_ -]?key|access[_ -]?token|password|passcode|one[- ]time code|otp|private key)\b\s*[:=]\s*\S+/i;
 const GOOGLE_API_KEY = /\bAIza[0-9A-Za-z_-]{30,}\b/;
 const LONG_BEARER = /\bBearer\s+[A-Za-z0-9._~+/-]{24,}/i;
 
