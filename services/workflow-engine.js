@@ -58,7 +58,7 @@ function normalizeStep(raw = {}) {
   }
   if (type === "draft_text") {
     const content = cleanText(raw.content, 2000);
-    if (content.length < 10 || !safeValue(content)) throw new TypeError("Draft step needs safe text between 10 and 2,000 characters.");
+    if (content.length < 10 || !safeValue(content)) throw new TypeError("Draft step needs safe text between 10 and 2,000 characters; private or sensitive content is not allowed.");
     return { type, title, content };
   }
   const message = cleanText(raw.message, 300);
