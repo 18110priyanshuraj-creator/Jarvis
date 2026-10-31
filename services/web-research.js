@@ -24,8 +24,14 @@ function cleanText(value, maxLength) {
 }
 
 const RESTRICTED_ITEM = "(?:weapons?|firearms?|guns?|ammunition|explosives?|bombs?|knife|knives|tasers?|pepper spray|mace|self[- ]defense weapons?|drugs?|narcotics|intoxicants?|vapes?|nicotine|cannabis|marijuana|thc|steroids?|gambling|sports betting|prediction markets?)";
-const RESTRICTED_ACTION = "(?:buy|purchase|obtain|where to get|where can i get|how to get|find a seller|locate a seller|make|build|manufacture|how to use|how do i use|use|hide|conceal|bypass|evade|dose|sell)";
-const RESTRICTED_REQUEST = new RegExp("\\b" + RESTRICTED_ACTION + "\\b.{0,90}\\b" + RESTRICTED_ITEM + "\\b|\\b" + RESTRICTED_ITEM + "\\b.{0,90}\\b" + RESTRICTED_ACTION + "\\b", "i");
+const RESTRICTED_ACTION = "(?:buy|purchase|obtain|make|build|manufacture|use|hide|conceal|bypass|evade|dose|sell)";
+const RESTRICTED_REQUEST = new RegExp(
+  "\\b" + RESTRICTED_ACTION + "\\s+(?:(?:a|an|the|some)\\s+)?" + RESTRICTED_ITEM + "\\b" +
+  "|\\b(?:where\\s+(?:to\\s+get|can\\s+i\\s+get|can\\s+i\\s+buy)|how\\s+to\\s+get)\\s+(?:(?:a|an|the|some)\\s+)?" + RESTRICTED_ITEM + "\\b" +
+  "|\\b" + RESTRICTED_ITEM + "\\b.{0,24}\\b(?:for sale|where to buy|where can i buy)\\b" +
+  "|\\b(?:find|locate)\\s+(?:a\\s+)?(?:seller|dealer|vendor)\\s+(?:of\\s+)?" + RESTRICTED_ITEM + "\\b",
+  "i"
+);
 
 export function isRestrictedResearchQuery(query) {
   return RESTRICTED_REQUEST.test(cleanText(query, MAX_QUERY_LENGTH));
