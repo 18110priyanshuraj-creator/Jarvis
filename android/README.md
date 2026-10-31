@@ -1,4 +1,4 @@
-# JARVIS Companion — Phase 1, Phase 2 and Phase 3
+# JARVIS Companion — Phases 1–4
 
 This is an additive native Android companion for the existing JARVIS Node.js application. It does not replace the web dashboard or the existing offline brain.
 
