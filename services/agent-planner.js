@@ -21,9 +21,10 @@ export function validateAgentPlan(candidate) {
     throw new TypeError("The AI planner returned an invalid plan object.");
   }
 
-  const mode = ["device_action", "conversation", "clarification"].includes(candidate.mode)
-    ? candidate.mode
-    : "device_action";
+  const mode = candidate.mode;
+  if (!["device_action", "conversation", "clarification"].includes(mode)) {
+    throw new TypeError("The AI planner returned an unsupported request mode.");
+  }
   const reply = typeof candidate.reply === "string" ? candidate.reply.trim().slice(0, 240) : "";
   const sourceActions = Array.isArray(candidate.actions) ? candidate.actions : [];
   if (mode === "device_action" && (sourceActions.length < 1 || sourceActions.length > 6)) {
