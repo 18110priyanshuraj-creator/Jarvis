@@ -94,7 +94,7 @@ Android's configured speech-recognition provider processes the microphone audio.
 
 The server can use the official Google Gen AI JavaScript SDK when GEMINI_API_KEY is configured. Set GEMINI_API_KEY and GEMINI_MODEL in the hosting provider's secret environment settings; never place the real key in source control or the Android app. The current model default in the environment example is gemini-3.8-flash and is configurable.
 
-The Android app sends only the spoken transcript to the authenticated server planning endpoint. It does not upload screenshots, accessibility text or app contents. Gemini returns JSON containing up to six actions from a fixed allow-list. The server validates the schema and the Android app validates the actions again before executing them locally. If Gemini is not configured or is unavailable, voice chat falls back to the existing offline JARVIS core; the offline core is not a general-purpose model.
+The Android app sends only the spoken transcript to the authenticated server planning endpoint. It does not upload screenshots, accessibility text or app contents. Gemini returns one of three modes: normal conversation, a short plan of up to six allow-listed device actions, or clarification. Only device-action plans reach the local action runner. The server validates the schema and the Android app validates actions again before executing them locally. When Gemini is not configured or unavailable, the companion falls back to the existing offline JARVIS core; the offline core is not a general-purpose model.
 
 ### Permission checklist
 
