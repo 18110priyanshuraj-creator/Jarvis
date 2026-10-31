@@ -49,9 +49,9 @@ UI labels must be visible and uniquely exposed by the target app's Android acces
 1. Open the android directory in Android Studio.
 2. Install Android SDK Platform 36 and use JDK 17.
 3. Sync Gradle and build the app debug variant.
-4. The GitHub Actions Android job also runs assembleDebug using Gradle 8.13.
+4. The GitHub Actions Android job also runs assembleDebug using Gradle 8.14.6.
 
-The project pins Android Gradle Plugin 8.13.2, Gradle 8.13 and Kotlin Gradle Plugin 2.4.21. The source branch includes Gradle wrapper distribution properties but not the wrapper launcher scripts or JAR; Android Studio or the GitHub Actions job can use the configured Gradle distribution.
+The project pins Android Gradle Plugin 8.13.2, Gradle 8.14.6 and Kotlin Gradle Plugin 2.4.21. The source branch includes Gradle wrapper distribution properties but not the wrapper launcher scripts or JAR; Android Studio or the GitHub Actions job can use the configured Gradle distribution.
 
 ## Pairing
 

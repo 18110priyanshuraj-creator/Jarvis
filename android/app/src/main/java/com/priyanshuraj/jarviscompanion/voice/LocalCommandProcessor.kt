@@ -33,6 +33,13 @@ object LocalCommandProcessor {
         val original = message.trim()
         if (original.isBlank()) return null
 
+        if (normalize(original) == "open home screen") {
+            if (!allowUiActions) return "Use the Home command during hands-free control."
+            val active = JarvisAccessibilityService.activeService
+                ?: return "Enable the JARVIS screen assistant in Android Accessibility settings first."
+            return UIActionExecutor.goHome(active).message
+        }
+
         val appName = openPrefix.find(original)?.groupValues?.getOrNull(1)
             ?: openSuffix.find(original)?.groupValues?.getOrNull(1)
         if (!appName.isNullOrBlank()) return launchInstalledApp(context, cleanQuoted(appName))
