@@ -19,6 +19,11 @@ test("integration catalogue reports configuration without including credential v
   assert.equal(github.environmentVariable, "JARVIS_GITHUB_TOKEN");
   assert.equal(drive.configured, false);
   assert.equal(JSON.stringify(catalogue).includes("demo-github-value"), false);
+  const disabledCatalogue = getIntegrationCatalog({ JARVIS_GITHUB_TOKEN: "demo-github-value" }, ["github"]);
+  const disabledGithub = disabledCatalogue.find((item) => item.id === "github");
+  assert.equal(disabledGithub.configured, true);
+  assert.equal(disabledGithub.enabled, false);
+  assert.equal(disabledGithub.disabled, true);
 });
 
 test("GitHub profile probe uses a fixed GET endpoint and returns bounded profile data", async () => {
