@@ -2,9 +2,11 @@ package com.priyanshuraj.jarviscompanion
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.speech.RecognitionListener
@@ -21,6 +23,8 @@ import android.widget.Toast
 import com.priyanshuraj.jarviscompanion.accessibility.JarvisAccessibilityService
 import com.priyanshuraj.jarviscompanion.device.DeviceConnector
 import com.priyanshuraj.jarviscompanion.device.DeviceTokenStore
+import com.priyanshuraj.jarviscompanion.voice.LocalCommandProcessor
+import com.priyanshuraj.jarviscompanion.voice.VoiceControlService
 import java.util.Locale
 import java.util.concurrent.Executors
 
@@ -33,6 +37,7 @@ class MainActivity : Activity() {
     private var speechRecognizer: SpeechRecognizer? = null
     private var textToSpeech: TextToSpeech? = null
     private var pendingVoicePermission = false
+    private var pendingHandsFreeStart = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,13 +65,21 @@ class MainActivity : Activity() {
             setOnClickListener { pairDevice() }
         }
         voiceButton = Button(this).apply {
-            text = "Speak to JARVIS"
-            isEnabled = false
+            text = "Speak once"
+            isEnabled = true
             setOnClickListener { startVoiceRecognition() }
         }
+        val handsFreeButton = Button(this).apply {
+            text = "Start hands-free control"
+            setOnClickListener { startHandsFreeControl() }
+        }
+        val stopHandsFreeButton = Button(this).apply {
+            text = "Stop hands-free control"
+            setOnClickListener { stopHandsFreeControl() }
+        }
         val accessibilityButton = Button(this).apply {
-            text = "Open Accessibility settings"
-            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            text = "Review screen-access permission"
+            setOnClickListener { showAccessibilityDisclosure() }
         }
         val forgetButton = Button(this).apply {
             text = "Forget this device on this tablet"
@@ -84,20 +97,26 @@ class MainActivity : Activity() {
                 textSize = 26f
             })
             addView(TextView(this@MainActivity).apply {
-                text = "Phase 1: secure pairing and voice chat. Android screen actions are not enabled in this build."
+                text = "Phase 2: user-started hands-free voice, app launch, screen observation, safe tap, text entry and scrolling."
                 textSize = 14f
-                setPadding(0, 8, 0, 16)
+                setPadding(0, 8, 0, 8)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "Screen labels are read locally only when requested. This phase does not upload screen content and will not activate send, delete, payment, password or verification controls."
+                textSize = 12f
+                setPadding(0, 0, 0, 16)
             })
             addView(serverUrlInput, matchWidth())
             addView(pairingCodeInput, matchWidth())
             addView(pairButton, matchWidth())
             addView(voiceButton, matchWidth())
+            addView(handsFreeButton, matchWidth())
+            addView(stopHandsFreeButton, matchWidth())
             addView(accessibilityButton, matchWidth())
             addView(forgetButton, matchWidth())
             addView(statusText, matchWidth())
         }
-        val scroll = ScrollView(this).apply { addView(content) }
-        setContentView(scroll)
+        setContentView(ScrollView(this).apply { addView(content) })
 
         textToSpeech = TextToSpeech(this) { result ->
             if (result == TextToSpeech.SUCCESS) {
@@ -164,13 +183,65 @@ class MainActivity : Activity() {
 
     private fun refreshStatus(message: String? = null) {
         val paired = !DeviceTokenStore.read(applicationContext).isNullOrBlank()
-        voiceButton.isEnabled = paired
+        voiceButton.isEnabled = true
         val accessibility = if (isAccessibilityServiceEnabled()) "enabled" else "not enabled"
-        statusText.text = message ?: if (paired) {
-            "Paired. Accessibility observer: " + accessibility + ". Voice commands are sent to the existing offline JARVIS brain."
-        } else {
-            "Not paired. Generate a one-time code in the JARVIS web dashboard."
+        statusText.text = message ?: buildString {
+            append(if (paired) "Paired with JARVIS server." else "Not paired with the JARVIS server.")
+            append(" Screen access: ")
+            append(accessibility)
+            append(". Use Start hands-free control to keep voice commands available while another app is open.")
         }
+    }
+
+    private fun showAccessibilityDisclosure() {
+        AlertDialog.Builder(this)
+            .setTitle("JARVIS screen access")
+            .setMessage(
+                "Android Accessibility lets JARVIS inspect visible app labels and perform the specific action you speak. " +
+                    "Screen content is processed locally on this tablet and is not sent to the JARVIS server in this phase. " +
+                    "Password and verification fields, plus send, delete, payment and confirmation controls are blocked. " +
+                    "You can disable this service anytime in Android Settings."
+            )
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Open Android settings") { _, _ ->
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+            .show()
+    }
+
+    private fun startHandsFreeControl() {
+        if (!isAccessibilityServiceEnabled()) {
+            showAccessibilityDisclosure()
+            return
+        }
+
+        val missingPermissions = mutableListOf<String>()
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            missingPermissions.add(Manifest.permission.RECORD_AUDIO)
+        }
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            missingPermissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        if (missingPermissions.isNotEmpty()) {
+            pendingHandsFreeStart = true
+            requestPermissions(missingPermissions.toTypedArray(), REQUEST_HANDS_FREE_PERMISSIONS)
+            return
+        }
+
+        try {
+            val intent = Intent(this, VoiceControlService::class.java).setAction(VoiceControlService.ACTION_START)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
+            refreshStatus("Hands-free session started. A persistent notification shows that the microphone is active. Say 'stop listening' or use Stop in the notification.")
+        } catch (error: Exception) {
+            refreshStatus("Could not start hands-free control: " + (error.message ?: "Android blocked the service."))
+        }
+    }
+
+    private fun stopHandsFreeControl() {
+        stopService(Intent(this, VoiceControlService::class.java))
+        refreshStatus("Hands-free control stopped.")
     }
 
     private fun startVoiceRecognition() {
@@ -180,7 +251,7 @@ class MainActivity : Activity() {
             return
         }
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            refreshStatus("Speech recognition is not available on this device. You can use the JARVIS web dashboard voice input.")
+            refreshStatus("Speech recognition is not available on this device.")
             return
         }
 
@@ -192,13 +263,19 @@ class MainActivity : Activity() {
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() { refreshStatus("Processing voice command…") }
-            override fun onError(error: Int) { refreshStatus("Speech recognition stopped (code " + error + "). Tap Speak to try again.") }
+            override fun onError(error: Int) { refreshStatus("Speech recognition stopped (code " + error + "). Tap Speak once to try again.") }
             override fun onResults(results: Bundle?) {
                 val message = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
                 if (message.isBlank()) {
                     refreshStatus("No speech was recognized. Please try again.")
                 } else {
-                    sendVoiceCommand(message)
+                    val localResponse = LocalCommandProcessor.handle(this@MainActivity, message, allowUiActions = false)
+                    if (localResponse != null) {
+                        refreshStatus(localResponse)
+                        textToSpeech?.speak(localResponse, TextToSpeech.QUEUE_FLUSH, null, "jarvis-local-answer")
+                    } else {
+                        sendVoiceCommand(message)
+                    }
                 }
             }
             override fun onPartialResults(partialResults: Bundle?) {}
@@ -219,7 +296,7 @@ class MainActivity : Activity() {
         val serverUrl = getSharedPreferences("jarvis_companion_settings", MODE_PRIVATE)
             .getString("server_url", null)
         if (token.isNullOrBlank() || serverUrl.isNullOrBlank()) {
-            refreshStatus("Pair this device before sending voice commands.")
+            refreshStatus("Pair this device with your dashboard before sending general chat commands. Local app opening still works.")
             return
         }
 
@@ -249,6 +326,12 @@ class MainActivity : Activity() {
                 pendingVoicePermission = false
                 refreshStatus("Microphone permission was not granted.")
             }
+        } else if (requestCode == REQUEST_HANDS_FREE_PERMISSIONS) {
+            val allGranted = grantResults.isNotEmpty() &&
+                grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            pendingHandsFreeStart = false
+            if (allGranted) startHandsFreeControl()
+            else refreshStatus("Microphone and notification permissions are needed for a visible hands-free session.")
         }
     }
 
@@ -261,5 +344,6 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_MICROPHONE = 7001
+        private const val REQUEST_HANDS_FREE_PERMISSIONS = 7002
     }
 }

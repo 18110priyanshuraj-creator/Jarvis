@@ -1,26 +1,57 @@
-# JARVIS Companion — Phase 1
+# JARVIS Companion — Phase 1 and Phase 2
 
-This is an additive native Android companion for the existing JARVIS Node.js application. It does not replace or modify the web dashboard architecture.
+This is an additive native Android companion for the existing JARVIS Node.js application. It does not replace the web dashboard or the existing offline brain.
 
-## Phase 1 scope
+## Phase 1
 
-- Pair an Android device with a short-lived, one-time code generated in the authenticated JARVIS dashboard.
-- Store the device bearer credential encrypted with an AES-GCM key backed by Android Keystore.
-- Send authenticated heartbeat updates.
-- Capture a user-initiated Hindi speech transcript with Android SpeechRecognizer.
-- Send voice transcripts to the existing offline JARVIS brain and read the response with Android TextToSpeech.
-- Optionally observe foreground app package changes through an AccessibilityService.
+- Short-lived, single-use device pairing code generated from the authenticated web dashboard.
+- Per-device bearer credential, encrypted locally with Android Keystore-backed AES-GCM.
+- Server stores only the token hash and supports device revocation.
+- Authenticated heartbeat and voice-chat requests.
 
-The Phase 1 accessibility service records only the foreground package name, accessibility event type and timestamp. It does not read window text, inspect message contents, click controls, type text, launch apps or automate screens. Full Android UI actions are a later phase and must be explicitly approved.
+## Phase 2 Android Control Engine
+
+- User-started microphone foreground service with an ongoing notification and Stop action.
+- Hindi (hi-IN) speech recognition; on-device recognition is preferred when Android reports it is available.
+- Launch an installed app by its visible launcher name, for example: "Telegram kholo" or "Open YouTube".
+- Read a bounded summary of visible screen labels only after the user says "read screen".
+- Tap one uniquely matching visible label, scroll an accessible container, navigate Back/Home, and enter dictated text into the already-focused non-sensitive field.
+- Screen labels and UI hierarchy stay on the tablet. They are not sent to the server or persisted by this phase.
+- Non-action chat transcripts are sent to the existing JARVIS voice endpoint only when the device is paired.
+
+### Voice examples
+
+- "Telegram kholo"
+- "Open YouTube"
+- "Tap Search"
+- "Type JEE Physics"
+- "Scroll down"
+- "Scroll up"
+- "Back"
+- "Home"
+- "Read screen"
+- "Stop listening"
+
+UI labels must be visible and uniquely exposed by the target app's Android accessibility tree. Some apps deliberately expose little or no UI information.
+
+### Explicit safety boundaries
+
+- No automatic Send, Submit, Delete, Remove, Purchase, Payment, Transfer, Confirm, permission-grant or uninstall actions.
+- Password, PIN, OTP and verification fields are not read or filled by the engine.
+- Numeric strings that could be PINs or one-time codes are not automatically entered.
+- Text entry requires the user to focus the field first. The engine never presses Send or Submit after typing.
+- No arbitrary screen-coordinate tapping or hidden action chains.
+- Screen content is summarized locally only after the spoken "read screen" command; it is not saved or uploaded.
+- Stop hands-free listening by saying "stop listening" or pressing Stop in the persistent notification.
 
 ## Build
 
 1. Open the android directory in Android Studio.
 2. Install Android SDK Platform 36 and use JDK 17.
-3. Sync the Gradle project.
-4. Build the app debug variant and install it on the tablet.
+3. Sync Gradle and build the app debug variant.
+4. The GitHub Actions Android job also runs assembleDebug using Gradle 8.13.
 
-The project pins Android Gradle Plugin 8.13.2, Gradle 8.13 and Kotlin Gradle Plugin 2.4.21. This source branch includes the Gradle wrapper distribution properties but does not include the wrapper launcher scripts or wrapper JAR. For command-line builds, install Gradle 8.13 and run the Gradle wrapper task from the android directory to generate the standard wrapper files; alternatively, configure Android Studio to use a local Gradle 8.13 installation.
+The project pins Android Gradle Plugin 8.13.2, Gradle 8.13 and Kotlin Gradle Plugin 2.4.21. The source branch includes Gradle wrapper distribution properties but not the wrapper launcher scripts or JAR; Android Studio or the GitHub Actions job can use the configured Gradle distribution.
 
 ## Pairing
 
@@ -33,19 +64,27 @@ The project pins Android Gradle Plugin 8.13.2, Gradle 8.13 and Kotlin Gradle Plu
 
 Use the dashboard Revoke button to invalidate a paired device. Removing the credential only from the tablet does not revoke it on the server.
 
-## Voice
+## Enable screen control
 
-Tap Speak to JARVIS and speak a Hindi command. Android's configured speech-recognition provider processes the recording; provider availability and privacy behaviour depend on the device's Android configuration. JARVIS then receives only the recognized text over HTTPS. In this phase, responses come from the existing built-in offline rules, not a hosted LLM.
+1. Open JARVIS Companion.
+2. Review the screen-access disclosure.
+3. Open Android Accessibility settings and manually enable "JARVIS screen assistant".
+4. Return to JARVIS Companion and press Start hands-free control.
+5. Grant microphone and notification permissions. Start the service while the app is visible; Android restricts starting microphone foreground services from the background.
+6. Open another app and speak one of the supported commands.
+7. Stop the session using the ongoing notification or the spoken "stop listening" command.
 
-## Accessibility
+The AccessibilityService is a powerful permission. Enable it only after reviewing the disclosure, and turn it off from Android settings whenever you do not need it. Android documents AccessibilityService for assisting users with disabilities; distribution through an app store may be subject to additional policy review.
 
-Accessibility is optional in Phase 1. Use the settings button to open Android Accessibility settings and enable the clearly named JARVIS app-change observer only after reviewing its description. The service does not inspect screen contents or execute actions yet.
+## Voice and privacy
 
-## Security notes
+Android's configured speech-recognition provider processes the microphone audio. The app prefers Android's on-device recognition provider when it is available; otherwise the configured system recognition provider may process audio according to its own privacy settings. JARVIS receives recognized text, not raw microphone audio. For general chat, recognized text is sent to the existing JARVIS server over HTTPS.
+
+## Security
 
 - HTTPS is mandatory; cleartext HTTP is rejected.
 - The companion never receives the dashboard password or browser session cookie.
 - Device access uses a revocable per-device bearer token.
 - The server stores only the token hash.
-- Do not share pairing codes; they expire quickly and can only be used once.
-- Sensitive actions, payment flows, passwords and OTPs are not automated by this Phase 1 build.
+- Pairing codes expire after three minutes and can be used once.
+- Consequential actions and sensitive fields remain manual.
