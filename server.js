@@ -229,13 +229,15 @@ async function generateAssistantAnswer(message, history = []) {
 
 app.get("/api/health", (_req, res) => {
   const conversationAIEnabled = isConversationAIEnabled();
+  const plannerAIEnabled = Boolean(process.env.GEMINI_API_KEY);
   res.json({
     ok: true,
     service: "jarvis",
     version: "0.3.0-phase4",
     brain: conversationAIEnabled ? "gemini-conversation-with-offline-fallback" : "built-in-offline-rules",
+    plannerAIEnabled,
     conversationAIEnabled,
-    externalAI: conversationAIEnabled
+    externalAI: plannerAIEnabled || conversationAIEnabled
   });
 });
 
