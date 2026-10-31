@@ -46,7 +46,8 @@ before(async () => {
       JARVIS_PASSWORD: "test-only-password-2026",
       JARVIS_DATA_DIR: tempDir,
       DATABASE_URL: "",
-      GEMINI_API_KEY: ""
+      GEMINI_API_KEY: "",
+      GEMINI_CHAT_ENABLED: "false"
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -151,6 +152,7 @@ test("paired Android devices can authenticate, use voice chat, and be revoked", 
   const voicePayload = await voice.json();
   assert.match(voicePayload.answer, /4/);
   assert.equal(voicePayload.externalAI, false);
+  assert.equal(voicePayload.engine, "built-in-offline");
 
   const revoke = await request("/api/devices/" + encodeURIComponent(paired.device.id), { method: "DELETE" });
   assert.equal(revoke.status, 200);
