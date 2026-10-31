@@ -458,6 +458,8 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.ok(Array.isArray(exportPayload.data.research));
   assert.ok(Array.isArray(exportPayload.data.tasks));
   assert.ok(Array.isArray(exportPayload.data.skills));
+  assert.ok(Array.isArray(exportPayload.data.feedback));
+  assert.ok(Array.isArray(exportPayload.data.experiencePreferences));
   assert.equal(Object.hasOwn(exportPayload.data, "chats"), false);
   assert.equal(Object.hasOwn(exportPayload.data, "devices"), false);
   assert.ok(exportPayload.excluded.includes("temporary conversation history"));
@@ -467,6 +469,9 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(persistedState.includes("What is 2 + 2?"), false);
   assert.equal(persistedState.includes("Remember that I prefer short Hinglish explanations."), false);
   assert.equal(persistedState.includes("Explain this simply"), false);
+  assert.equal(persistedState.includes("This user prompt must never be persisted as feedback."), false);
+  assert.equal(persistedState.includes("Legacy clients may send a note"), false);
+  assert.equal(persistedState.includes("Explain the main idea first, then show one small worked example."), false);
   assert.equal(persistedState.includes("do-not-save"), false);
 
   const clearChat = await request("/api/chat/history", { method: "DELETE" });
