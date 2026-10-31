@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 const MAX_CONTENT = 500;
 const MAX_MEMORIES = 200;
 const VALID_CATEGORIES = new Set(["preference", "goal", "fact"]);
-const SENSITIVE_MEMORY_PATTERN = /\b(password|passcode|pin|otp|one[- ]time code|api[_ -]?key|secret|access[_ -]?token|private key|bank account|card number|medical|health|diagnos(?:is|ed)|medicine|medication|home address|exact address|phone number|email address)\b/i;
+const SENSITIVE_MEMORY_PATTERN = /(?:\b|_)(password|passcode|pin|otp|one[- ]time code|api[_ -]?key|secret|access[_ -]?token|private key|bank account|card number|medical|health|diagnos(?:is|ed)|medicine|medication|home address|exact address|phone number|email address)\b/i;
 const GOOGLE_API_KEY = /\bAIza[0-9A-Za-z_-]{30,}\b/;
 const LONG_BEARER = /\bBearer\s+[A-Za-z0-9._~+/-]{24,}/i;
 
