@@ -101,6 +101,8 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(blockedKnowledge.status, 401);
   const blockedMemories = await request("/api/memories", { headers: {} });
   assert.equal(blockedMemories.status, 401);
+  const blockedSkills = await request("/api/skills", { headers: {} });
+  assert.equal(blockedSkills.status, 401);
   const blockedExport = await request("/api/export", { headers: {} });
   assert.equal(blockedExport.status, 401);
   const blockedResearch = await request("/api/research", {
@@ -276,11 +278,83 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
 
   const createSkill = await request("/api/skills", {
     method: "POST",
-    body: JSON.stringify({ name: "Simple Hinglish", instructions: "Explain in simple Hinglish and use one example." })
+    body: JSON.stringify({
+      name: "Simple Hinglish",
+      instructions: "Explain matching questions in simple Hinglish, show the key steps, and check the result.",
+      triggers: ["explain in simple Hinglish", "simple Hinglish question"],
+      testCases: [
+        { input: "Please explain in simple Hinglish", shouldMatch: true },
+        { input: "What is the weather?", shouldMatch: false }
+      ]
+    })
   });
   assert.equal(createSkill.status, 201);
   const skillPayload = await createSkill.json();
   assert.equal(skillPayload.skill.name, "Simple Hinglish");
+  assert.equal(skillPayload.skill.status, "draft");
+  assert.equal(skillPayload.skill.activeVersion, null);
+
+  const validateSkill = await request("/api/skills/" + skillPayload.skill.id + "/validate", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(validateSkill.status, 200);
+  assert.equal((await validateSkill.json()).validation.passed, true);
+
+  const approveSkill = await request("/api/skills/" + skillPayload.skill.id + "/approve", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(approveSkill.status, 200);
+  const approvedSkill = await approveSkill.json();
+  assert.equal(approvedSkill.skill.status, "active");
+  assert.equal(approvedSkill.skill.activeVersion, 1);
+
+  const skillContextMatched = await request("/api/skills");
+  assert.equal(skillContextMatched.status, 200);
+  assert.ok((await skillContextMatched.json()).skills.some((item) => item.id === skillPayload.skill.id));
+
+  const updateSkill = await request("/api/skills/" + skillPayload.skill.id, {
+    method: "PATCH",
+    body: JSON.stringify({
+      name: "Simple Hinglish Plus",
+      instructions: "Explain matching questions in simple Hinglish, show each step, check units, and verify the result.",
+      triggers: ["explain in simple Hinglish", "simple Hinglish question", "check units"],
+      testCases: [
+        { input: "Please explain in simple Hinglish", shouldMatch: true },
+        { input: "What is the weather?", shouldMatch: false }
+      ]
+    })
+  });
+  assert.equal(updateSkill.status, 200);
+  const updatedSkill = await updateSkill.json();
+  assert.equal(updatedSkill.skill.currentVersion, 2);
+  assert.equal(updatedSkill.skill.activeVersion, 1);
+  assert.equal(updatedSkill.skill.status, "update-pending");
+
+  const untestedApprove = await request("/api/skills/" + skillPayload.skill.id + "/approve", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(untestedApprove.status, 409);
+
+  const validateUpdatedSkill = await request("/api/skills/" + skillPayload.skill.id + "/validate", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal((await validateUpdatedSkill.json()).validation.passed, true);
+
+  const approveUpdatedSkill = await request("/api/skills/" + skillPayload.skill.id + "/approve", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(approveUpdatedSkill.status, 200);
+  assert.equal((await approveUpdatedSkill.json()).skill.activeVersion, 2);
+
+  const versions = await request("/api/skills/" + skillPayload.skill.id + "/versions");
+  assert.equal(versions.status, 200);
+  assert.equal((await versions.json()).versions.length, 2);
+
+  const pausedSkill = await request("/api/skills/" + skillPayload.skill.id + "/pause", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(pausedSkill.status, 200);
+  assert.equal((await pausedSkill.json()).skill.status, "paused");
 
   const learningState = await request("/api/state");
   const learningSnapshot = await learningState.json();

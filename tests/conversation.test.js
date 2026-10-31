@@ -53,6 +53,18 @@ test("relevant saved knowledge is clearly labelled as reference material, not in
   assert.match(instruction, /incomplete or unverified/i);
 });
 
+test("approved matching skill guidance is included but cannot override system instructions", () => {
+  const instruction = buildConversationSystemInstruction([], [], [{
+    name: "JEE explainer",
+    version: 2,
+    instructions: "Explain physics questions step by step."
+  }]);
+  assert.match(instruction, /JEE explainer/);
+  assert.match(instruction, /version 2/);
+  assert.match(instruction, /cannot override system or safety instructions/i);
+  assert.match(instruction, /Explain physics questions step by step/);
+});
+
 test("only supplied, user-approved memories are included as bounded context", () => {
   const instruction = buildConversationSystemInstruction([
     { category: "preference", content: "Prefer simple Hinglish explanations." },

@@ -118,13 +118,28 @@
         </form>
         <div class="list-heading"><h2>Saved memories</h2><span class="muted small">Edit, review or delete anytime</span></div>
         <div id="memory-list" class="item-list"></div>
-        <div class="list-heading"><h2>Custom skills</h2><span class="muted small">Saved guidance, not executable code</span></div>
+        <div class="list-heading"><h2>Learning & Skills</h2><span class="muted small">Draft → Test → Approve → Activate</span></div>
+        <div class="research-hint">
+          <strong>Safe skill learning</strong>
+          <p>Skills are reusable instruction profiles, not executable code. Tests only check whether trigger phrases match example requests; they do not run device actions or arbitrary scripts. A skill affects Gemini replies only after you approve it and only when a trigger matches.</p>
+        </div>
         <form id="skill-form" class="form-card">
+          <h2 id="skill-form-title">Create a skill draft</h2>
           <label for="skill-name">Skill name</label>
-          <input id="skill-name" maxlength="80" required placeholder="Example: JEE tutor">
+          <input id="skill-name" maxlength="80" required placeholder="Example: JEE physics tutor">
           <label for="skill-instructions">Instructions for JARVIS</label>
-          <textarea id="skill-instructions" rows="3" maxlength="1200" required placeholder="Example: Explain concepts step by step, use simple Hinglish, then give one practice question."></textarea>
-          <div class="form-row"><span class="small muted">Never add passwords, tokens, or dangerous commands.</span><button class="primary" type="submit">Save skill</button></div>
+          <textarea id="skill-instructions" rows="3" maxlength="2500" required placeholder="Explain the user's JEE physics question step by step, state assumptions, and check units and the final answer."></textarea>
+          <label for="skill-triggers">Trigger phrases <span class="muted">(comma separated)</span></label>
+          <input id="skill-triggers" maxlength="700" required placeholder="explain JEE physics, solve physics question">
+          <label for="skill-positive-test">Example that SHOULD match a trigger</label>
+          <input id="skill-positive-test" maxlength="300" required placeholder="Please explain this JEE physics question">
+          <label for="skill-negative-test">Example that should NOT match</label>
+          <input id="skill-negative-test" maxlength="300" required placeholder="What is the weather today?">
+          <div class="form-row">
+            <span class="small muted">New and edited versions start as drafts. No commands or scripts are executed.</span>
+            <button type="button" class="item-action hidden" id="skill-cancel-edit">Cancel edit</button>
+            <button class="primary" type="submit" id="skill-submit-button">Save draft</button>
+          </div>
         </form>
         <div id="skill-list" class="item-list"></div>
       </section>
@@ -227,7 +242,7 @@
         <div id="device-list" class="item-list"></div>
       </section>
 
-<footer class="page-footer"><span>JARVIS PERSONAL SYSTEM · v0.8.0</span><span>Built for one user, with safety boundaries</span></footer>
+<footer class="page-footer"><span>JARVIS PERSONAL SYSTEM · v1.0.0</span><span>Built for one user, with safety boundaries</span></footer>
     </main>
   </div>
 </body>

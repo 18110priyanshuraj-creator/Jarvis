@@ -15,6 +15,7 @@ import { createGroundedResearch, isWebResearchEnabled, normalizeSavedResearch, s
 import { getGeminiRuntimeStatus } from "./services/gemini-client.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, searchMemories } from "./services/memory.js";
+import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeSkill, pauseSkill, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -100,7 +101,11 @@ function normalizeStore(parsed = {}) {
           createdAt: typeof item?.createdAt === "string" ? item.createdAt : ""
         })).filter((item) => item.rating)
       : [],
-    skills: Array.isArray(parsed.skills) ? parsed.skills.slice(-100) : [],
+    skills: Array.isArray(parsed.skills)
+      ? parsed.skills.slice(-SKILL_LIMITS.skills).flatMap((item) => {
+          try { return [normalizeSkill(item)]; } catch { return []; }
+        })
+      : [],
     devices: Array.isArray(parsed.devices) ? parsed.devices.slice(-50) : [],
     research: Array.isArray(parsed.research) ? parsed.research.slice(-50) : [],
     knowledge: Array.isArray(parsed.knowledge)
@@ -348,7 +353,8 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
     try {
       const knowledgeContext = buildKnowledgeContext(store.knowledge, message, 3);
       const approvedMemoryContext = buildMemoryContext(memories, message, 5);
-      const answer = await createConversationReply(message, history, approvedMemoryContext, knowledgeContext);
+      const activeSkillContext = getActiveSkillContext(store.skills, message, 3);
+      const answer = await createConversationReply(message, history, approvedMemoryContext, knowledgeContext, activeSkillContext);
       return {
         answer: webNotice ? webNotice + "\n\n" + answer : answer,
         engine: "gemini-conversation",
@@ -364,7 +370,7 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
     message,
     memories: store.memories,
     tasks: store.tasks,
-    skills: store.skills,
+    skills: getActiveSkillContext(store.skills, message, 3),
     feedback: store.feedback,
     knowledge: buildKnowledgeContext(store.knowledge, message, 3)
   });
@@ -384,7 +390,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     service: "jarvis",
-    version: "0.8.0-memory-storage",
+    version: "1.0.0-skill-learning",
     brain: conversationAIEnabled ? "gemini-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
@@ -561,15 +567,82 @@ app.delete("/api/feedback/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/api/skills", requireAuth, (_req, res) => {
+  res.json({ skills: store.skills, total: store.skills.length });
+});
+
+app.get("/api/skills/:id/versions", requireAuth, (req, res) => {
+  const skill = store.skills.find((item) => item.id === req.params.id);
+  if (!skill) return res.status(404).json({ error: "Skill not found." });
+  res.json({
+    id: skill.id,
+    currentVersion: skill.currentVersion,
+    activeVersion: skill.activeVersion,
+    versions: skill.versions
+  });
+});
+
 app.post("/api/skills", requireAuth, async (req, res) => {
-  const name = cleanText(req.body?.name, 80);
-  const instructions = cleanText(req.body?.instructions, 1200);
-  if (!name || !instructions) return res.status(400).json({ error: "Skill name and instructions are required." });
-  if (store.skills.length >= 100) return res.status(409).json({ error: "Skill limit reached. Remove an old skill first." });
-  const skill = { id: newId(), name, instructions, createdAt: new Date().toISOString() };
+  let skill;
+  try {
+    skill = createSkillCandidate(req.body);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Skill candidate is invalid." });
+  }
+  if (store.skills.length >= SKILL_LIMITS.skills) {
+    return res.status(409).json({ error: "Skill limit reached. Remove an old skill first." });
+  }
+  const duplicate = store.skills.find((item) => item.name.toLocaleLowerCase() === skill.name.toLocaleLowerCase());
+  if (duplicate) return res.status(409).json({ error: "A skill with this name already exists. Edit the existing skill to create a new version." });
   store.skills.push(skill);
   await saveStore();
   res.status(201).json({ skill });
+});
+
+app.patch("/api/skills/:id", requireAuth, async (req, res) => {
+  const existing = store.skills.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Skill not found." });
+  let updated;
+  try {
+    updated = createSkillVersion(existing, req.body);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Skill version is invalid." });
+  }
+  store.skills = store.skills.map((item) => item.id === existing.id ? updated : item);
+  await saveStore();
+  res.json({ skill: updated });
+});
+
+app.post("/api/skills/:id/validate", requireAuth, async (req, res) => {
+  const existing = store.skills.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Skill not found." });
+  const result = validateSkill(existing);
+  store.skills = store.skills.map((item) => item.id === existing.id ? result.skill : item);
+  await saveStore();
+  res.json({ skill: result.skill, validation: result.validation });
+});
+
+app.post("/api/skills/:id/approve", requireAuth, async (req, res) => {
+  const existing = store.skills.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Skill not found." });
+  let approved;
+  try {
+    approved = approveSkill(existing);
+  } catch (error) {
+    return res.status(409).json({ error: error.message || "Skill cannot be approved." });
+  }
+  store.skills = store.skills.map((item) => item.id === existing.id ? approved : item);
+  await saveStore();
+  res.json({ skill: approved });
+});
+
+app.post("/api/skills/:id/pause", requireAuth, async (req, res) => {
+  const existing = store.skills.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Skill not found." });
+  const paused = pauseSkill(existing);
+  store.skills = store.skills.map((item) => item.id === existing.id ? paused : item);
+  await saveStore();
+  res.json({ skill: paused });
 });
 
 app.delete("/api/skills/:id", requireAuth, async (req, res) => {
