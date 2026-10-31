@@ -265,7 +265,7 @@ function renderMemories() {
       cancel.type = "button";
       cancel.className = "item-action";
       cancel.textContent = "Cancel";
-      cancel.addEventListener("click", () => editor.remove());
+      cancel.addEventListener("click", () => row.replaceChildren(main, actions));
       controls.append(cancel, save);
       editor.append(contentLabel, categoryLabel, controls);
       row.replaceChildren(main, editor);
@@ -364,6 +364,7 @@ function renderSkills() {
     row.append(main, del);
     target.append(row);
   }
+  renderStorageOverview();
 }
 
 function renderTasks() {
@@ -423,6 +424,7 @@ function renderTasks() {
     row.append(check, main, del);
     target.append(row);
   }
+  renderStorageOverview();
 }
 
 $("#login-form").addEventListener("submit", async (event) => {
@@ -443,7 +445,13 @@ $("#logout-button").addEventListener("click", async () => {
   try { await api("/api/logout", { method: "POST", body: JSON.stringify({}) }); } catch { /* always return to sign-in */ }
   state.chats = [];
   state.memories = [];
+  state.memoryTotal = 0;
+  state.knowledge = [];
+  state.knowledgeTotal = 0;
+  state.research = [];
+  state.skills = [];
   state.tasks = [];
+  renderStorageOverview();
   showLogin();
   toast("Signed out.");
 });
@@ -951,6 +959,7 @@ function renderSavedResearch() {
   target.replaceChildren();
   if (!state.research.length) {
     target.append(makeEmpty("Nothing saved yet. Live research is never saved automatically."));
+    renderStorageOverview();
     return;
   }
 
@@ -996,6 +1005,7 @@ function renderSavedResearch() {
     row.append(main, actions);
     target.append(row);
   }
+  renderStorageOverview();
 }
 
 $("#search-form").addEventListener("submit", async (event) => {
