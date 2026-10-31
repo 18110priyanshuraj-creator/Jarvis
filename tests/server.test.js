@@ -99,6 +99,10 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(blockedState.status, 401);
   const blockedKnowledge = await request("/api/knowledge", { headers: {} });
   assert.equal(blockedKnowledge.status, 401);
+  const blockedMemories = await request("/api/memories", { headers: {} });
+  assert.equal(blockedMemories.status, 401);
+  const blockedExport = await request("/api/export", { headers: {} });
+  assert.equal(blockedExport.status, 401);
   const blockedResearch = await request("/api/research", {
     method: "POST",
     headers: {},
@@ -152,6 +156,31 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   });
   assert.equal(createMemory.status, 201);
   const memoryPayload = await createMemory.json();
+  assert.equal(memoryPayload.memory.category, "preference");
+  assert.equal(typeof memoryPayload.memory.contentHash, "string");
+
+  const duplicateMemory = await request("/api/memories", {
+    method: "POST",
+    body: JSON.stringify({ content: " prefer   step-by-step explanations ", category: "preference" })
+  });
+  assert.equal(duplicateMemory.status, 200);
+  assert.equal((await duplicateMemory.json()).duplicate, true);
+
+  const updateMemory = await request("/api/memories/" + memoryPayload.memory.id, {
+    method: "PATCH",
+    body: JSON.stringify({ content: "My goal is to practise algebra daily", category: "goal" })
+  });
+  assert.equal(updateMemory.status, 200);
+  const updatedMemoryPayload = await updateMemory.json();
+  assert.equal(updatedMemoryPayload.memory.category, "goal");
+  assert.equal(updatedMemoryPayload.memory.content, "My goal is to practise algebra daily");
+  assert.ok(updatedMemoryPayload.memory.updatedAt);
+
+  const searchMemory = await request("/api/memories?q=algebra&category=goal");
+  assert.equal(searchMemory.status, 200);
+  const searchMemoryPayload = await searchMemory.json();
+  assert.equal(searchMemoryPayload.count, 1);
+  assert.equal(searchMemoryPayload.items[0].id, memoryPayload.memory.id);
 
   const savedResearch = await request("/api/research/saved", {
     method: "POST",
@@ -301,6 +330,22 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   const sessionSnapshot = await sessionState.json();
   assert.ok(sessionSnapshot.chats.some((item) => item.content === "What is 2 + 2?"));
   assert.ok(sessionSnapshot.memories.some((item) => item.content === "I prefer short Hinglish explanations"));
+
+  const exportResponse = await request("/api/export");
+  assert.equal(exportResponse.status, 200);
+  assert.match(exportResponse.headers.get("content-disposition") || "", /jarvis-personal-data\.json/i);
+  assert.equal(exportResponse.headers.get("cache-control"), "no-store");
+  const exportPayload = await exportResponse.json();
+  assert.equal(exportPayload.format, "jarvis-personal-data");
+  assert.ok(exportPayload.data.memories.some((item) => item.content === "I prefer short Hinglish explanations"));
+  assert.ok(Array.isArray(exportPayload.data.knowledge));
+  assert.ok(Array.isArray(exportPayload.data.research));
+  assert.ok(Array.isArray(exportPayload.data.tasks));
+  assert.ok(Array.isArray(exportPayload.data.skills));
+  assert.equal(Object.hasOwn(exportPayload.data, "chats"), false);
+  assert.equal(Object.hasOwn(exportPayload.data, "devices"), false);
+  assert.ok(exportPayload.excluded.includes("temporary conversation history"));
+  assert.equal(JSON.stringify(exportPayload).includes("test-only-password-2026"), false);
 
   const persistedState = await fs.readFile(path.join(tempDir, "state.json"), "utf8");
   assert.equal(persistedState.includes("What is 2 + 2?"), false);
