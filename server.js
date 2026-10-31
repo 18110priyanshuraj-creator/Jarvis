@@ -10,6 +10,7 @@ import { runLocalBrain, searchLocalKnowledge } from "./brain.js";
 import { fileURLToPath } from "node:url";
 import { createDevicesRouter } from "./routes/devices.js";
 import { createAgentPlan } from "./services/agent-planner.js";
+import { createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -201,8 +202,41 @@ function cleanText(value, maxLength) {
   return value.trim().slice(0, maxLength);
 }
 
+async function generateAssistantAnswer(message, history = []) {
+  const conversationAIEnabled = isConversationAIEnabled();
+  if (conversationAIEnabled) {
+    try {
+      const answer = await createConversationReply(message, history);
+      return { answer, engine: "gemini-conversation", externalAI: true };
+    } catch (error) {
+      console.error("Gemini conversation failed; using the offline brain:", error?.name || "Error");
+    }
+  }
+
+  const answer = runLocalBrain({
+    message,
+    memories: store.memories,
+    tasks: store.tasks,
+    skills: store.skills,
+    feedback: store.feedback
+  });
+  return {
+    answer,
+    engine: conversationAIEnabled ? "built-in-offline-fallback" : "built-in-offline",
+    externalAI: false
+  };
+}
+
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, service: "jarvis", version: "0.2.0", brain: "built-in-offline-rules", externalAI: false });
+  const conversationAIEnabled = isConversationAIEnabled();
+  res.json({
+    ok: true,
+    service: "jarvis",
+    version: "0.3.0-phase4",
+    brain: conversationAIEnabled ? "gemini-conversation-with-offline-fallback" : "built-in-offline-rules",
+    conversationAIEnabled,
+    externalAI: conversationAIEnabled
+  });
 });
 
 app.post("/api/login", loginLimiter, (req, res) => {
@@ -243,30 +277,29 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   const message = cleanText(req.body?.message, 4000);
   if (!message) return res.status(400).json({ error: "Enter a message first." });
 
+  const history = store.chats.slice(-8).map(({ role, content }) => ({ role, content }));
   store.chats.push({ id: newId(), role: "user", content: message, createdAt: new Date().toISOString() });
   store.chats = store.chats.slice(-100);
   await saveStore();
 
-  // The built-in brain is deterministic and self-contained: no model server,
-  // external inference URL, API key, or outbound network request is used here.
-  let answer;
+  let result;
   try {
-    answer = runLocalBrain({
-      message,
-      memories: store.memories,
-      tasks: store.tasks,
-      skills: store.skills,
-      feedback: store.feedback
-    });
+    result = await generateAssistantAnswer(message, history);
   } catch (error) {
-    console.error("Built-in brain failed:", error?.name || "Error");
-    return res.status(500).json({ error: "The built-in offline brain encountered an internal error." });
+    console.error("Assistant reply failed:", error?.name || "Error");
+    return res.status(500).json({ error: "Both the configured conversation model and built-in offline brain failed." });
   }
 
-  store.chats.push({ id: newId(), role: "assistant", content: answer, createdAt: new Date().toISOString() });
+  store.chats.push({
+    id: newId(),
+    role: "assistant",
+    content: result.answer,
+    engine: result.engine,
+    createdAt: new Date().toISOString()
+  });
   store.chats = store.chats.slice(-100);
   await saveStore();
-  res.json({ answer, engine: "built-in-offline", externalAI: false });
+  res.json(result);
 });
 
 app.post("/api/memories", requireAuth, async (req, res) => {
@@ -370,23 +403,29 @@ app.get("/api/search", requireAuth, (req, res) => {
 
 
 async function runDeviceVoiceCommand(message) {
-  const createdAt = new Date().toISOString();
-  store.chats.push({ id: newId(), role: "user", content: message, createdAt });
+  const history = store.chats.slice(-8).map(({ role, content }) => ({ role, content }));
+  store.chats.push({ id: newId(), role: "user", content: message, createdAt: new Date().toISOString() });
   store.chats = store.chats.slice(-100);
   await saveStore();
 
-  let answer;
+  let result;
   try {
-    answer = runLocalBrain({ message, memories: store.memories, tasks: store.tasks, skills: store.skills, feedback: store.feedback });
+    result = await generateAssistantAnswer(message, history);
   } catch (error) {
     console.error("Device voice command failed:", error?.name || "Error");
-    throw new Error("The built-in offline assistant could not process this voice command.");
+    throw new Error("The JARVIS assistant could not process this voice request.");
   }
 
-  store.chats.push({ id: newId(), role: "assistant", content: answer, createdAt: new Date().toISOString() });
+  store.chats.push({
+    id: newId(),
+    role: "assistant",
+    content: result.answer,
+    engine: result.engine,
+    createdAt: new Date().toISOString()
+  });
   store.chats = store.chats.slice(-100);
   await saveStore();
-  return answer;
+  return result;
 }
 
 app.use("/api/devices", createDevicesRouter({ getStore: () => store, saveStore, requireAuth, runDeviceVoiceCommand, createAgentPlan }));
