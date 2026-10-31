@@ -39,6 +39,7 @@ class MainActivity : Activity() {
     private var textToSpeech: TextToSpeech? = null
     private var pendingVoicePermission = false
     private var pendingHandsFreeStart = false
+    private var pendingVoiceOnlyStart = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -301,6 +302,7 @@ class MainActivity : Activity() {
 
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             pendingHandsFreeStart = true
+            pendingVoiceOnlyStart = allowVoiceOnly
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_HANDS_FREE_PERMISSIONS)
             return
         }
@@ -403,8 +405,10 @@ class MainActivity : Activity() {
             }
         } else if (requestCode == REQUEST_HANDS_FREE_PERMISSIONS) {
             val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+            val voiceOnly = pendingVoiceOnlyStart
             pendingHandsFreeStart = false
-            if (granted) startHandsFreeControl()
+            pendingVoiceOnlyStart = false
+            if (granted) startHandsFreeControl(allowVoiceOnly = voiceOnly)
             else refreshStatus("Microphone permission is required for voice control.")
         } else if (requestCode == REQUEST_NOTIFICATIONS) {
             refreshPermissionChecklist()
