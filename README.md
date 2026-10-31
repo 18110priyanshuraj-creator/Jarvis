@@ -43,6 +43,25 @@ GEMINI_WEB_RESEARCH_ENABLED=true
 - The public `/api/health` endpoint reports only safe provider readiness metadata (configured state, model identifier and retry settings); it never returns the API key.
 - Google Search grounding may have usage limits or costs under the provider's current billing terms. Review the current terms before enabling paid billing.
 
+## Knowledge Library (Phase 2)
+
+- The Knowledge screen is separate from personal Memory, ordinary temporary chat, and the Saved Research history.
+- Add a note manually or choose **Save to Knowledge** on a web research result. Internet results are never stored automatically.
+- Each saved item keeps its title, content, category, tags, source links, available claim-level citations, and review status.
+- Web-research entries start as **unreviewed**. You can mark them as reviewed after checking the source links; this records your action and does not mean JARVIS independently verified every claim.
+- JARVIS detects exact normalized title/content duplicates, supports local keyword search, and retrieves a small number of relevant entries as reference context for Gemini or the offline fallback.
+- Saved web content is treated as untrusted reference material. It must not override system instructions or be treated as proof by itself.
+- This is retrieval-augmented context, not model training, automatic web crawling, or permanent learning of model weights.
+
+The current implementation stores text knowledge records in the existing jarvis_app_state JSONB snapshot (or local JSON state when Neon is not configured). It currently allows up to 300 entries, with an 8,000-character content limit per entry. This is **not** a 200 GB document/media storage system: PDFs, images, videos, embeddings, and large binary files are not uploaded or archived by this phase. A separate object-storage and document-ingestion phase would be needed for those.
+
+### Knowledge API
+
+- GET /api/knowledge?q=<query> — list or search the authenticated Knowledge Library.
+- POST /api/knowledge — add a user-authored note or explicitly saved research item.
+- PATCH /api/knowledge/:id — mark a saved web-research item as reviewed by the user.
+- DELETE /api/knowledge/:id — delete a saved knowledge item.
+
 ## Persistent data
 
 Neon PostgreSQL is used when `DATABASE_URL` is configured. Otherwise, local development uses the JSON state file. Chat transcripts are deliberately excluded from both persistent stores. Memories, tasks, feedback ratings, devices and manually saved research use the persistent app state.
