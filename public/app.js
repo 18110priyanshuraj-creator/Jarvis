@@ -790,6 +790,358 @@ function renderExperience(summary = null) {
   }
 }
 
+
+function workflowStepLabel(type) {
+  return ({
+    create_task: "Create local task",
+    save_memory: "Save personal memory",
+    search_knowledge: "Search saved Knowledge",
+    draft_text: "Prepare text draft",
+    review_checkpoint: "Pause for review"
+  })[type] || "Workflow step";
+}
+
+function workflowStepDetail(step) {
+  if (step.type === "create_task") return step.description || "Create a task in the Tasks section.";
+  if (step.type === "save_memory") return "[" + step.category + "] " + step.content;
+  if (step.type === "search_knowledge") return "Search: " + step.query;
+  if (step.type === "draft_text") return step.content;
+  return step.message || "Wait for your review before continuing.";
+}
+
+function renderWorkflowBuilderSteps() {
+  const target = $("#workflow-builder-steps");
+  if (!target) return;
+  target.replaceChildren();
+  $("#workflow-step-count").textContent = state.workflowSteps.length + " / 10";
+  if (!state.workflowSteps.length) {
+    target.append(makeEmpty("No steps added yet. Add at least one step to create a workflow."));
+    return;
+  }
+  state.workflowSteps.forEach((step, index) => {
+    const row = document.createElement("article");
+    row.className = "list-item workflow-step-preview";
+    const main = document.createElement("div");
+    main.className = "list-item-main";
+    const title = document.createElement("strong");
+    title.textContent = (index + 1) + ". " + step.title;
+    const type = document.createElement("div");
+    type.className = "list-item-meta";
+    type.textContent = workflowStepLabel(step.type);
+    const detail = document.createElement("p");
+    detail.textContent = workflowStepDetail(step);
+    main.append(title, type, detail);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "item-action";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => {
+      state.workflowSteps.splice(index, 1);
+      renderWorkflowBuilderSteps();
+    });
+    row.append(main, remove);
+    target.append(row);
+  });
+}
+
+async function refreshWorkflows() {
+  const data = await api("/api/workflows");
+  state.workflows = data.workflows || [];
+  state.workflowRuns = data.runs || [];
+  renderWorkflows();
+}
+
+function renderWorkflows() {
+  renderWorkflowBuilderSteps();
+  const target = $("#workflow-list");
+  const runsTarget = $("#workflow-runs");
+  if (!target || !runsTarget) return;
+  target.replaceChildren();
+  runsTarget.replaceChildren();
+
+  if (!state.workflows.length) {
+    target.append(makeEmpty("No workflows saved yet. Build a local workflow above, validate it, then approve it before running."));
+  } else {
+    for (const workflow of state.workflows) {
+      const row = document.createElement("article");
+      row.className = "list-item workflow-item";
+      const main = document.createElement("div");
+      main.className = "list-item-main";
+      const title = document.createElement("strong");
+      title.textContent = workflow.name;
+      const status = document.createElement("span");
+      status.className = "workflow-status workflow-status-" + workflow.status;
+      status.textContent = workflow.status;
+      const meta = document.createElement("div");
+      meta.className = "list-item-meta";
+      meta.textContent = "Version " + workflow.version + " · " + workflow.steps.length + " step(s) · Created " + new Date(workflow.createdAt).toLocaleDateString();
+      const description = document.createElement("p");
+      description.textContent = workflow.description || "No description";
+      const stepList = document.createElement("ol");
+      stepList.className = "workflow-step-list";
+      for (const step of workflow.steps) {
+        const item = document.createElement("li");
+        item.textContent = step.title + " · " + workflowStepLabel(step.type);
+        stepList.append(item);
+      }
+      main.append(title, status, meta, description, stepList);
+      if (workflow.validation) {
+        const validation = document.createElement("div");
+        validation.className = "list-item-meta";
+        validation.textContent = "Latest validation: " + (workflow.validation.passed ? "Passed" : "Failed") +
+          " · " + workflow.validation.checks.filter((item) => item.passed).length + "/" + workflow.validation.checks.length + " checks";
+        main.append(validation);
+      }
+
+      const activeRun = state.workflowRuns.find((run) =>
+        run.workflowId === workflow.id && ["running", "waiting_review"].includes(run.status)
+      );
+      const actions = document.createElement("div");
+      actions.className = "workflow-actions";
+
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "item-action";
+      edit.textContent = "Edit / new version";
+      edit.disabled = Boolean(activeRun);
+      edit.addEventListener("click", () => {
+        state.editingWorkflowId = workflow.id;
+        state.workflowSteps = workflow.steps.map((step) => ({ ...step }));
+        $("#workflow-name").value = workflow.name;
+        $("#workflow-description").value = workflow.description || "";
+        $("#workflow-form-title").textContent = "Create a new workflow version";
+        $("#workflow-save-button").textContent = "Save new draft version";
+        $("#workflow-cancel-edit").classList.remove("hidden");
+        renderWorkflowBuilderSteps();
+        $("#workflow-form").scrollIntoView({ behavior: "smooth", block: "start" });
+        $("#workflow-name").focus();
+      });
+
+      const validate = document.createElement("button");
+      validate.type = "button";
+      validate.className = "item-action";
+      validate.textContent = "Validate";
+      validate.disabled = Boolean(activeRun);
+      validate.addEventListener("click", async () => {
+        validate.disabled = true;
+        try {
+          const data = await api("/api/workflows/" + encodeURIComponent(workflow.id) + "/validate", {
+            method: "POST", body: JSON.stringify({})
+          });
+          state.workflows = state.workflows.map((item) => item.id === workflow.id ? data.workflow : item);
+          renderWorkflows();
+          toast(data.validation.passed ? "Workflow validation passed. Approve it before running." : "Workflow validation failed. Review the checks.");
+        } catch (error) {
+          toast(error.message, true);
+          validate.disabled = false;
+        }
+      });
+
+      const approve = document.createElement("button");
+      approve.type = "button";
+      approve.className = "item-action";
+      approve.textContent = "Approve";
+      approve.disabled = !workflow.validation?.passed || workflow.validation.version !== workflow.version || Boolean(activeRun) || workflow.status === "approved";
+      approve.addEventListener("click", async () => {
+        if (!confirm("Approve this workflow so it can be run later with a separate confirmation?")) return;
+        approve.disabled = true;
+        try {
+          const data = await api("/api/workflows/" + encodeURIComponent(workflow.id) + "/approve", {
+            method: "POST", body: JSON.stringify({})
+          });
+          state.workflows = state.workflows.map((item) => item.id === workflow.id ? data.workflow : item);
+          renderWorkflows();
+          toast("Workflow approved. Press Run when you are ready to execute it.");
+        } catch (error) {
+          toast(error.message, true);
+          approve.disabled = false;
+        }
+      });
+
+      const runButton = document.createElement("button");
+      runButton.type = "button";
+      runButton.className = "item-action";
+      runButton.textContent = "Run";
+      runButton.disabled = workflow.status !== "approved" || Boolean(activeRun);
+      runButton.addEventListener("click", async () => {
+        if (!confirm("Run this approved workflow now? It may create local tasks or save approved memory steps. Review checkpoints will pause for your decision.")) return;
+        runButton.disabled = true;
+        try {
+          const data = await api("/api/workflows/" + encodeURIComponent(workflow.id) + "/run", {
+            method: "POST", body: JSON.stringify({})
+          });
+          state.workflowRuns.unshift(data.run);
+          renderWorkflows();
+          toast(data.run.status === "waiting_review" ? "Workflow paused for your review." :
+            data.run.status === "completed" ? "Workflow completed." : "Workflow status: " + data.run.status);
+        } catch (error) {
+          toast(error.message, true);
+          runButton.disabled = false;
+        }
+      });
+
+      const pause = document.createElement("button");
+      pause.type = "button";
+      pause.className = "item-action";
+      pause.textContent = "Pause";
+      pause.disabled = workflow.status !== "approved" || Boolean(activeRun);
+      pause.addEventListener("click", async () => {
+        pause.disabled = true;
+        try {
+          const data = await api("/api/workflows/" + encodeURIComponent(workflow.id) + "/pause", {
+            method: "POST", body: JSON.stringify({})
+          });
+          state.workflows = state.workflows.map((item) => item.id === workflow.id ? data.workflow : item);
+          renderWorkflows();
+          toast("Workflow paused.");
+        } catch (error) {
+          toast(error.message, true);
+          pause.disabled = false;
+        }
+      });
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "item-action";
+      remove.textContent = "Delete";
+      remove.disabled = Boolean(activeRun);
+      remove.addEventListener("click", async () => {
+        if (!confirm("Delete this workflow? Existing execution history will remain.")) return;
+        remove.disabled = true;
+        try {
+          await api("/api/workflows/" + encodeURIComponent(workflow.id), { method: "DELETE" });
+          state.workflows = state.workflows.filter((item) => item.id !== workflow.id);
+          renderWorkflows();
+          toast("Workflow deleted. Execution history was kept.");
+        } catch (error) {
+          toast(error.message, true);
+          remove.disabled = false;
+        }
+      });
+
+      actions.append(edit, validate, approve, runButton, pause, remove);
+      row.append(main, actions);
+      target.append(row);
+    }
+  }
+
+  if (!state.workflowRuns.length) {
+    runsTarget.append(makeEmpty("No execution history yet. Approved workflows will appear here after you run them."));
+  } else {
+    for (const run of state.workflowRuns.slice(0, 50)) {
+      const row = document.createElement("article");
+      row.className = "list-item workflow-run-item";
+      const main = document.createElement("div");
+      main.className = "list-item-main";
+      const title = document.createElement("strong");
+      title.textContent = run.workflowName || "Workflow run";
+      const status = document.createElement("span");
+      status.className = "workflow-status workflow-status-" + run.status;
+      status.textContent = run.status.replace("_", " ");
+      const meta = document.createElement("div");
+      meta.className = "list-item-meta";
+      meta.textContent = "Version " + run.workflowVersion + " · " + new Date(run.createdAt).toLocaleString();
+      main.append(title, status, meta);
+
+      const steps = document.createElement("ol");
+      steps.className = "workflow-run-steps";
+      for (const step of run.steps || []) {
+        const item = document.createElement("li");
+        item.className = "workflow-run-step";
+        const heading = document.createElement("strong");
+        heading.textContent = step.title + " · " + step.status.replace("_", " ");
+        item.append(heading);
+        const detail = step.result?.summary || step.result?.message || step.result?.error;
+        if (detail) {
+          const text = document.createElement("p");
+          text.textContent = detail;
+          item.append(text);
+        }
+        if (step.result?.draft) {
+          const draft = document.createElement("pre");
+          draft.textContent = step.result.draft;
+          item.append(draft);
+        }
+        if (Array.isArray(step.result?.results) && step.result.results.length) {
+          const resultList = document.createElement("ul");
+          for (const result of step.result.results.slice(0, 5)) {
+            const resultItem = document.createElement("li");
+            resultItem.textContent = result.title + (result.category ? " · " + result.category : "");
+            resultList.append(resultItem);
+          }
+          item.append(resultList);
+        }
+        steps.append(item);
+      }
+      main.append(steps);
+
+      const actions = document.createElement("div");
+      actions.className = "workflow-actions";
+      if (run.status === "waiting_review") {
+        const continueButton = document.createElement("button");
+        continueButton.type = "button";
+        continueButton.className = "item-action";
+        continueButton.textContent = "Continue";
+        continueButton.addEventListener("click", async () => {
+          if (!confirm("Continue this workflow after reviewing the completed steps?")) return;
+          continueButton.disabled = true;
+          try {
+            const data = await api("/api/workflow-runs/" + encodeURIComponent(run.id) + "/continue", {
+              method: "POST", body: JSON.stringify({})
+            });
+            state.workflowRuns = state.workflowRuns.map((item) => item.id === run.id ? data.run : item);
+            renderWorkflows();
+            toast(data.run.status === "completed" ? "Workflow completed." : "Workflow paused at another review checkpoint.");
+          } catch (error) {
+            toast(error.message, true);
+            continueButton.disabled = false;
+          }
+        });
+        actions.append(continueButton);
+      }
+      if (["running", "waiting_review"].includes(run.status)) {
+        const stopButton = document.createElement("button");
+        stopButton.type = "button";
+        stopButton.className = "item-action";
+        stopButton.textContent = "Stop";
+        stopButton.addEventListener("click", async () => {
+          if (!confirm("Stop this workflow? Remaining steps will not run.")) return;
+          stopButton.disabled = true;
+          try {
+            const data = await api("/api/workflow-runs/" + encodeURIComponent(run.id) + "/stop", {
+              method: "POST", body: JSON.stringify({})
+            });
+            state.workflowRuns = state.workflowRuns.map((item) => item.id === run.id ? data.run : item);
+            renderWorkflows();
+            toast("Workflow stopped.");
+          } catch (error) {
+            toast(error.message, true);
+            stopButton.disabled = false;
+          }
+        });
+        actions.append(stopButton);
+      }
+      if (run.logs?.length) {
+        const logs = document.createElement("details");
+        logs.className = "workflow-log-details";
+        const summary = document.createElement("summary");
+        summary.textContent = "Execution log (" + run.logs.length + ")";
+        logs.append(summary);
+        for (const entry of run.logs) {
+          const line = document.createElement("div");
+          line.className = "list-item-meta";
+          line.textContent = new Date(entry.at).toLocaleTimeString() + " · " + entry.stepTitle + " · " + entry.summary;
+          logs.append(line);
+        }
+        main.append(logs);
+      }
+      actions.classList.toggle("hidden", actions.childElementCount === 0);
+      row.append(main, actions);
+      runsTarget.append(row);
+    }
+  }
+}
+
 function renderTasks() {
   const target = $("#task-list");
   target.replaceChildren();
