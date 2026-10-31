@@ -833,8 +833,8 @@ function renderIntegrations() {
     title.textContent = provider.name;
     const status = document.createElement("span");
     const lastResult = state.integrationResults[provider.id];
-    status.className = "integration-status " + (lastResult?.connected ? "connected" : lastResult?.error ? "connection-failed" : provider.configured ? "configured" : "not-configured");
-    status.textContent = lastResult?.connected ? "Connected" : lastResult?.error ? "Test failed" : provider.configured ? "Configured · not tested" : "Not configured";
+    status.className = "integration-status " + (lastResult?.connected ? "connected" : lastResult?.error ? "connection-failed" : provider.disabled ? "connection-disabled" : provider.configured ? "configured" : "not-configured");
+    status.textContent = lastResult?.connected ? "Connected" : lastResult?.error ? "Test failed" : provider.disabled ? "Disabled in JARVIS" : provider.configured ? "Configured · not tested" : "Not configured";
     const access = document.createElement("p");
     access.textContent = provider.access;
     const variable = document.createElement("code");
@@ -872,7 +872,7 @@ function renderIntegrations() {
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.className = "item-action";
-    toggle.textContent = provider.enabled ? "Disconnect" : "Enable";
+    toggle.textContent = !provider.configured ? "Add credential first" : provider.enabled ? "Disconnect" : "Enable";
     toggle.disabled = !provider.configured;
     toggle.addEventListener("click", async () => {
       toggle.disabled = true;
