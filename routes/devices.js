@@ -166,8 +166,10 @@ export function createDevicesRouter({ getStore, saveStore, requireAuth, runDevic
     const message = cleanText(req.body?.message, 4000);
     if (!message) return res.status(400).json({ error: "Voice transcript cannot be empty." });
     try {
-      const answer = await runDeviceVoiceCommand(message, req.jarvisDevice);
-      res.json({ answer, engine: "built-in-offline", externalAI: false });
+      const result = await runDeviceVoiceCommand(message, req.jarvisDevice);
+      res.json(typeof result === "string"
+        ? { answer: result, engine: "built-in-offline", externalAI: false }
+        : result);
     } catch (error) {
       console.error("Device voice request failed:", error?.name || "Error");
       res.status(500).json({ error: "JARVIS could not process this voice request." });
