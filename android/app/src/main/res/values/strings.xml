@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">JARVIS Companion</string>
-    <string name="accessibility_service_label">JARVIS app-change observer</string>
-    <string name="accessibility_service_description">Optional Phase 1 observer. It records only the foreground app package and event type. It does not read screen text or perform clicks.</string>
+    <string name="accessibility_service_label">JARVIS screen assistant</string>
+    <string name="accessibility_service_description">Reads visible screen labels only when you request it and performs the specific UI actions you speak. Screen text is not uploaded or saved by this phase. Sensitive fields and consequential buttons are blocked.</string>
+    <string name="voice_notification_channel">JARVIS hands-free voice control</string>
 </resources>
