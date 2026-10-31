@@ -1477,6 +1477,98 @@ function resetSkillForm() {
 
 $("#skill-cancel-edit").addEventListener("click", resetSkillForm);
 
+$("#workflow-step-type").addEventListener("change", () => {
+  const type = $("#workflow-step-type").value;
+  const labels = {
+    create_task: ["Task details (optional)", "Add a short reminder or details for the task…"],
+    save_memory: ["Memory content", "Write the fact, preference, or goal to save…"],
+    search_knowledge: ["Search query", "Example: mole concept or circular motion…"],
+    draft_text: ["Draft text", "Write the text to prepare locally. It will not be sent or published…"],
+    review_checkpoint: ["Review note (optional)", "What should you review before continuing?…"]
+  };
+  $("#workflow-step-value-label").textContent = labels[type][0];
+  $("#workflow-step-value").placeholder = labels[type][1];
+  $("#workflow-step-category").disabled = type !== "save_memory";
+});
+
+$("#workflow-add-step").addEventListener("click", () => {
+  if (state.workflowSteps.length >= 10) {
+    toast("A workflow can contain at most 10 steps.", true);
+    return;
+  }
+  const type = $("#workflow-step-type").value;
+  const title = $("#workflow-step-title").value.trim();
+  const value = $("#workflow-step-value").value.trim();
+  if (title.length < 3) {
+    toast("Enter a step title with at least 3 characters.", true);
+    return;
+  }
+  let step;
+  if (type === "create_task") step = { type, title, description: value };
+  else if (type === "save_memory") step = { type, title, content: value, category: $("#workflow-step-category").value };
+  else if (type === "search_knowledge") step = { type, title, query: value };
+  else if (type === "draft_text") step = { type, title, content: value };
+  else step = { type, title, message: value };
+  state.workflowSteps.push(step);
+  $("#workflow-step-title").value = "";
+  $("#workflow-step-value").value = "";
+  renderWorkflowBuilderSteps();
+  toast("Workflow step added to the draft builder.");
+});
+
+$("#workflow-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (state.workflowSteps.length < 1) {
+    toast("Add at least one workflow step before saving.", true);
+    return;
+  }
+  const wasEditing = Boolean(state.editingWorkflowId);
+  const button = $("#workflow-save-button");
+  button.disabled = true;
+  const payload = {
+    name: $("#workflow-name").value.trim(),
+    description: $("#workflow-description").value.trim(),
+    steps: state.workflowSteps.map((step) => ({ ...step }))
+  };
+  try {
+    const url = wasEditing
+      ? "/api/workflows/" + encodeURIComponent(state.editingWorkflowId)
+      : "/api/workflows";
+    const data = await api(url, {
+      method: wasEditing ? "PATCH" : "POST",
+      body: JSON.stringify(payload)
+    });
+    if (wasEditing) {
+      state.workflows = state.workflows.map((item) => item.id === data.workflow.id ? data.workflow : item);
+    } else {
+      state.workflows.unshift(data.workflow);
+    }
+    resetWorkflowForm();
+    renderWorkflows();
+    toast(wasEditing
+      ? "New workflow draft version saved. Validate and approve it again before running."
+      : "Workflow draft saved. Validate and approve it before running.");
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+function resetWorkflowForm() {
+  state.editingWorkflowId = null;
+  state.workflowSteps = [];
+  $("#workflow-form").reset();
+  $("#workflow-form-title").textContent = "Create a workflow draft";
+  $("#workflow-save-button").textContent = "Save workflow draft";
+  $("#workflow-cancel-edit").classList.add("hidden");
+  $("#workflow-step-category").disabled = true;
+  renderWorkflowBuilderSteps();
+}
+
+$("#workflow-cancel-edit").addEventListener("click", resetWorkflowForm);
+
+
 $("#task-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = event.submitter;
