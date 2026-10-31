@@ -10,6 +10,25 @@ JARVIS is a private, single-owner assistant with a web dashboard and an Android 
 - **Internet research is not memory.** Relevant current/time-sensitive prompts and explicit requests to check the internet can be routed to Google Search grounding. Responses show available source links. A search result is used to answer the current question and is not saved as a long-term memory or research record automatically.
 - **Tasks, explicitly saved research and approved memories** remain in the persistent app state. These are separate from ordinary chat transcripts.
 
+## Memory and Personal Data Controls (Phase 3)
+
+- Temporary conversation turns stay in process memory only, expire after one hour of inactivity, and are not part of database/file snapshots.
+- Durable memories are saved only through an explicit “Remember / Yaad rakhna” instruction or the Memory form. Ordinary chat is never automatically promoted to long-term memory.
+- Memory entries support preference, goal, and fact categories; the Memory screen supports keyword/category search, edit, and delete.
+- Duplicate detection normalizes Unicode, casing, and repeated whitespace. The server also rejects likely credentials and sensitive personal records.
+- Only a small number of relevant saved memories are supplied to the Gemini conversation context. Unrelated memories are not sent with every prompt.
+- The persistent data collections remain separated: memories, Knowledge Library entries, explicitly saved research, tasks, and custom skills.
+- **Export my data** downloads a JSON file containing these durable user data collections. It deliberately excludes temporary conversations, paired-device credentials, server environment variables/API keys, and anonymous feedback metadata.
+- Signing out clears the active temporary session transcript. It does not delete durable memories, notes, tasks, or research; those remain reviewable and individually deletable.
+
+### Memory API
+
+- GET /api/memories?q=<query>&category=<preference|goal|fact> — search/filter saved memories.
+- POST /api/memories — save an explicitly supplied memory (duplicates return the existing record).
+- PATCH /api/memories/:id — edit a saved memory.
+- DELETE /api/memories/:id — delete a saved memory.
+- GET /api/export — download authenticated, privacy-filtered personal data.
+
 ## Voice and Android companion
 
 - The dashboard includes Hindi push-to-talk where supported by the browser and optional spoken replies.
