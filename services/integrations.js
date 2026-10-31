@@ -149,16 +149,23 @@ function sanitizeElevenLabsAccount(data) {
   };
 }
 
-export function getIntegrationCatalog(env = process.env) {
-  return Object.entries(PROVIDERS).map(([id, provider]) => ({
-    id,
-    name: provider.name,
-    environmentVariable: provider.environmentVariable,
-    access: provider.access,
-    capabilities: [...provider.capabilities],
-    configured: Boolean(credential(id, env)),
-    enabled: Boolean(credential(id, env))
-  }));
+export const INTEGRATION_PROVIDER_IDS = Object.freeze(Object.keys(PROVIDERS));
+
+export function getIntegrationCatalog(env = process.env, disabledProviders = []) {
+  const disabled = new Set(Array.isArray(disabledProviders) ? disabledProviders : []);
+  return Object.entries(PROVIDERS).map(([id, provider]) => {
+    const configured = Boolean(credential(id, env));
+    return {
+      id,
+      name: provider.name,
+      environmentVariable: provider.environmentVariable,
+      access: provider.access,
+      capabilities: [...provider.capabilities],
+      configured,
+      enabled: configured && !disabled.has(id),
+      disabled: disabled.has(id)
+    };
+  });
 }
 
 export async function probeIntegration(provider, options = {}) {
