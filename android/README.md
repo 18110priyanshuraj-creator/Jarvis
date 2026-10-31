@@ -109,3 +109,14 @@ The app distinguishes required permissions from optional or unnecessary access:
 - Install unknown apps: controlled by the source app (such as the browser or file manager) used to open a manually downloaded APK. JARVIS itself does not request package-install permission.
 
 Android system permission dialogs and protected settings cannot be silently accepted by JARVIS. The checklist opens the relevant Settings page and asks the user to grant access themselves. Do not enable permissions that the checklist marks Not required.
+
+## Phase 4 — conversational AI and voice routing
+
+- The server-side assistant can use Gemini for ordinary questions and follow-up conversation in both the web dashboard and paired Android voice Companion.
+- The Android planner classifies a spoken request as `conversation`, `device_action` or `clarification`. Only `device_action` plans reach the local action runner. Normal questions are sent to the authenticated voice-chat endpoint; ambiguous or unsupported actions are clarified instead of executed.
+- Conversation replies use up to the eight most recent user/assistant chat messages, with each prior message truncated to 1,200 characters. The current request is limited to 4,000 characters.
+- Saved memories, tasks, feedback, custom skills, screenshots and accessibility-screen text are not added to the Gemini conversation prompt.
+- Gemini conversation mode is deliberately opt-in. Set `GEMINI_CHAT_ENABLED=true` in the server environment in addition to `GEMINI_API_KEY`. When it is false or the key is absent, JARVIS uses the existing offline brain. If a configured Gemini conversation call fails, it falls back to the offline brain and reports that engine in the dashboard.
+- Dashboard chat labels show whether a reply came from Gemini, the offline brain or the offline fallback. The Gemini API key stays on the server and is never bundled into the APK.
+
+To enable Phase 4 chat, add `GEMINI_CHAT_ENABLED=true` to the Render service environment, keep `GEMINI_API_KEY` secret, and redeploy the feature branch. Do not paste the key into the dashboard, Android app, source files or this chat.
