@@ -17,6 +17,7 @@ import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, normaliz
 import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, searchMemories } from "./services/memory.js";
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeSkill, pauseSkill, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
+import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, createWorkflowDraft, createWorkflowRun, normalizeWorkflow, pauseWorkflow, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -73,7 +74,7 @@ const webResearchLimiter = rateLimit({
 });
 app.use("/api", apiLimiter);
 
-let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], devices: [], research: [], knowledge: [] };
+let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], devices: [], research: [], knowledge: [] };
 const sessionChats = new Map();
 const MAX_EPHEMERAL_CHAT_MESSAGES = 32;
 const EPHEMERAL_CHAT_TTL_MS = 60 * 60 * 1000;
@@ -109,6 +110,17 @@ function normalizeStore(parsed = {}) {
       ? parsed.skills.slice(-SKILL_LIMITS.skills).flatMap((item) => {
           try { return [normalizeSkill(item)]; } catch { return []; }
         })
+      : [],
+    workflows: Array.isArray(parsed.workflows)
+      ? parsed.workflows.slice(-WORKFLOW_LIMITS.workflows).flatMap((item) => {
+          try { return [normalizeWorkflow(item)]; } catch { return []; }
+        })
+      : [],
+    workflowRuns: Array.isArray(parsed.workflowRuns)
+      ? parsed.workflowRuns.slice(-WORKFLOW_LIMITS.runs).filter((item) =>
+          item && typeof item.id === "string" && typeof item.workflowId === "string" &&
+          Array.isArray(item.steps) && ["running", "waiting_review", "completed", "failed", "cancelled"].includes(item.status)
+        )
       : [],
     devices: Array.isArray(parsed.devices) ? parsed.devices.slice(-50) : [],
     research: Array.isArray(parsed.research) ? parsed.research.slice(-50) : [],
@@ -395,7 +407,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     service: "jarvis",
-    version: "1.1.0-experience-engine",
+    version: "1.2.0-workflow-engine",
     brain: conversationAIEnabled ? "gemini-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
@@ -445,6 +457,8 @@ app.get("/api/state", requireAuth, (req, res) => {
     feedback: store.feedback.slice(-100),
     experiencePreferences: store.experiencePreferences,
     skills: store.skills,
+    workflows: store.workflows,
+    workflowRuns: store.workflowRuns.slice().reverse().slice(0, 50),
     research: store.research.slice().reverse()
   });
 });
@@ -466,7 +480,9 @@ app.get("/api/export", requireAuth, (req, res) => {
       tasks: store.tasks,
       feedback: store.feedback,
       experiencePreferences: store.experiencePreferences,
-      skills: store.skills
+      skills: store.skills,
+      workflows: store.workflows,
+      workflowRuns: store.workflowRuns
     },
     excluded: [
       "temporary conversation history",
@@ -744,6 +760,189 @@ app.delete("/api/tasks/:id", requireAuth, async (req, res) => {
   if (store.tasks.length === before) return res.status(404).json({ error: "Task not found." });
   await saveStore();
   res.json({ ok: true });
+});
+
+app.get("/api/workflows", requireAuth, (_req, res) => {
+  res.json({
+    workflows: store.workflows.slice().reverse(),
+    runs: store.workflowRuns.slice().reverse().slice(0, 50),
+    limits: WORKFLOW_LIMITS
+  });
+});
+
+app.post("/api/workflows", requireAuth, async (req, res) => {
+  let workflow;
+  try {
+    workflow = createWorkflowDraft(req.body);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Workflow draft is invalid." });
+  }
+  if (store.workflows.length >= WORKFLOW_LIMITS.workflows) {
+    return res.status(409).json({ error: "Workflow limit reached. Delete an older workflow first." });
+  }
+  if (store.workflows.some((item) => item.name.toLocaleLowerCase() === workflow.name.toLocaleLowerCase())) {
+    return res.status(409).json({ error: "A workflow with this name already exists. Edit it to create a new version." });
+  }
+  store.workflows.push(workflow);
+  await saveStore();
+  res.status(201).json({ workflow });
+});
+
+app.patch("/api/workflows/:id", requireAuth, async (req, res) => {
+  const existing = store.workflows.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow not found." });
+  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["running", "waiting_review"].includes(run.status))) {
+    return res.status(409).json({ error: "Stop or finish the active run before editing this workflow." });
+  }
+  let updated;
+  try {
+    updated = updateWorkflowDraft(existing, req.body);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Workflow update is invalid." });
+  }
+  store.workflows = store.workflows.map((item) => item.id === existing.id ? updated : item);
+  await saveStore();
+  res.json({ workflow: updated });
+});
+
+app.post("/api/workflows/:id/validate", requireAuth, async (req, res) => {
+  const existing = store.workflows.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow not found." });
+  const result = validateWorkflow(existing);
+  store.workflows = store.workflows.map((item) => item.id === existing.id ? result.workflow : item);
+  await saveStore();
+  res.json({ workflow: result.workflow, validation: result.validation });
+});
+
+app.post("/api/workflows/:id/approve", requireAuth, async (req, res) => {
+  const existing = store.workflows.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow not found." });
+  let approved;
+  try {
+    approved = approveWorkflow(existing);
+  } catch (error) {
+    return res.status(409).json({ error: error.message || "Workflow cannot be approved." });
+  }
+  store.workflows = store.workflows.map((item) => item.id === existing.id ? approved : item);
+  await saveStore();
+  res.json({ workflow: approved });
+});
+
+app.post("/api/workflows/:id/pause", requireAuth, async (req, res) => {
+  const existing = store.workflows.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow not found." });
+  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["running", "waiting_review"].includes(run.status))) {
+    return res.status(409).json({ error: "Stop the active run before pausing this workflow." });
+  }
+  let paused;
+  try {
+    paused = pauseWorkflow(existing);
+  } catch (error) {
+    return res.status(409).json({ error: error.message || "Workflow cannot be paused." });
+  }
+  store.workflows = store.workflows.map((item) => item.id === existing.id ? paused : item);
+  await saveStore();
+  res.json({ workflow: paused });
+});
+
+app.delete("/api/workflows/:id", requireAuth, async (req, res) => {
+  const existing = store.workflows.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow not found." });
+  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["running", "waiting_review"].includes(run.status))) {
+    return res.status(409).json({ error: "Stop the active run before deleting this workflow." });
+  }
+  store.workflows = store.workflows.filter((item) => item.id !== existing.id);
+  await saveStore();
+  res.json({ ok: true });
+});
+
+function workflowStepHandlers() {
+  return {
+    create_task: async (step) => {
+      if (store.tasks.length >= 200) throw new Error("Task limit reached. Remove an old task first.");
+      const task = {
+        id: newId(),
+        title: step.title,
+        description: step.description || "",
+        dueAt: "",
+        done: false,
+        createdAt: new Date().toISOString()
+      };
+      store.tasks.push(task);
+      return { taskId: task.id, summary: "Task created: " + task.title };
+    },
+    save_memory: async (step) => {
+      const memory = normalizeMemory({ content: step.content, category: step.category });
+      if (isDuplicateMemory(store.memories, memory)) {
+        return { duplicate: true, summary: "That memory is already saved." };
+      }
+      if (store.memories.length >= MEMORY_LIMITS.items) throw new Error("Memory limit reached.");
+      store.memories.push(memory);
+      return { memoryId: memory.id, summary: "Memory saved: " + memory.content.slice(0, 120) };
+    },
+    search_knowledge: async (step) => {
+      const results = searchKnowledgeItems(store.knowledge, step.query, 5).map((item) => ({
+        id: item.id,
+        title: item.title,
+        category: item.category,
+        reviewStatus: item.reviewStatus,
+        snippet: item.content.slice(0, 350)
+      }));
+      return { results, summary: results.length + " saved knowledge result(s) found." };
+    },
+    draft_text: async (step) => ({
+      draft: step.content,
+      summary: "Draft prepared locally. Nothing was sent or published."
+    })
+  };
+}
+
+app.post("/api/workflows/:id/run", requireAuth, async (req, res) => {
+  const workflow = store.workflows.find((item) => item.id === req.params.id);
+  if (!workflow) return res.status(404).json({ error: "Workflow not found." });
+  if (workflow.status !== "approved" || !workflow.approvedAt) {
+    return res.status(409).json({ error: "Validate and approve this workflow before running it." });
+  }
+  if (store.workflowRuns.some((run) => run.workflowId === workflow.id && ["running", "waiting_review"].includes(run.status))) {
+    return res.status(409).json({ error: "This workflow already has an active run. Continue or stop it first." });
+  }
+  if (store.workflowRuns.length >= WORKFLOW_LIMITS.runs) {
+    store.workflowRuns = store.workflowRuns.filter((run) => ["running", "waiting_review"].includes(run.status))
+      .concat(store.workflowRuns.filter((run) => !["running", "waiting_review"].includes(run.status)).slice(-(WORKFLOW_LIMITS.runs - 1)));
+  }
+  const run = createWorkflowRun(workflow);
+  store.workflowRuns.push(run);
+  const result = await advanceWorkflowRun(run, workflowStepHandlers());
+  store.workflowRuns = store.workflowRuns.map((item) => item.id === run.id ? result : item);
+  await saveStore();
+  res.status(201).json({ run: result });
+});
+
+app.post("/api/workflow-runs/:id/continue", requireAuth, async (req, res) => {
+  const existing = store.workflowRuns.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow run not found." });
+  if (existing.status !== "waiting_review") {
+    return res.status(409).json({ error: "This run is not waiting for your review." });
+  }
+  const continued = { ...existing, status: "running", updatedAt: new Date().toISOString() };
+  const result = await advanceWorkflowRun(continued, workflowStepHandlers());
+  store.workflowRuns = store.workflowRuns.map((item) => item.id === existing.id ? result : item);
+  await saveStore();
+  res.json({ run: result });
+});
+
+app.post("/api/workflow-runs/:id/stop", requireAuth, async (req, res) => {
+  const existing = store.workflowRuns.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow run not found." });
+  let cancelled;
+  try {
+    cancelled = cancelWorkflowRun(existing);
+  } catch (error) {
+    return res.status(409).json({ error: error.message || "Workflow run cannot be stopped." });
+  }
+  store.workflowRuns = store.workflowRuns.map((item) => item.id === existing.id ? cancelled : item);
+  await saveStore();
+  res.json({ run: cancelled });
 });
 
 app.get("/api/search", requireAuth, (req, res) => {
