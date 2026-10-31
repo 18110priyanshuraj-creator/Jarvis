@@ -444,7 +444,7 @@ $("#chat-form").addEventListener("submit", async (event) => {
     if ($("#speak-toggle").checked && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(data.answer);
-      utterance.lang = /[\\u0900-\\u097F]/.test(data.answer) ? "hi-IN" : "en-IN";
+      utterance.lang = /[\u0900-\u097F]/.test(data.answer) ? "hi-IN" : "en-IN";
       window.speechSynthesis.speak(utterance);
     }
     await refreshState();
