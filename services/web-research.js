@@ -154,6 +154,21 @@ export function normalizeSavedResearch(input) {
     });
   }
 
+  const allowedSourceUrls = new Set(sources.map((source) => source.url));
+  const citationInput = Array.isArray(input?.citations) ? input.citations.slice(0, 12) : [];
+  const citations = citationInput.map((item) => {
+    const sourceUrls = Array.isArray(item?.sourceUrls)
+      ? [...new Set(item.sourceUrls
+        .map((url) => cleanText(url, 2000))
+        .filter((url) => allowedSourceUrls.has(url)))]
+        .slice(0, 5)
+      : [];
+    return {
+      claim: cleanText(item?.claim, 500),
+      sourceUrls
+    };
+  }).filter((item) => item.claim && item.sourceUrls.length);
+
   const requestedDate = cleanText(input?.searchedAt, 80);
   const parsedDate = requestedDate ? new Date(requestedDate) : null;
   const searchedAt = parsedDate && Number.isFinite(parsedDate.getTime())
@@ -164,6 +179,7 @@ export function normalizeSavedResearch(input) {
     query,
     answer,
     sources,
+    citations,
     searchedAt
   };
 }
