@@ -4,14 +4,15 @@ Phase 6 validates the existing JARVIS web service and Android Companion without 
 
 ## Current automated validation
 
-Latest GitHub Actions run for commit `139ce74c6442b725cf4c5e5d5e29edd9cca0bc62`:
+GitHub Actions runs on feature-branch pushes and pull requests targeting `main`. Its automated gates are:
 
-- Node.js syntax and regression suite: **PASS**
-- Android `assembleDebug`: **PASS**
-- Debug APK artifact: `jarvis-companion-debug`
+- Node.js syntax and regression suite: `npm run check`
+- Android debug APK compilation: `gradle -p android --no-daemon assembleDebug`
+- APK integrity check: the generated APK must be non-empty and pass ZIP-archive validation
+- Artifact verification files: CI publishes the APK, a SHA-256 checksum, and build metadata containing the source commit, branch, workflow run ID and build variant
 - Artifact retention: 7 days from upload
 
-The automated suite covers the authenticated dashboard API, session protections, local/offline chat, tasks and memories, Android pairing/heartbeat/revocation, planner and conversation behavior, and live-research source validation and opt-in configuration.
+The automated suite covers the authenticated dashboard API, session protections, local/offline chat, tasks and memories, Android pairing/heartbeat/revocation, planner and conversation behavior, and live-research source validation and opt-in configuration. A passing CI build proves compilation and automated checks; it does not replace physical-device acceptance.
 
 ## Device acceptance matrix — requires a real Android device
 
