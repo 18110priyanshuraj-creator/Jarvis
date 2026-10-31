@@ -105,6 +105,8 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(blockedSkills.status, 401);
   const blockedExperience = await request("/api/experience", { headers: {} });
   assert.equal(blockedExperience.status, 401);
+  const blockedWorkflows = await request("/api/workflows", { headers: {} });
+  assert.equal(blockedWorkflows.status, 401);
   const blockedExport = await request("/api/export", { headers: {} });
   assert.equal(blockedExport.status, 401);
   const blockedResearch = await request("/api/research", {
@@ -269,6 +271,115 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(deleteMemory.status, 200);
   const deleteTask = await request("/api/tasks/" + taskPayload.task.id, { method: "DELETE" });
   assert.equal(deleteTask.status, 200);
+
+  const createWorkflow = await request("/api/workflows", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "JEE study preparation",
+      description: "Prepare a safe local study session and review it before finishing.",
+      steps: [
+        { type: "create_task", title: "Revise Newton's laws", description: "Review the three laws and solve two examples." },
+        { type: "search_knowledge", title: "Find mole concept notes", query: "mole concept" },
+        { type: "review_checkpoint", title: "Review study plan", message: "Check the task and search results before continuing." },
+        { type: "draft_text", title: "Prepare revision checklist", content: "1. Recall the laws.\n2. Solve two examples.\n3. Review your mistakes." }
+      ]
+    })
+  });
+  assert.equal(createWorkflow.status, 201);
+  const workflowPayload = await createWorkflow.json();
+  assert.equal(workflowPayload.workflow.status, "draft");
+  assert.equal(workflowPayload.workflow.steps.length, 4);
+
+  const runUnapprovedWorkflow = await request("/api/workflows/" + workflowPayload.workflow.id + "/run", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(runUnapprovedWorkflow.status, 409);
+
+  const invalidWorkflow = await request("/api/workflows", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Unsupported automation",
+      steps: [{ type: "run_shell", title: "Run a system command", command: "echo unsafe" }]
+    })
+  });
+  assert.equal(invalidWorkflow.status, 400);
+
+  const validateWorkflow = await request("/api/workflows/" + workflowPayload.workflow.id + "/validate", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(validateWorkflow.status, 200);
+  assert.equal((await validateWorkflow.json()).validation.passed, true);
+
+  const approveWorkflow = await request("/api/workflows/" + workflowPayload.workflow.id + "/approve", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(approveWorkflow.status, 200);
+  assert.equal((await approveWorkflow.json()).workflow.status, "approved");
+
+  const runWorkflow = await request("/api/workflows/" + workflowPayload.workflow.id + "/run", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(runWorkflow.status, 201);
+  const runPayload = await runWorkflow.json();
+  assert.equal(runPayload.run.status, "waiting_review");
+  assert.equal(runPayload.run.steps[0].status, "completed");
+  assert.equal(runPayload.run.steps[1].status, "completed");
+  assert.equal(runPayload.run.steps[2].status, "waiting_review");
+  assert.ok(runPayload.run.steps[0].result.taskId);
+
+  const duplicateRun = await request("/api/workflows/" + workflowPayload.workflow.id + "/run", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(duplicateRun.status, 409);
+
+  const continueRun = await request("/api/workflow-runs/" + runPayload.run.id + "/continue", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(continueRun.status, 200);
+  const continuedPayload = await continueRun.json();
+  assert.equal(continuedPayload.run.status, "completed");
+  assert.equal(continuedPayload.run.steps[2].status, "completed");
+  assert.match(continuedPayload.run.steps[3].result.draft, /Recall the laws/);
+
+  const workflowState = await request("/api/workflows");
+  assert.equal(workflowState.status, 200);
+  const workflowStatePayload = await workflowState.json();
+  assert.ok(workflowStatePayload.workflows.some((item) => item.id === workflowPayload.workflow.id));
+  assert.ok(workflowStatePayload.runs.some((item) => item.id === runPayload.run.id));
+
+  const cancelledWorkflow = await request("/api/workflows", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Review and stop test",
+      steps: [
+        { type: "create_task", title: "Prepare a simple task", description: "This task can be stopped after review." },
+        { type: "review_checkpoint", title: "Wait for review", message: "Review before continuing." },
+        { type: "draft_text", title: "Prepare draft", content: "This draft should not be created after stopping the workflow." }
+      ]
+    })
+  });
+  assert.equal(cancelledWorkflow.status, 201);
+  const cancelledDraft = await cancelledWorkflow.json();
+  const cancelledValidation = await request("/api/workflows/" + cancelledDraft.workflow.id + "/validate", {
+    method: "POST", body: JSON.stringify({})
+  });
+  const cancelledValidated = await cancelledValidation.json();
+  const cancelledApproval = await request("/api/workflows/" + cancelledDraft.workflow.id + "/approve", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(cancelledApproval.status, 200);
+  const waitingRunResponse = await request("/api/workflows/" + cancelledDraft.workflow.id + "/run", {
+    method: "POST", body: JSON.stringify({})
+  });
+  const waitingRun = await waitingRunResponse.json();
+  assert.equal(waitingRun.run.status, "waiting_review");
+  const stopRunResponse = await request("/api/workflow-runs/" + waitingRun.run.id + "/stop", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(stopRunResponse.status, 200);
+  const stoppedRun = await stopRunResponse.json();
+  assert.equal(stoppedRun.run.status, "cancelled");
+  assert.equal(stoppedRun.run.steps[2].status, "skipped");
 
   const createFeedback = await request("/api/feedback", {
     method: "POST",
@@ -460,6 +571,8 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.ok(Array.isArray(exportPayload.data.skills));
   assert.ok(Array.isArray(exportPayload.data.feedback));
   assert.ok(Array.isArray(exportPayload.data.experiencePreferences));
+  assert.ok(Array.isArray(exportPayload.data.workflows));
+  assert.ok(Array.isArray(exportPayload.data.workflowRuns));
   assert.equal(Object.hasOwn(exportPayload.data, "chats"), false);
   assert.equal(Object.hasOwn(exportPayload.data, "devices"), false);
   assert.ok(exportPayload.excluded.includes("temporary conversation history"));
