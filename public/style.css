@@ -341,3 +341,5 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .integration-provider { flex-direction: column; }
   .integration-actions { width: 100%; justify-content: flex-start; }
 }
+
+.integration-status.connection-disabled { color: #f0c27b; border-color: #f0c27b55; }
