@@ -1,6 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { chats: [], memories: [], tasks: [], feedback: [], skills: [], activeView: "chat" };
+const state = { chats: [], memories: [], tasks: [], feedback: [], skills: [], devices: [], research: [], activeView: "chat" };
 let toastTimer;
+let activeRecognition = null;
 
 function toast(message, isError = false) {
   const el = $("#toast");
@@ -50,10 +51,12 @@ async function refreshState() {
   state.tasks = data.tasks || [];
   state.feedback = data.feedback || [];
   state.skills = data.skills || [];
+  state.research = data.research || [];
   renderChats();
   renderMemories();
   renderTasks();
   renderSkills();
+  renderSavedResearch();
 }
 
 function setView(name) {
@@ -65,6 +68,7 @@ function setView(name) {
   $("#view-" + name).classList.remove("hidden");
   const titles = {
     chat: ["PERSONAL ASSISTANT", "Assistant"],
+    devices: ["ANDROID COMPANION", "Device Control"],
     memory: ["PERSONAL CONTEXT", "Memory"],
     tasks: ["ORGANIZATION", "Tasks"],
     research: ["WEB DISCOVERY", "Research"]
@@ -72,6 +76,7 @@ function setView(name) {
   $("#page-kicker").textContent = titles[name][0];
   $("#page-title").textContent = titles[name][1];
   if (name === "chat") setTimeout(() => $("#chat-input").focus(), 0);
+  if (name === "devices") refreshDevices().catch((error) => toast(error.message, true));
 }
 
 function makeEmpty(message) {
@@ -110,18 +115,42 @@ function renderChats() {
     const time = document.createElement("div");
     time.className = "message-time";
     time.textContent = item.createdAt ? new Date(item.createdAt).toLocaleString() : "";
+    if (item.role === "assistant" && item.engine === "gemini-conversation") {
+      time.textContent += " · Gemini";
+    } else if (item.role === "assistant" && item.engine === "built-in-offline-fallback") {
+      time.textContent += " · Offline fallback";
+    } else if (item.role === "assistant" && item.engine === "built-in-offline") {
+      time.textContent += " · Offline brain";
+    }
     wrap.append(time);
+    if (item.role === "assistant" && Array.isArray(item.sources) && item.sources.length) {
+      const sourceList = document.createElement("div");
+      sourceList.className = "message-sources";
+      const sourceHeading = document.createElement("strong");
+      sourceHeading.textContent = "Live sources";
+      sourceList.append(sourceHeading);
+      for (const source of item.sources.slice(0, 10)) {
+        const safe = safeResearchUrl(source?.url);
+        if (!safe) continue;
+        const link = document.createElement("a");
+        link.href = safe;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = source.title || new URL(safe).hostname;
+        sourceList.append(link);
+      }
+      if (sourceList.querySelector("a")) wrap.append(sourceList);
+    }
     if (item.role === "assistant") {
       const previousUser = [...messages.slice(0, index)].reverse().find((entry) => entry.role === "user");
       if (previousUser) {
         const feedback = document.createElement("div");
         feedback.className = "message-feedback";
-        const existing = state.feedback.find((entry) => entry.prompt === previousUser.content);
-        for (const [rating, label] of [["up", "Helpful"], ["down", "Needs work"]]) {
+          for (const [rating, label] of [["up", "Helpful"], ["down", "Needs work"]]) {
           const action = document.createElement("button");
           action.type = "button";
           action.className = "item-action";
-          action.textContent = (existing?.rating === rating ? "✓ " : "") + label;
+          action.textContent = label;
           action.setAttribute("aria-label", "Mark this response " + label.toLowerCase());
           action.addEventListener("click", async () => {
             action.disabled = true;
@@ -318,6 +347,74 @@ document.querySelectorAll(".prompt-card").forEach((button) => {
   });
 });
 
+function setVoiceButtonState(label, disabled = false) {
+  const button = $("#voice-button");
+  if (!button) return;
+  button.innerHTML = "🎙 <span>" + label + "</span>";
+  button.disabled = disabled;
+}
+
+$("#voice-button").addEventListener("click", () => {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition) {
+    toast("This browser does not support voice input. Use JARVIS Companion's Speak once or hands-free control.");
+    return;
+  }
+  if (activeRecognition) {
+    activeRecognition.stop();
+    return;
+  }
+
+  try {
+    const recognition = new Recognition();
+    activeRecognition = recognition;
+    recognition.lang = "hi-IN";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => setVoiceButtonState("Listening…");
+    recognition.onresult = (event) => {
+      const transcript = event.results?.[0]?.[0]?.transcript?.trim();
+      if (!transcript) {
+        toast("No speech was detected. Please try again.");
+        return;
+      }
+      $("#chat-input").value = transcript;
+      $("#chat-form").requestSubmit();
+    };
+    recognition.onerror = (event) => {
+      const messages = {
+        "not-allowed": "Microphone permission was denied. Allow it in your browser settings.",
+        "service-not-allowed": "This browser blocked microphone access.",
+        "no-speech": "No speech was detected. Try speaking closer to the microphone.",
+        "network": "Speech recognition needs a working internet connection."
+      };
+      toast(messages[event.error] || "Voice recognition failed: " + (event.error || "unknown error"), true);
+    };
+    recognition.onend = () => {
+      if (activeRecognition === recognition) activeRecognition = null;
+      setVoiceButtonState("Speak");
+    };
+    recognition.start();
+  } catch (error) {
+    activeRecognition = null;
+    setVoiceButtonState("Speak");
+    toast("Could not start voice input. Check browser microphone permission.", true);
+  }
+});
+
+$("#clear-chat-button").addEventListener("click", async () => {
+  if (!confirm("Clear this temporary conversation? Saved memories, tasks and research will stay.")) return;
+  try {
+    await api("/api/chat/history", { method: "DELETE" });
+    state.chats = [];
+    renderChats();
+    toast("Temporary conversation cleared.");
+  } catch (error) {
+    toast(error.message, true);
+  }
+});
+
 $("#chat-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const input = $("#chat-input");
@@ -346,7 +443,9 @@ $("#chat-form").addEventListener("submit", async (event) => {
     const data = await api("/api/chat", { method: "POST", body: JSON.stringify({ message }) });
     if ($("#speak-toggle").checked && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(new SpeechSynthesisUtterance(data.answer));
+      const utterance = new SpeechSynthesisUtterance(data.answer);
+      utterance.lang = /[\u0900-\u097F]/.test(data.answer) ? "hi-IN" : "en-IN";
+      window.speechSynthesis.speak(utterance);
     }
     await refreshState();
   } catch (error) {
@@ -439,41 +538,224 @@ $("#task-form").addEventListener("submit", async (event) => {
   finally { button.disabled = false; }
 });
 
+function safeResearchUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function renderGroundedResearch(item, canSave = true) {
+  const target = $("#search-results");
+  target.replaceChildren();
+  const card = document.createElement("article");
+  card.className = "result-card";
+
+  const heading = document.createElement("strong");
+  heading.textContent = item.engine === "saved-research" ? "Saved research" : "Live web research";
+  const question = document.createElement("p");
+  question.textContent = item.query || "";
+  const answer = document.createElement("p");
+  answer.className = "research-answer";
+  answer.textContent = item.answer || "No answer was returned.";
+  const meta = document.createElement("div");
+  meta.className = "research-meta";
+  meta.textContent = item.searchedAt ? "Searched " + new Date(item.searchedAt).toLocaleString() : "Saved research · not a new web search";
+
+  card.append(heading, question, meta, answer);
+  const sources = Array.isArray(item.sources) ? item.sources : [];
+  if (!sources.length) {
+    const note = document.createElement("p");
+    note.className = "research-citations";
+    note.textContent = "No live source citations were attached to this answer. Treat it as unverified.";
+    card.append(note);
+  } else {
+    const sourceHeading = document.createElement("p");
+    sourceHeading.className = "research-citations";
+    sourceHeading.textContent = "Grounding sources (" + sources.length + ")";
+    const sourceList = document.createElement("div");
+    sourceList.className = "research-sources";
+    for (const source of sources) {
+      const url = safeResearchUrl(source.url);
+      if (!url) continue;
+      const row = document.createElement("div");
+      row.className = "research-source";
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      anchor.textContent = source.title || source.domain || "Open source";
+      const domain = document.createElement("span");
+      domain.textContent = source.domain || new URL(url).hostname;
+      row.append(anchor, domain);
+      sourceList.append(row);
+    }
+    card.append(sourceHeading, sourceList);
+  }
+
+  const evidence = Array.isArray(item.citations) ? item.citations.slice(0, 12) : [];
+  if (evidence.length) {
+    const evidenceHeading = document.createElement("p");
+    evidenceHeading.className = "research-citations";
+    evidenceHeading.textContent = "Claim-level source support";
+    const evidenceList = document.createElement("div");
+    evidenceList.className = "research-sources";
+    for (const citation of evidence) {
+      const row = document.createElement("div");
+      row.className = "research-source";
+      const claim = document.createElement("span");
+      claim.textContent = citation.claim || "Supported claim";
+      row.append(claim);
+      const citedUrls = Array.isArray(citation.sourceUrls) ? citation.sourceUrls.slice(0, 5) : [];
+      for (const rawUrl of citedUrls) {
+        const url = safeResearchUrl(rawUrl);
+        if (!url) continue;
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.target = "_blank";
+        anchor.rel = "noopener noreferrer";
+        anchor.textContent = "Supporting source: " + new URL(url).hostname;
+        row.append(anchor);
+      }
+      evidenceList.append(row);
+    }
+    card.append(evidenceHeading, evidenceList);
+  }
+
+  if (canSave && item.engine !== "saved-research") {
+    const actions = document.createElement("div");
+    actions.className = "research-actions";
+    const save = document.createElement("button");
+    save.type = "button";
+    save.className = "item-action";
+    save.textContent = "Save research";
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      try {
+        const data = await api("/api/research/saved", {
+          method: "POST",
+          body: JSON.stringify({
+            query: item.query,
+            answer: item.answer,
+            sources: item.sources || [],
+            citations: item.citations || [],
+            searchedAt: item.searchedAt
+          })
+        });
+        state.research.unshift(data.item);
+        renderSavedResearch();
+        save.textContent = "Saved";
+        toast("Research saved to your private JARVIS history.");
+      } catch (error) {
+        save.disabled = false;
+        toast(error.message, true);
+      }
+    });
+    actions.append(save);
+    card.append(actions);
+  }
+  target.append(card);
+}
+
+function renderSavedResearch() {
+  const target = $("#saved-research-list");
+  if (!target) return;
+  target.replaceChildren();
+  if (!state.research.length) {
+    target.append(makeEmpty("Nothing saved yet. Live research is never saved automatically."));
+    return;
+  }
+
+  for (const item of state.research) {
+    const row = document.createElement("article");
+    row.className = "list-item";
+    const main = document.createElement("div");
+    main.className = "list-item-main";
+    const title = document.createElement("strong");
+    title.textContent = item.query || "Saved research";
+    const meta = document.createElement("div");
+    meta.className = "list-item-meta";
+    meta.textContent = (item.sources?.length || 0) + " source(s) · Saved " + new Date(item.createdAt).toLocaleString();
+    main.append(title, meta);
+
+    const actions = document.createElement("div");
+    actions.className = "device-actions";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "item-action";
+    open.textContent = "View";
+    open.addEventListener("click", () => {
+      renderGroundedResearch({ ...item, engine: "saved-research" }, false);
+      $("#search-results").scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "item-action";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      remove.disabled = true;
+      try {
+        await api("/api/research/saved/" + encodeURIComponent(item.id), { method: "DELETE" });
+        state.research = state.research.filter((saved) => saved.id !== item.id);
+        renderSavedResearch();
+        toast("Saved research deleted.");
+      } catch (error) {
+        remove.disabled = false;
+        toast(error.message, true);
+      }
+    });
+    actions.append(open, remove);
+    row.append(main, actions);
+    target.append(row);
+  }
+}
+
 $("#search-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const button = $("#search-button");
+  const query = $("#search-input").value.trim();
+  const offlineButton = $("#search-button");
+  const webButton = $("#web-research-button");
+  const useWeb = event.submitter?.id === "web-research-button";
   const target = $("#search-results");
-  button.disabled = true;
+  offlineButton.disabled = true;
+  webButton.disabled = true;
   target.replaceChildren();
-  target.append(makeEmpty("Searching the embedded offline knowledge base…"));
+  target.append(makeEmpty(useWeb
+    ? "Searching the live web and checking source citations…"
+    : "Searching the embedded offline knowledge base…"));
+
   try {
-    const query = $("#search-input").value.trim();
-    const data = await api("/api/search?q=" + encodeURIComponent(query));
-    target.replaceChildren();
-    if (!data.results.length) target.append(makeEmpty("No results were returned for that query."));
-    for (const result of data.results) {
-      const card = document.createElement("article");
-      card.className = "result-card";
-      const title = result.url ? document.createElement("a") : document.createElement("strong");
-      if (result.url) {
-        title.href = result.url;
-        title.target = "_blank";
-        title.rel = "noopener noreferrer";
+    if (useWeb) {
+      const data = await api("/api/research", {
+        method: "POST",
+        body: JSON.stringify({ query })
+      });
+      renderGroundedResearch(data);
+    } else {
+      const data = await api("/api/search?q=" + encodeURIComponent(query.slice(0, 300)));
+      target.replaceChildren();
+      if (!data.results.length) target.append(makeEmpty("No results were returned for that query."));
+      for (const result of data.results) {
+        const card = document.createElement("article");
+        card.className = "result-card";
+        const title = document.createElement("strong");
+        title.textContent = result.title;
+        const snippet = document.createElement("p");
+        snippet.textContent = result.snippet || "No description available.";
+        card.append(title, snippet);
+        target.append(card);
       }
-      title.textContent = result.title;
-      const snippet = document.createElement("p");
-      snippet.textContent = result.snippet || "No description available.";
-      const url = document.createElement("div");
-      url.className = "result-url";
-      url.textContent = result.url;
-      card.append(title, snippet, url);
-      target.append(card);
     }
   } catch (error) {
     target.replaceChildren();
     target.append(makeEmpty(error.message));
     toast(error.message, true);
-  } finally { button.disabled = false; }
+  } finally {
+    offlineButton.disabled = false;
+    webButton.disabled = false;
+  }
 });
 
 $("#voice-button").addEventListener("click", () => {
@@ -505,5 +787,90 @@ $("#voice-button").addEventListener("click", () => {
     toast("Could not start voice input.", true);
   }
 });
+
+
+async function refreshDevices() {
+  const data = await api("/api/devices");
+  state.devices = Array.isArray(data.devices) ? data.devices : [];
+  renderDevices();
+}
+
+function renderDevices() {
+  const target = $("#device-list");
+  if (!target) return;
+  target.replaceChildren();
+  if (!state.devices.length) {
+    target.append(makeEmpty("No paired devices yet. Generate a code above to connect your Android Companion."));
+    return;
+  }
+
+  for (const device of state.devices) {
+    const row = document.createElement("article");
+    row.className = "list-item";
+    const main = document.createElement("div");
+    main.className = "list-item-main";
+    const title = document.createElement("strong");
+    title.textContent = device.name || device.model || "Android device";
+    const meta = document.createElement("div");
+    meta.className = "list-item-meta";
+    const modelText = [device.manufacturer, device.model].filter(Boolean).join(" ");
+    const lastSeen = device.lastSeenAt ? new Date(device.lastSeenAt).toLocaleString() : "Not checked in yet";
+    meta.textContent = [modelText, "Last seen: " + lastSeen, device.accessibilityEnabled ? "Accessibility enabled" : "Accessibility not enabled"].filter(Boolean).join(" · ");
+    main.append(title, meta);
+
+    const status = document.createElement("span");
+    status.className = "device-status";
+    status.textContent = device.revokedAt ? "Revoked" : "Paired";
+    if (device.revokedAt) status.classList.add("revoked");
+
+    const actions = document.createElement("div");
+    actions.className = "device-actions";
+    actions.append(status);
+    if (!device.revokedAt) {
+      const revoke = document.createElement("button");
+      revoke.type = "button";
+      revoke.className = "item-action";
+      revoke.textContent = "Revoke";
+      revoke.addEventListener("click", async () => {
+        if (!confirm("Revoke this device? Its saved device credential will stop working.")) return;
+        revoke.disabled = true;
+        try {
+          await api("/api/devices/" + encodeURIComponent(device.id), { method: "DELETE" });
+          await refreshDevices();
+          toast("Device access revoked.");
+        } catch (error) {
+          toast(error.message, true);
+          revoke.disabled = false;
+        }
+      });
+      actions.append(revoke);
+    }
+    row.append(main, actions);
+    target.append(row);
+  }
+}
+
+async function generatePairingCode() {
+  const button = $("#create-pairing-code");
+  const panel = $("#pairing-code-panel");
+  button.disabled = true;
+  try {
+    const data = await api("/api/devices/pairing-challenges", {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+    $("#pairing-code-value").textContent = data.code;
+    $("#pairing-code-expiry").textContent = "Expires: " + new Date(data.expiresAt).toLocaleTimeString();
+    panel.classList.remove("hidden");
+    toast("One-time pairing code created.");
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+$("#create-pairing-code").addEventListener("click", generatePairingCode);
+$("#refresh-devices").addEventListener("click", () => refreshDevices().catch((error) => toast(error.message, true)));
 
 boot();

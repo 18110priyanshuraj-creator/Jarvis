@@ -2,7 +2,7 @@
   "name": "jarvis-personal-assistant",
   "version": "0.1.0",
   "private": true,
-  "description": "Private JARVIS dashboard with a self-contained, rule-based offline assistant core.",
+  "description": "Private JARVIS assistant with offline core, optional Gemini planning, and Android Companion.",
   "type": "module",
   "scripts": {
     "start": "node server.js",
@@ -16,6 +16,7 @@
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.1.0",
-    "@neondatabase/serverless": "^1.0.2"
+    "@neondatabase/serverless": "^1.0.2",
+    "@google/genai": "^2.32.0"
   }
 }

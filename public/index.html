@@ -36,6 +36,7 @@
       <div class="nav-label">WORKSPACE</div>
       <nav class="main-nav" aria-label="Main navigation">
         <button class="nav-item active" data-view="chat"><span class="nav-icon">✳</span> Assistant</button>
+        <button class="nav-item" data-view="devices"><span class="nav-icon">▣</span> Device Control</button>
         <button class="nav-item" data-view="research"><span class="nav-icon">⌕</span> Research</button>
         <button class="nav-item" data-view="tasks"><span class="nav-icon">☷</span> Tasks <span id="task-count" class="nav-count">0</span></button>
         <button class="nav-item" data-view="memory"><span class="nav-icon">◈</span> Memory</button>
@@ -60,9 +61,10 @@
       <section id="view-chat" class="view chat-view">
         <div class="chat-intro">
           <div class="orb" aria-hidden="true"><span>J</span></div>
-          <p class="eyebrow">BUILT-IN OFFLINE ASSISTANT</p>
+          <p class="eyebrow">JARVIS PERSONAL ASSISTANT</p>
           <h1>What are we working on?</h1>
-          <p class="muted intro-copy">Study, calculate, organize tasks, use built-in notes, or break a goal into small steps—without an external AI model.</p>
+          <p class="muted intro-copy">Use the built-in offline brain by default. Optional Gemini conversation can be enabled in server settings for more open-ended replies.</p>
+          <p class="composer-note">Privacy: chats stay temporary in server memory for up to one hour of inactivity and disappear on sign-out or server restart. JARVIS saves only notes you explicitly ask it to remember. Relevant current questions can use live, cited web research when enabled; web results are not saved automatically.</p>
           <div class="prompt-grid">
             <button class="prompt-card" data-prompt="Help me make a realistic plan for today."><span>↗</span><strong>Plan my day</strong><small>Turn priorities into steps</small></button>
             <button class="prompt-card" data-prompt="Explain a difficult concept step by step and give me a quick check question at the end."><span>◉</span><strong>Help me learn</strong><small>Understand, then practise</small></button>
@@ -74,7 +76,8 @@
           <textarea id="chat-input" rows="1" maxlength="4000" placeholder="Message JARVIS…" aria-label="Message JARVIS"></textarea>
           <div class="composer-bottom">
             <div class="composer-tools">
-              <button type="button" id="voice-button" class="tool-button" title="Voice input" aria-label="Voice input">🎙 <span>Voice</span></button>
+              <button type="button" id="voice-button" class="tool-button" title="Start voice input" aria-label="Start voice input">🎙 <span>Speak</span></button>
+              <button type="button" id="clear-chat-button" class="tool-button" title="Clear temporary conversation">Clear chat</button>
               <label class="speak-label"><input id="speak-toggle" type="checkbox"> Read replies aloud</label>
             </div>
             <button id="send-button" type="submit" class="primary send-button">Send <span aria-hidden="true">↑</span></button>
@@ -118,17 +121,49 @@
       </section>
 
       <section id="view-research" class="view content-view hidden">
-        <div class="section-heading"><div><p class="eyebrow">WEB DISCOVERY</p><h1>Research</h1><p class="muted">Search the small knowledge base bundled inside JARVIS. No search server or external URL is contacted.</p></div></div>
+        <div class="section-heading"><div><p class="eyebrow">GROUNDED WEB DISCOVERY</p><h1>Research</h1><p class="muted">Use JARVIS’s bundled notes offline or request a live, source-cited web research answer.</p></div></div>
         <form id="search-form" class="search-form">
           <span aria-hidden="true">⌕</span>
-          <input id="search-input" required maxlength="300" placeholder="Search built-in topics such as Newton’s laws, units, mole concept, or debugging…">
-          <button class="primary" id="search-button" type="submit">Search</button>
+          <input id="search-input" required maxlength="1200" placeholder="Ask a research question…">
+          <button class="primary" id="search-button" type="submit">Search offline</button>
+          <button class="item-action web-search-button" id="web-research-button" type="submit">Search live web</button>
         </form>
-        <div class="research-hint"><strong>Source check</strong><p>Prefer official documentation and primary sources. Search uses only JARVIS’s bundled offline notes; it does not browse the live web.</p></div>
-        <div id="search-results" class="search-results"></div>
+        <div class="research-hint"><strong>Live research privacy and cost</strong><p>Live mode is disabled by default; availability depends on server settings. When enabled, your question is sent to Google Gemini with Google Search grounding. Results show source links and are not saved automatically; use “Save research” to keep one in your private JARVIS history. Google’s Search grounding has a free monthly allowance and may incur usage charges after that. Do not enable paid billing without a parent or guardian reviewing it.</p></div>
+        <div id="search-results" class="search-results" aria-live="polite"></div>
+        <div class="list-heading"><h2>Saved research</h2></div>
+        <div id="saved-research-list" class="item-list"></div>
       </section>
 
-      <footer class="page-footer"><span>JARVIS OFFLINE CORE · v0.2.0</span><span>Built for one user, with safety boundaries</span></footer>
+      
+      <section id="view-devices" class="view content-view hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">ANDROID COMPANION</p>
+            <h1>Device Control</h1>
+            <p class="muted">Pair your own Android device using a short-lived code. Phase 1 enables secure pairing, device status and voice chat; screen actions are not enabled yet.</p>
+          </div>
+        </div>
+        <div class="form-card">
+          <h2>Pair a new device</h2>
+          <p class="muted">Open JARVIS Companion on your tablet, enter the HTTPS server address and the one-time code shown here.</p>
+          <div class="form-row">
+            <span class="small muted">Code expires after 3 minutes and can only be used once.</span>
+            <button class="primary" id="create-pairing-code" type="button">Generate pairing code</button>
+          </div>
+          <div id="pairing-code-panel" class="pairing-code-panel hidden" aria-live="polite">
+            <div class="small muted">ONE-TIME PAIRING CODE</div>
+            <div id="pairing-code-value" class="pairing-code-value">------</div>
+            <div id="pairing-code-expiry" class="small muted"></div>
+          </div>
+        </div>
+        <div class="list-heading">
+          <h2>Connected devices</h2>
+          <button class="item-action" id="refresh-devices" type="button">Refresh</button>
+        </div>
+        <div id="device-list" class="item-list"></div>
+      </section>
+
+<footer class="page-footer"><span>JARVIS PERSONAL SYSTEM · v0.5.0</span><span>Built for one user, with safety boundaries</span></footer>
     </main>
   </div>
 </body>

@@ -8,6 +8,10 @@ import fs from "node:fs/promises";
 import crypto from "node:crypto";
 import { runLocalBrain, searchLocalKnowledge } from "./brain.js";
 import { fileURLToPath } from "node:url";
+import { createDevicesRouter } from "./routes/devices.js";
+import { createAgentPlan } from "./services/agent-planner.js";
+import { createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
+import { createGroundedResearch, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -55,9 +59,19 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many login attempts. Please wait and try again." }
 });
+const webResearchLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 6,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Web research rate limit reached. Please try again later." }
+});
 app.use("/api", apiLimiter);
 
-let store = { chats: [], memories: [], tasks: [], feedback: [], skills: [] };
+let store = { memories: [], tasks: [], feedback: [], skills: [], devices: [], research: [] };
+const sessionChats = new Map();
+const MAX_EPHEMERAL_CHAT_MESSAGES = 32;
+const EPHEMERAL_CHAT_TTL_MS = 60 * 60 * 1000;
 let writeQueue = Promise.resolve();
 let neonSql;
 
@@ -69,11 +83,21 @@ function getNeonSql() {
 
 function normalizeStore(parsed = {}) {
   return {
-    chats: Array.isArray(parsed.chats) ? parsed.chats.slice(-100) : [],
-    memories: Array.isArray(parsed.memories) ? parsed.memories.slice(-200) : [],
+    memories: Array.isArray(parsed.memories)
+      ? parsed.memories.filter((item) => item && ["preference", "goal", "fact"].includes(item.category) && isSafeMemoryContent(item.content)).slice(-200)
+      : [],
     tasks: Array.isArray(parsed.tasks) ? parsed.tasks.slice(-200) : [],
-    feedback: Array.isArray(parsed.feedback) ? parsed.feedback.slice(-300) : [],
-    skills: Array.isArray(parsed.skills) ? parsed.skills.slice(-100) : []
+    // Keep legacy rating metadata only; strip old prompt text and free-form feedback notes.
+    feedback: Array.isArray(parsed.feedback)
+      ? parsed.feedback.slice(-300).map((item) => ({
+          id: typeof item?.id === "string" ? item.id : newId(),
+          rating: item?.rating === "up" ? "up" : item?.rating === "down" ? "down" : "",
+          createdAt: typeof item?.createdAt === "string" ? item.createdAt : ""
+        })).filter((item) => item.rating)
+      : [],
+    skills: Array.isArray(parsed.skills) ? parsed.skills.slice(-100) : [],
+    devices: Array.isArray(parsed.devices) ? parsed.devices.slice(-50) : [],
+    research: Array.isArray(parsed.research) ? parsed.research.slice(-50) : []
   };
 }
 
@@ -116,7 +140,10 @@ function requireAuth(req, res, next) {
   const token = parseCookies(req.headers.cookie).jarvis_session;
   const session = token ? sessions.get(token) : null;
   if (!session || session.expiresAt <= Date.now()) {
-    if (token) sessions.delete(token);
+    if (token) {
+      sessions.delete(token);
+      sessionChats.delete("session:" + token);
+    }
     return res.status(401).json({ error: "Please sign in to continue." });
   }
   session.expiresAt = Date.now() + SESSION_TTL_MS;
@@ -151,6 +178,8 @@ async function loadStore() {
     if (rows.length > 0) {
       const saved = typeof rows[0].state === "string" ? JSON.parse(rows[0].state) : rows[0].state;
       store = normalizeStore(saved);
+      // Remove legacy durable chat transcripts from the persistent snapshot.
+      await saveStore();
       return;
     }
     let initial = store;
@@ -170,6 +199,8 @@ async function loadStore() {
   try {
     const raw = await fs.readFile(STORE_FILE, "utf8");
     store = normalizeStore(JSON.parse(raw));
+    // Rewrite legacy JSON state without conversation transcripts.
+    await saveStore();
   } catch (error) {
     if (error.code !== "ENOENT") throw new Error("Could not read saved JARVIS data. Check " + STORE_FILE + " before restarting.");
     await saveStore();
@@ -193,13 +224,170 @@ function saveStore() {
   return writeQueue;
 }
 
+function getConversationMessages(key) {
+  const now = Date.now();
+  for (const [entryKey, entry] of sessionChats) {
+    if (now - entry.updatedAt > EPHEMERAL_CHAT_TTL_MS) sessionChats.delete(entryKey);
+  }
+  let entry = sessionChats.get(key);
+  if (!entry) {
+    entry = { messages: [], updatedAt: now };
+    sessionChats.set(key, entry);
+  }
+  entry.updatedAt = now;
+  return entry.messages;
+}
+
+function appendConversationTurn(key, message, result) {
+  const messages = getConversationMessages(key);
+  const createdAt = new Date().toISOString();
+  messages.push({ id: newId(), role: "user", content: message, createdAt });
+  messages.push({
+    id: newId(),
+    role: "assistant",
+    content: result.answer,
+    engine: result.engine,
+    sources: Array.isArray(result.sources) ? result.sources : [],
+    citations: Array.isArray(result.citations) ? result.citations : [],
+    createdAt: new Date().toISOString()
+  });
+  if (messages.length > MAX_EPHEMERAL_CHAT_MESSAGES) {
+    messages.splice(0, messages.length - MAX_EPHEMERAL_CHAT_MESSAGES);
+  }
+}
+
+const SENSITIVE_MEMORY_PATTERN = /\b(password|passcode|pin|otp|one[- ]time code|api key|secret|access token|private key|bank account|card number|medical|health|diagnos(?:is|ed)|medicine|medication|home address|exact address|phone number|email address)\b/i;
+
+function isSafeMemoryContent(content) {
+  return typeof content === "string" && content.trim().length >= 3 &&
+    content.trim().length <= 500 && !SENSITIVE_MEMORY_PATTERN.test(content);
+}
+
+function parseExplicitMemoryIntent(message) {
+  const normalized = cleanText(message, 4000).replace(/^jarvis[,:]?\s*/i, "");
+  const match = normalized.match(/^(?:please\s+)?remember(?:\s+that)?\s*[:,-]?\s*(.+)$/i) ||
+    normalized.match(/^(?:please\s+)?(?:yaad\s+rakhna|is\s+baat\s+ko\s+yaad\s+rakhna)\s*[:,-]?\s*(.+)$/i);
+  if (!match) return null;
+  const content = cleanText(match[1], 500).replace(/[.!?]+$/, "").trim();
+  if (!isSafeMemoryContent(content)) return { blocked: true };
+  const lower = content.toLowerCase();
+  const category = /\b(goal|aim|target|plan|want to|trying to)\b/.test(lower)
+    ? "goal"
+    : /\b(prefer|please use|explain|respond|answer|language|style|format)\b/.test(lower)
+      ? "preference"
+      : "fact";
+  return { content, category, blocked: false };
+}
+
+async function processAssistantTurn(message, conversationKey) {
+  const history = getConversationMessages(conversationKey)
+    .filter((item) => item.role === "user" || item.role === "assistant")
+    .slice(-8)
+    .map(({ role, content }) => ({ role, content }));
+
+  const memoryIntent = parseExplicitMemoryIntent(message);
+  let result;
+  if (memoryIntent?.blocked) {
+    result = {
+      answer: "I won't save that because it may contain a secret or sensitive personal information. Use the secure service directly instead.",
+      engine: "privacy-guard",
+      externalAI: false
+    };
+  } else if (memoryIntent) {
+    const existing = store.memories.find((item) => item.content.toLowerCase() === memoryIntent.content.toLowerCase());
+    if (existing) {
+      result = { answer: "That preference or fact is already in your saved memory.", engine: "memory", externalAI: false };
+    } else if (store.memories.length >= 200) {
+      result = { answer: "Your memory list is full. Delete an old note before saving another.", engine: "memory", externalAI: false };
+    } else {
+      const memory = {
+        id: newId(),
+        content: memoryIntent.content,
+        category: memoryIntent.category,
+        createdAt: new Date().toISOString()
+      };
+      store.memories.push(memory);
+      await saveStore();
+      result = { answer: "I’ll remember this preference or fact because you explicitly asked me to. You can review or delete it in Memory.", engine: "memory", externalAI: false };
+    }
+  } else {
+    result = await generateAssistantAnswer(message, history, store.memories);
+  }
+
+  appendConversationTurn(conversationKey, message, result);
+  return result;
+}
+
 function cleanText(value, maxLength) {
   if (typeof value !== "string") return "";
   return value.trim().slice(0, maxLength);
 }
 
+async function generateAssistantAnswer(message, history = [], memories = store.memories) {
+  const useLiveWeb = shouldUseLiveWebResearch(message);
+  let webNotice = "";
+
+  if (useLiveWeb) {
+    if (isWebResearchEnabled()) {
+      try {
+        const research = await createGroundedResearch(message);
+        return { ...research, engine: "gemini-google-search", externalAI: true };
+      } catch (error) {
+        if (error?.code === "RESTRICTED_RESEARCH_QUERY") {
+          return { answer: error.message, engine: "safety-filter", externalAI: false };
+        }
+        console.error("Automatic live web research failed:", error?.name || "Error");
+        webNotice = "I could not verify this with live web sources right now. The answer below is not live-verified.";
+      }
+    } else {
+      webNotice = "Live web search is currently disabled on the server, so this answer is not checked against current internet sources.";
+    }
+  }
+
+  const conversationAIEnabled = isConversationAIEnabled();
+  if (conversationAIEnabled) {
+    try {
+      const answer = await createConversationReply(message, history, memories);
+      return {
+        answer: webNotice ? webNotice + "\n\n" + answer : answer,
+        engine: "gemini-conversation",
+        externalAI: true,
+        liveWebChecked: false
+      };
+    } catch (error) {
+      console.error("Gemini conversation failed; using the offline brain:", error?.name || "Error");
+    }
+  }
+
+  const answer = runLocalBrain({
+    message,
+    memories: store.memories,
+    tasks: store.tasks,
+    skills: store.skills,
+    feedback: store.feedback
+  });
+  return {
+    answer: webNotice ? webNotice + "\n\n" + answer : answer,
+    engine: conversationAIEnabled ? "built-in-offline-fallback" : "built-in-offline",
+    externalAI: false,
+    liveWebChecked: false
+  };
+}
+
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, service: "jarvis", version: "0.2.0", brain: "built-in-offline-rules", externalAI: false });
+  const conversationAIEnabled = isConversationAIEnabled();
+  const plannerAIEnabled = Boolean(process.env.GEMINI_API_KEY);
+  const webResearchEnabled = isWebResearchEnabled();
+  res.json({
+    ok: true,
+    service: "jarvis",
+    version: "0.5.0-selective-memory-voice-web",
+    brain: conversationAIEnabled ? "gemini-conversation-with-offline-fallback" : "built-in-offline-rules",
+    plannerAIEnabled,
+    conversationAIEnabled,
+    webResearchEnabled,
+    externalAI: plannerAIEnabled || conversationAIEnabled || webResearchEnabled
+  });
 });
 
 app.post("/api/login", loginLimiter, (req, res) => {
@@ -218,6 +406,7 @@ app.post("/api/login", loginLimiter, (req, res) => {
 
 app.post("/api/logout", requireAuth, (req, res) => {
   sessions.delete(req.sessionToken);
+  sessionChats.delete("session:" + req.sessionToken);
   clearSessionCookie(res);
   res.json({ ok: true });
 });
@@ -226,44 +415,32 @@ app.get("/api/session", requireAuth, (_req, res) => {
   res.json({ authenticated: true });
 });
 
-app.get("/api/state", requireAuth, (_req, res) => {
+app.get("/api/state", requireAuth, (req, res) => {
   res.json({
-    chats: store.chats.slice(-60),
+    chats: getConversationMessages("session:" + req.sessionToken),
     memories: store.memories,
     tasks: store.tasks.slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))),
     feedback: store.feedback.slice(-100),
-    skills: store.skills
+    skills: store.skills,
+    research: store.research.slice().reverse()
   });
+});
+
+app.delete("/api/chat/history", requireAuth, (req, res) => {
+  sessionChats.delete("session:" + req.sessionToken);
+  res.json({ ok: true });
 });
 
 app.post("/api/chat", requireAuth, async (req, res) => {
   const message = cleanText(req.body?.message, 4000);
   if (!message) return res.status(400).json({ error: "Enter a message first." });
-
-  store.chats.push({ id: newId(), role: "user", content: message, createdAt: new Date().toISOString() });
-  store.chats = store.chats.slice(-100);
-  await saveStore();
-
-  // The built-in brain is deterministic and self-contained: no model server,
-  // external inference URL, API key, or outbound network request is used here.
-  let answer;
   try {
-    answer = runLocalBrain({
-      message,
-      memories: store.memories,
-      tasks: store.tasks,
-      skills: store.skills,
-      feedback: store.feedback
-    });
+    const result = await processAssistantTurn(message, "session:" + req.sessionToken);
+    res.json(result);
   } catch (error) {
-    console.error("Built-in brain failed:", error?.name || "Error");
-    return res.status(500).json({ error: "The built-in offline brain encountered an internal error." });
+    console.error("Assistant reply failed:", error?.name || "Error");
+    res.status(500).json({ error: "JARVIS could not process this request. Please try again." });
   }
-
-  store.chats.push({ id: newId(), role: "assistant", content: answer, createdAt: new Date().toISOString() });
-  store.chats = store.chats.slice(-100);
-  await saveStore();
-  res.json({ answer, engine: "built-in-offline", externalAI: false });
 });
 
 app.post("/api/memories", requireAuth, async (req, res) => {
@@ -271,6 +448,7 @@ app.post("/api/memories", requireAuth, async (req, res) => {
   const allowed = ["preference", "goal", "fact"];
   const category = allowed.includes(req.body?.category) ? req.body.category : "fact";
   if (!content) return res.status(400).json({ error: "Memory text cannot be empty." });
+  if (!isSafeMemoryContent(content)) return res.status(400).json({ error: "For privacy, JARVIS does not save secrets or sensitive personal information as memory." });
   if (store.memories.length >= 200) return res.status(409).json({ error: "Memory limit reached. Delete an old note first." });
   const memory = { id: newId(), content, category, createdAt: new Date().toISOString() };
   store.memories.push(memory);
@@ -292,7 +470,8 @@ app.post("/api/feedback", requireAuth, async (req, res) => {
   const note = cleanText(req.body?.note, 500);
   if (!prompt || !rating) return res.status(400).json({ error: "Feedback needs a prompt and an up/down rating." });
   if (store.feedback.length >= 300) store.feedback = store.feedback.slice(-250);
-  const item = { id: newId(), prompt, rating, note, createdAt: new Date().toISOString() };
+  // Keep only the rating: never persist the prompt or free-text note as training data.
+  const item = { id: newId(), rating, createdAt: new Date().toISOString() };
   store.feedback.push(item);
   await saveStore();
   res.status(201).json({ feedback: item });
@@ -364,6 +543,70 @@ app.get("/api/search", requireAuth, (req, res) => {
   }));
   res.json({ query, results, source: "embedded-local-knowledge", externalSearch: false });
 });
+
+app.post("/api/research", requireAuth, webResearchLimiter, async (req, res) => {
+  const query = cleanText(req.body?.query, 1200);
+  if (!query) return res.status(400).json({ error: "Enter a research question first." });
+  if (!isWebResearchEnabled()) {
+    return res.status(503).json({
+      error: "Live web research is disabled. Configure GEMINI_API_KEY and GEMINI_WEB_RESEARCH_ENABLED=true on the server."
+    });
+  }
+
+  try {
+    const result = await createGroundedResearch(query);
+    res.json(result);
+  } catch (error) {
+    if (error?.code === "RESTRICTED_RESEARCH_QUERY") {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error("Grounded web research failed:", error?.name || "Error");
+    res.status(502).json({ error: "Live web research could not complete this request. Please try again later." });
+  }
+});
+
+app.post("/api/research/saved", requireAuth, async (req, res) => {
+  let normalized;
+  try {
+    normalized = normalizeSavedResearch(req.body);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Saved research is invalid." });
+  }
+
+  if (store.research.length >= 50) {
+    return res.status(409).json({ error: "Saved research limit reached. Delete an older saved item first." });
+  }
+
+  const item = {
+    id: newId(),
+    ...normalized,
+    createdAt: new Date().toISOString()
+  };
+  store.research.push(item);
+  await saveStore();
+  res.status(201).json({ item });
+});
+
+app.delete("/api/research/saved/:id", requireAuth, async (req, res) => {
+  const before = store.research.length;
+  store.research = store.research.filter((item) => item.id !== req.params.id);
+  if (store.research.length === before) return res.status(404).json({ error: "Saved research item not found." });
+  await saveStore();
+  res.json({ ok: true });
+});
+
+
+async function runDeviceVoiceCommand(message, device = {}) {
+  const deviceKey = "device:" + (device.id || "unpaired");
+  try {
+    return await processAssistantTurn(message, deviceKey);
+  } catch (error) {
+    console.error("Device voice command failed:", error?.name || "Error");
+    throw new Error("The JARVIS assistant could not process this voice request.");
+  }
+}
+
+app.use("/api/devices", createDevicesRouter({ getStore: () => store, saveStore, requireAuth, runDeviceVoiceCommand, createAgentPlan }));
 
 app.use("/api", (_req, res) => res.status(404).json({ error: "API route not found." }));
 app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"] }));

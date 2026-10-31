@@ -46,6 +46,10 @@ before(async () => {
       PORT: String(port),
       JARVIS_PASSWORD: "test-only-password-2026",
       JARVIS_DATA_DIR: tempDir,
+      DATABASE_URL: "",
+      GEMINI_API_KEY: "",
+      GEMINI_CHAT_ENABLED: "false",
+      GEMINI_WEB_RESEARCH_ENABLED: "false",
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -79,12 +83,22 @@ test("health endpoint is public without disclosing configuration", async () => {
   const payload = await response.json();
   assert.equal(payload.ok, true);
   assert.equal(payload.service, "jarvis");
+  assert.equal(payload.plannerAIEnabled, false);
+  assert.equal(payload.conversationAIEnabled, false);
+  assert.equal(payload.webResearchEnabled, false);
+  assert.equal(payload.externalAI, false);
   assert.equal(JSON.stringify(payload).includes("test-only-password-2026"), false);
 });
 
 test("authentication, local search, tasks, memories, and offline chat behave safely", async () => {
   const blockedState = await request("/api/state", { headers: {} });
   assert.equal(blockedState.status, 401);
+  const blockedResearch = await request("/api/research", {
+    method: "POST",
+    headers: {},
+    body: JSON.stringify({ query: "What changed in the latest science research?" })
+  });
+  assert.equal(blockedResearch.status, 401);
 
   const wrongLogin = await request("/api/login", {
     method: "POST",
@@ -133,11 +147,31 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(createMemory.status, 201);
   const memoryPayload = await createMemory.json();
 
+  const savedResearch = await request("/api/research/saved", {
+    method: "POST",
+    body: JSON.stringify({
+      query: "How does solar energy work?",
+      answer: "Solar panels convert sunlight into electrical energy.",
+      searchedAt: "2026-10-31T00:00:00.000Z",
+      sources: [
+        { title: "Official energy guide", url: "https://energy.example/solar" },
+        { title: "Unsafe source", url: "javascript:alert(1)" }
+      ]
+    })
+  });
+  assert.equal(savedResearch.status, 201);
+  const savedResearchPayload = await savedResearch.json();
+  assert.equal(savedResearchPayload.item.sources.length, 1);
+
   const currentState = await request("/api/state");
   assert.equal(currentState.status, 200);
   const snapshot = await currentState.json();
   assert.equal(snapshot.tasks.some((item) => item.id === taskPayload.task.id), true);
   assert.equal(snapshot.memories.some((item) => item.id === memoryPayload.memory.id), true);
+  assert.equal(snapshot.research.some((item) => item.id === savedResearchPayload.item.id), true);
+
+  const deleteSavedResearch = await request("/api/research/saved/" + savedResearchPayload.item.id, { method: "DELETE" });
+  assert.equal(deleteSavedResearch.status, 200);
 
   const deleteMemory = await request("/api/memories/" + memoryPayload.memory.id, { method: "DELETE" });
   assert.equal(deleteMemory.status, 200);
@@ -168,6 +202,12 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal((await request("/api/feedback/" + feedbackPayload.feedback.id, { method: "DELETE" })).status, 200);
   assert.equal((await request("/api/skills/" + skillPayload.skill.id, { method: "DELETE" })).status, 200);
 
+  const disabledWebResearch = await request("/api/research", {
+    method: "POST",
+    body: JSON.stringify({ query: "What changed in the latest science research?" })
+  });
+  assert.equal(disabledWebResearch.status, 503);
+
   const localSearch = await request("/api/search?q=mole%20concept");
   assert.equal(localSearch.status, 200);
   const localSearchPayload = await localSearch.json();
@@ -184,9 +224,53 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(chatPayload.engine, "built-in-offline");
   assert.equal(chatPayload.externalAI, false);
 
+  const memoryCommand = await request("/api/chat", {
+    method: "POST",
+    body: JSON.stringify({ message: "Remember that I prefer short Hinglish explanations." })
+  });
+  assert.equal(memoryCommand.status, 200);
+  assert.match((await memoryCommand.json()).answer, /remember this/i);
+
+  const blockedMemoryCommand = await request("/api/chat", {
+    method: "POST",
+    body: JSON.stringify({ message: "Remember that my API key is do-not-save." })
+  });
+  assert.equal(blockedMemoryCommand.status, 200);
+  assert.match((await blockedMemoryCommand.json()).answer, /won't save/i);
+
+  const sessionState = await request("/api/state");
+  const sessionSnapshot = await sessionState.json();
+  assert.ok(sessionSnapshot.chats.some((item) => item.content === "What is 2 + 2?"));
+  assert.ok(sessionSnapshot.memories.some((item) => item.content === "I prefer short Hinglish explanations"));
+
+  const persistedState = await fs.readFile(path.join(tempDir, "state.json"), "utf8");
+  assert.equal(persistedState.includes("What is 2 + 2?"), false);
+  assert.equal(persistedState.includes("Remember that I prefer short Hinglish explanations."), false);
+  assert.equal(persistedState.includes("Explain this simply"), false);
+  assert.equal(persistedState.includes("do-not-save"), false);
+
+  const clearChat = await request("/api/chat/history", { method: "DELETE" });
+  assert.equal(clearChat.status, 200);
+  const emptyChatState = await request("/api/state");
+  assert.deepEqual((await emptyChatState.json()).chats, []);
+
   const logout = await request("/api/logout", { method: "POST", body: JSON.stringify({}) });
   assert.equal(logout.status, 200);
   cookie = "";
   const afterLogout = await request("/api/state", { headers: {} });
   assert.equal(afterLogout.status, 401);
+  assert.equal(afterLogout.status, 401);
+
+  const reLogin = await request("/api/login", {
+    method: "POST",
+    body: JSON.stringify({ password: "test-only-password-2026" })
+  });
+  assert.equal(reLogin.status, 200);
+  cookie = (reLogin.headers.get("set-cookie") || "").split(";")[0];
+  const freshSession = await request("/api/state");
+  assert.deepEqual((await freshSession.json()).chats, []);
+  const finalLogout = await request("/api/logout", { method: "POST", body: JSON.stringify({}) });
+  assert.equal(finalLogout.status, 200);
+  cookie = "";
+
 });
