@@ -38,6 +38,7 @@
         <button class="nav-item active" data-view="chat"><span class="nav-icon">✳</span> Assistant</button>
         <button class="nav-item" data-view="devices"><span class="nav-icon">▣</span> Device Control</button>
         <button class="nav-item" data-view="research"><span class="nav-icon">⌕</span> Research</button>
+        <button class="nav-item" data-view="knowledge"><span class="nav-icon">▤</span> Knowledge</button>
         <button class="nav-item" data-view="tasks"><span class="nav-icon">☷</span> Tasks <span id="task-count" class="nav-count">0</span></button>
         <button class="nav-item" data-view="memory"><span class="nav-icon">◈</span> Memory</button>
       </nav>
@@ -135,6 +136,48 @@
       </section>
 
       
+      <section id="view-knowledge" class="view content-view hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">PERSONAL KNOWLEDGE LIBRARY</p>
+            <h1>Knowledge</h1>
+            <p class="muted">Keep useful notes and research summaries here. Nothing from the internet is saved unless you choose to add it.</p>
+          </div>
+          <span class="counter" id="knowledge-count">0 saved</span>
+        </div>
+        <form id="knowledge-search-form" class="search-form">
+          <span aria-hidden="true">⌕</span>
+          <input id="knowledge-search-input" maxlength="300" placeholder="Search saved knowledge by topic or keyword…">
+          <button class="primary" type="submit">Search library</button>
+        </form>
+        <form id="knowledge-form" class="form-card">
+          <h2>Add your own knowledge note</h2>
+          <label for="knowledge-title">Title</label>
+          <input id="knowledge-title" maxlength="180" required placeholder="Example: JavaScript debugging checklist">
+          <label for="knowledge-content">Note or explanation</label>
+          <textarea id="knowledge-content" rows="4" maxlength="8000" required placeholder="Write a useful explanation, summary, or project note…"></textarea>
+          <div class="form-row">
+            <label class="field-label" for="knowledge-category">Category
+              <select id="knowledge-category">
+                <option value="general">General</option>
+                <option value="education">Education</option>
+                <option value="science">Science</option>
+                <option value="technology">Technology</option>
+                <option value="project">Project</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label class="field-label" for="knowledge-tags">Tags <span class="muted">(comma separated)</span>
+              <input id="knowledge-tags" maxlength="400" placeholder="physics, JEE, formulas">
+            </label>
+            <button class="primary" type="submit">Save note</button>
+          </div>
+          <p class="small muted">Saved web research is labelled unreviewed until you check its sources. Knowledge retrieval is not model training. Do not save passwords, API keys, OTPs, or private tokens.</p>
+        </form>
+        <div class="list-heading"><h2>Saved knowledge</h2><span class="muted small">Search, review and delete entries</span></div>
+        <div id="knowledge-list" class="item-list"></div>
+      </section>
+
       <section id="view-devices" class="view content-view hidden">
         <div class="section-heading">
           <div>
@@ -163,7 +206,7 @@
         <div id="device-list" class="item-list"></div>
       </section>
 
-<footer class="page-footer"><span>JARVIS PERSONAL SYSTEM · v0.5.0</span><span>Built for one user, with safety boundaries</span></footer>
+<footer class="page-footer"><span>JARVIS PERSONAL SYSTEM · v0.7.0</span><span>Built for one user, with safety boundaries</span></footer>
     </main>
   </div>
 </body>

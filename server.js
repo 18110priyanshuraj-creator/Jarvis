@@ -13,6 +13,7 @@ import { createAgentPlan } from "./services/agent-planner.js";
 import { createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
 import { createGroundedResearch, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
 import { getGeminiRuntimeStatus } from "./services/gemini-client.js";
+import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -69,7 +70,7 @@ const webResearchLimiter = rateLimit({
 });
 app.use("/api", apiLimiter);
 
-let store = { memories: [], tasks: [], feedback: [], skills: [], devices: [], research: [] };
+let store = { memories: [], tasks: [], feedback: [], skills: [], devices: [], research: [], knowledge: [] };
 const sessionChats = new Map();
 const MAX_EPHEMERAL_CHAT_MESSAGES = 32;
 const EPHEMERAL_CHAT_TTL_MS = 60 * 60 * 1000;
@@ -98,7 +99,12 @@ function normalizeStore(parsed = {}) {
       : [],
     skills: Array.isArray(parsed.skills) ? parsed.skills.slice(-100) : [],
     devices: Array.isArray(parsed.devices) ? parsed.devices.slice(-50) : [],
-    research: Array.isArray(parsed.research) ? parsed.research.slice(-50) : []
+    research: Array.isArray(parsed.research) ? parsed.research.slice(-50) : [],
+    knowledge: Array.isArray(parsed.knowledge)
+      ? parsed.knowledge.slice(-KNOWLEDGE_LIMITS.items).flatMap((item) => {
+          try { return [normalizeKnowledgeItem(item)]; } catch { return []; }
+        })
+      : []
   };
 }
 
@@ -348,7 +354,8 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
   const conversationAIEnabled = isConversationAIEnabled();
   if (conversationAIEnabled) {
     try {
-      const answer = await createConversationReply(message, history, memories);
+      const knowledgeContext = buildKnowledgeContext(store.knowledge, message, 3);
+      const answer = await createConversationReply(message, history, memories, knowledgeContext);
       return {
         answer: webNotice ? webNotice + "\n\n" + answer : answer,
         engine: "gemini-conversation",
@@ -365,7 +372,8 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
     memories: store.memories,
     tasks: store.tasks,
     skills: store.skills,
-    feedback: store.feedback
+    feedback: store.feedback,
+    knowledge: buildKnowledgeContext(store.knowledge, message, 3)
   });
   return {
     answer: webNotice ? webNotice + "\n\n" + answer : answer,
@@ -383,7 +391,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     service: "jarvis",
-    version: "0.6.0-gemini-runtime",
+    version: "0.7.0-knowledge-library",
     brain: conversationAIEnabled ? "gemini-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
@@ -546,12 +554,81 @@ app.delete("/api/tasks/:id", requireAuth, async (req, res) => {
 app.get("/api/search", requireAuth, (req, res) => {
   const query = cleanText(req.query.q, 300);
   if (!query) return res.status(400).json({ error: "Enter a search query." });
-  const results = searchLocalKnowledge(query, 8).map((item) => ({
+
+  const savedResults = searchKnowledgeItems(store.knowledge, query, 8).map((item) => ({
+    id: item.id,
+    title: item.title,
+    snippet: item.content.slice(0, 700),
+    category: item.category,
+    source: "saved-knowledge",
+    reviewStatus: item.reviewStatus,
+    sources: item.sources
+  }));
+  const offlineResults = searchLocalKnowledge(query, 8).map((item) => ({
     title: item.title,
     snippet: item.snippet,
-    url: ""
+    source: "embedded-local-knowledge",
+    score: item.score,
+    sources: []
   }));
-  res.json({ query, results, source: "embedded-local-knowledge", externalSearch: false });
+  const results = [...savedResults, ...offlineResults]
+    .sort((a, b) => (b.score || (b.source === "saved-knowledge" ? 10 : 0)) - (a.score || (a.source === "saved-knowledge" ? 10 : 0)))
+    .slice(0, 10);
+
+  res.json({ query, results, source: "saved-and-embedded-knowledge", externalSearch: false });
+});
+
+app.get("/api/knowledge", requireAuth, (req, res) => {
+  const query = cleanText(req.query.q, 300);
+  const requestedLimit = Number.parseInt(String(req.query.limit || "100"), 10);
+  const limit = Number.isFinite(requestedLimit) ? Math.min(100, Math.max(1, requestedLimit)) : 100;
+  const items = searchKnowledgeItems(store.knowledge, query, limit);
+  res.json({ query, total: store.knowledge.length, count: items.length, items });
+});
+
+app.post("/api/knowledge", requireAuth, async (req, res) => {
+  let item;
+  try {
+    item = normalizeKnowledgeItem(req.body);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Knowledge entry is invalid." });
+  }
+
+  const duplicate = store.knowledge.find((existing) => isDuplicateKnowledge([existing], item));
+  if (duplicate) return res.status(200).json({ item: duplicate, duplicate: true });
+
+  if (store.knowledge.length >= KNOWLEDGE_LIMITS.items) {
+    return res.status(409).json({ error: "Knowledge library is full. Delete an old entry before adding another." });
+  }
+
+  store.knowledge.push(item);
+  await saveStore();
+  res.status(201).json({ item, duplicate: false });
+});
+
+app.patch("/api/knowledge/:id", requireAuth, async (req, res) => {
+  const item = store.knowledge.find((entry) => entry.id === req.params.id);
+  if (!item) return res.status(404).json({ error: "Knowledge entry not found." });
+  if (item.sourceKind !== "web-research" || req.body?.reviewStatus !== "user-reviewed") {
+    return res.status(400).json({ error: "Only saved web research can be marked as reviewed after you check its sources." });
+  }
+
+  const updated = normalizeKnowledgeItem({
+    ...item,
+    reviewStatus: "user-reviewed",
+    updatedAt: new Date().toISOString()
+  });
+  store.knowledge = store.knowledge.map((entry) => entry.id === item.id ? updated : entry);
+  await saveStore();
+  res.json({ item: updated });
+});
+
+app.delete("/api/knowledge/:id", requireAuth, async (req, res) => {
+  const before = store.knowledge.length;
+  store.knowledge = store.knowledge.filter((entry) => entry.id !== req.params.id);
+  if (store.knowledge.length === before) return res.status(404).json({ error: "Knowledge entry not found." });
+  await saveStore();
+  res.json({ ok: true });
 });
 
 app.post("/api/research", requireAuth, webResearchLimiter, async (req, res) => {

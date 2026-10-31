@@ -97,6 +97,8 @@ test("health endpoint is public without disclosing configuration", async () => {
 test("authentication, local search, tasks, memories, and offline chat behave safely", async () => {
   const blockedState = await request("/api/state", { headers: {} });
   assert.equal(blockedState.status, 401);
+  const blockedKnowledge = await request("/api/knowledge", { headers: {} });
+  assert.equal(blockedKnowledge.status, 401);
   const blockedResearch = await request("/api/research", {
     method: "POST",
     headers: {},
@@ -167,6 +169,56 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   const savedResearchPayload = await savedResearch.json();
   assert.equal(savedResearchPayload.item.sources.length, 1);
 
+  const savedKnowledge = await request("/api/knowledge", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "Solar energy basics",
+      content: "Photovoltaic cells convert sunlight into electricity.",
+      category: "science",
+      tags: ["solar", "energy"],
+      sourceKind: "web-research",
+      sourceQuery: "How do solar panels work?",
+      sources: [{ title: "Official solar guide", url: "https://energy.example/solar" }],
+      citations: [{ claim: "Photovoltaic cells convert sunlight into electricity.", sourceUrls: ["https://energy.example/solar"] }]
+    })
+  });
+  assert.equal(savedKnowledge.status, 201);
+  const knowledgePayload = await savedKnowledge.json();
+  assert.equal(knowledgePayload.item.reviewStatus, "unreviewed");
+  assert.equal(knowledgePayload.item.sources.length, 1);
+
+  const duplicateKnowledge = await request("/api/knowledge", {
+    method: "POST",
+    body: JSON.stringify({
+      title: " solar   energy basics ",
+      content: "PHOTOVOLTAIC cells convert sunlight into electricity. ",
+      category: "science",
+      sourceKind: "web-research",
+      sources: [{ url: "https://energy.example/solar" }]
+    })
+  });
+  assert.equal(duplicateKnowledge.status, 200);
+  assert.equal((await duplicateKnowledge.json()).duplicate, true);
+
+  const knowledgeSearch = await request("/api/knowledge?q=photovoltaic");
+  assert.equal(knowledgeSearch.status, 200);
+  const knowledgeSearchPayload = await knowledgeSearch.json();
+  assert.equal(knowledgeSearchPayload.total, 1);
+  assert.equal(knowledgeSearchPayload.items[0].id, knowledgePayload.item.id);
+
+  const combinedSearch = await request("/api/search?q=photovoltaic");
+  assert.equal(combinedSearch.status, 200);
+  const combinedPayload = await combinedSearch.json();
+  assert.equal(combinedPayload.externalSearch, false);
+  assert.ok(combinedPayload.results.some((item) => item.source === "saved-knowledge"));
+
+  const markKnowledgeReviewed = await request("/api/knowledge/" + knowledgePayload.item.id, {
+    method: "PATCH",
+    body: JSON.stringify({ reviewStatus: "user-reviewed" })
+  });
+  assert.equal(markKnowledgeReviewed.status, 200);
+  assert.equal((await markKnowledgeReviewed.json()).item.reviewStatus, "user-reviewed");
+
   const currentState = await request("/api/state");
   assert.equal(currentState.status, 200);
   const snapshot = await currentState.json();
@@ -176,6 +228,9 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
 
   const deleteSavedResearch = await request("/api/research/saved/" + savedResearchPayload.item.id, { method: "DELETE" });
   assert.equal(deleteSavedResearch.status, 200);
+
+  const deleteKnowledge = await request("/api/knowledge/" + knowledgePayload.item.id, { method: "DELETE" });
+  assert.equal(deleteKnowledge.status, 200);
 
   const deleteMemory = await request("/api/memories/" + memoryPayload.memory.id, { method: "DELETE" });
   assert.equal(deleteMemory.status, 200);

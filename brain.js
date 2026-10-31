@@ -159,7 +159,7 @@ export function searchLocalKnowledge(query, limit = 8) {
   return knowledgeSearch(query, limit);
 }
 
-export function runLocalBrain({ message, memories = [], tasks = [], skills = [], feedback = [] } = {}) {
+export function runLocalBrain({ message, memories = [], tasks = [], skills = [], feedback = [], knowledge = [] } = {}) {
   const raw = String(message ?? "").trim();
   const q = normalize(raw);
   if (!q) return "Message khaali hai. Apna sawaal type karo.";
@@ -201,6 +201,17 @@ export function runLocalBrain({ message, memories = [], tasks = [], skills = [],
 
   if (/(forget|clear|delete).*(memory|memories|task)/.test(q)) {
     return "Main chat se directly delete action execute nahi karta. Dashboard ke Memory ya Tasks section mein item ke saamne Delete button use karo. Delete karne se pehle sahi item verify kar lena.";
+  }
+
+  if (Array.isArray(knowledge) && knowledge.length) {
+    const entries = knowledge.slice(0, 3);
+    return "Saved Knowledge Library se relevant notes mile (offline reference; independently verified nahi):\n\n" +
+      entries.map((item) => {
+        const sources = Array.isArray(item.sources) ? item.sources.slice(0, 4).map((source) => source.url).join("\n") : "";
+        return "**" + String(item.title || "Saved note") + "**\n" +
+          String(item.content || "").slice(0, 1800) +
+          (sources ? "\nSources:\n" + sources : "");
+      }).join("\n\n");
   }
 
   if (/(newton|law of motion|laws of motion|inertia|force)/.test(q)) {
