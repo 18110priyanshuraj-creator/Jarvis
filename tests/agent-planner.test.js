@@ -16,6 +16,36 @@ test("agent planner accepts only a short allow-listed action plan", () => {
   assert.equal(plan.actions[0].type, "open_app");
 });
 
+test("agent planner separates conversation and clarification from device actions", () => {
+  const conversation = validateAgentPlan({
+    mode: "conversation",
+    reply: "",
+    actions: []
+  });
+  assert.equal(conversation.mode, "conversation");
+  assert.deepEqual(conversation.actions, []);
+
+  const clarification = validateAgentPlan({
+    mode: "clarification",
+    reply: "Which app should I open?",
+    actions: []
+  });
+  assert.equal(clarification.mode, "clarification");
+  assert.equal(clarification.reply, "Which app should I open?");
+
+  assert.throws(() => validateAgentPlan({
+    mode: "conversation",
+    reply: "Opening an app",
+    actions: [{ type: "open_app", value: "YouTube", purpose: "Open app" }]
+  }), /must not contain device actions/i);
+
+  assert.throws(() => validateAgentPlan({
+    mode: "device_action",
+    reply: "Open app",
+    actions: []
+  }), /between one and six actions/i);
+});
+
 test("agent planner rejects protected actions and secret-like numeric text", () => {
   assert.throws(() => validateAgentPlan({
     reply: "Send it",
