@@ -35,7 +35,7 @@ function publicDevice(device) {
   };
 }
 
-export function createDevicesRouter({ getStore, saveStore, requireAuth, runDeviceVoiceCommand }) {
+export function createDevicesRouter({ getStore, saveStore, requireAuth, runDeviceVoiceCommand, createAgentPlan }) {
   if (typeof getStore !== "function" || typeof saveStore !== "function" ||
       typeof requireAuth !== "function" || typeof runDeviceVoiceCommand !== "function") {
     throw new TypeError("createDevicesRouter requires store, persistence, dashboard auth and voice handlers.");
@@ -142,6 +142,24 @@ export function createDevicesRouter({ getStore, saveStore, requireAuth, runDevic
     }
     await saveStore();
     res.json({ ok: true, device: publicDevice(device) });
+  });
+
+  router.post("/plan", requireDeviceAuth, async (req, res) => {
+    const message = cleanText(req.body?.message, 3000);
+    if (!message) return res.status(400).json({ error: "Voice transcript cannot be empty." });
+    if (typeof createAgentPlan !== "function") {
+      return res.status(503).json({ error: "The AI planner is not configured on this server." });
+    }
+    try {
+      const plan = await createAgentPlan(message);
+      res.json({ ...plan, externalAI: true });
+    } catch (error) {
+      if (error?.code === "AI_NOT_CONFIGURED") {
+        return res.status(503).json({ error: error.message, code: error.code });
+      }
+      console.error("Device AI planning failed:", error?.name || "Error");
+      res.status(502).json({ error: "JARVIS could not create a safe device-action plan." });
+    }
   });
 
   router.post("/voice-command", requireDeviceAuth, async (req, res) => {

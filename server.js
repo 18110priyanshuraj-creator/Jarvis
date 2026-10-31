@@ -9,6 +9,7 @@ import crypto from "node:crypto";
 import { runLocalBrain, searchLocalKnowledge } from "./brain.js";
 import { fileURLToPath } from "node:url";
 import { createDevicesRouter } from "./routes/devices.js";
+import { createAgentPlan } from "./services/agent-planner.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -388,7 +389,7 @@ async function runDeviceVoiceCommand(message) {
   return answer;
 }
 
-app.use("/api/devices", createDevicesRouter({ getStore: () => store, saveStore, requireAuth, runDeviceVoiceCommand }));
+app.use("/api/devices", createDevicesRouter({ getStore: () => store, saveStore, requireAuth, runDeviceVoiceCommand, createAgentPlan }));
 
 app.use("/api", (_req, res) => res.status(404).json({ error: "API route not found." }));
 app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"] }));
