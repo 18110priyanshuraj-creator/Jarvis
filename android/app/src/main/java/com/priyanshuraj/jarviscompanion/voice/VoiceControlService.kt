@@ -218,18 +218,31 @@ class VoiceControlService : Service() {
         networkExecutor.execute {
             try {
                 val plan = DeviceConnector.agentPlan(serverUrl, token, transcript)
-                mainHandler.post {
-                    if (running) {
-                        AgentPlanRunner.execute(this@VoiceControlService, plan, mainHandler) { result ->
-                            if (running) speak(result)
+                when (plan.optString("mode", "device_action")) {
+                    "device_action" -> mainHandler.post {
+                        if (running) {
+                            AgentPlanRunner.execute(this@VoiceControlService, plan, mainHandler) { result ->
+                                if (running) speak(result)
+                            }
                         }
                     }
+                    "conversation" -> {
+                        val answer = DeviceConnector.voiceCommand(serverUrl, token, transcript)
+                        mainHandler.post { if (running) speak(answer) }
+                    }
+                    "clarification" -> {
+                        val question = plan.optString("reply").ifBlank {
+                            "Please clarify what you want me to do."
+                        }
+                        mainHandler.post { if (running) speak(question) }
+                    }
+                    else -> throw IllegalStateException("JARVIS returned an unsupported request mode.")
                 }
             } catch (_: Exception) {
                 try {
                     val answer = DeviceConnector.voiceCommand(serverUrl, token, transcript)
                     mainHandler.post {
-                        if (running) speak("AI planning is unavailable, so I used the offline assistant. " + answer)
+                        if (running) speak(answer)
                     }
                 } catch (_: Exception) {
                     mainHandler.post {
