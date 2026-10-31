@@ -87,6 +87,10 @@ test("health endpoint is public without disclosing configuration", async () => {
   assert.equal(payload.conversationAIEnabled, false);
   assert.equal(payload.webResearchEnabled, false);
   assert.equal(payload.externalAI, false);
+  assert.equal(payload.aiProvider.provider, "gemini");
+  assert.equal(payload.aiProvider.configured, false);
+  assert.equal(payload.aiProvider.model, "gemini-3.8-flash");
+  assert.equal(Object.hasOwn(payload.aiProvider, "apiKey"), false);
   assert.equal(JSON.stringify(payload).includes("test-only-password-2026"), false);
 });
 
