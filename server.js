@@ -83,9 +83,18 @@ function getNeonSql() {
 
 function normalizeStore(parsed = {}) {
   return {
-    memories: Array.isArray(parsed.memories) ? parsed.memories.slice(-200) : [],
+    memories: Array.isArray(parsed.memories)
+      ? parsed.memories.filter((item) => item && ["preference", "goal", "fact"].includes(item.category) && isSafeMemoryContent(item.content)).slice(-200)
+      : [],
     tasks: Array.isArray(parsed.tasks) ? parsed.tasks.slice(-200) : [],
-    feedback: Array.isArray(parsed.feedback) ? parsed.feedback.slice(-300) : [],
+    // Keep legacy rating metadata only; strip old prompt text and free-form feedback notes.
+    feedback: Array.isArray(parsed.feedback)
+      ? parsed.feedback.slice(-300).map((item) => ({
+          id: typeof item?.id === "string" ? item.id : newId(),
+          rating: item?.rating === "up" ? "up" : item?.rating === "down" ? "down" : "",
+          createdAt: typeof item?.createdAt === "string" ? item.createdAt : ""
+        })).filter((item) => item.rating)
+      : [],
     skills: Array.isArray(parsed.skills) ? parsed.skills.slice(-100) : [],
     devices: Array.isArray(parsed.devices) ? parsed.devices.slice(-50) : [],
     research: Array.isArray(parsed.research) ? parsed.research.slice(-50) : []
