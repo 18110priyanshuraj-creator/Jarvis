@@ -234,3 +234,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .search-form input { flex-basis: calc(100% - 45px); }
   .search-form .primary, .search-form .web-search-button { flex: 1; }
 }
+
+.message-sources { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin-top: 10px; font-size: .7rem; }
+.message-sources strong { color: #90a1bd; width: 100%; }
+.message-sources a { color: #b5c8ff; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; text-decoration: none; overflow-wrap: anywhere; }
+.message-sources a:hover { text-decoration: underline; }
