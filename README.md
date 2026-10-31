@@ -29,6 +29,28 @@ JARVIS is a private, single-owner assistant with a web dashboard and an Android 
 - DELETE /api/memories/:id — delete a saved memory.
 - GET /api/export — download authenticated, privacy-filtered personal data.
 
+## Learning and Skill Engine (Phase 4)
+
+- A new skill begins as a **draft**. It contains a name, instruction text, explicit trigger phrases, and example requests that should and should not match.
+- The **Run tests** action performs static trigger matching and text-safety checks only. It does not execute JavaScript, shell commands, browser scripts, app actions, or user-supplied code.
+- A draft can be **approved and activated** only after its current version passes validation and the user explicitly approves it.
+- Editing an approved skill creates a new draft version. The previous approved version remains active until the new version passes validation and is approved.
+- Skills can be paused or deleted. Paused skills are not added to conversation context.
+- Only approved, safe, trigger-matching skills are supplied as optional guidance to Gemini chat. They cannot override system/safety instructions or authorize external actions.
+- Legacy saved skills are migrated to version 1 to preserve their existing content. Skills with no trigger phrases are not automatically applied.
+- The offline rule-based brain cannot interpret arbitrary skill instructions; without a configured conversational AI model, skills are stored and validated but are not executed as open-ended reasoning.
+
+### Skill API
+
+- GET /api/skills — list skills.
+- POST /api/skills — create a draft.
+- PATCH /api/skills/:id — create a new draft version.
+- POST /api/skills/:id/validate — run static trigger tests for the current version.
+- POST /api/skills/:id/approve — approve and activate a passing current version.
+- POST /api/skills/:id/pause — pause an active skill.
+- GET /api/skills/:id/versions — list saved version history.
+- DELETE /api/skills/:id — delete a skill and its versions.
+
 ## Voice and Android companion
 
 - The dashboard includes Hindi push-to-talk where supported by the browser and optional spoken replies.
