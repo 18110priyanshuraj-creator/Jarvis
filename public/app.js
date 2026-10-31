@@ -154,26 +154,106 @@ function renderChats() {
       if (previousUser) {
         const feedback = document.createElement("div");
         feedback.className = "message-feedback";
-          for (const [rating, label] of [["up", "Helpful"], ["down", "Needs work"]]) {
-          const action = document.createElement("button");
-          action.type = "button";
-          action.className = "item-action";
-          action.textContent = label;
-          action.setAttribute("aria-label", "Mark this response " + label.toLowerCase());
-          action.addEventListener("click", async () => {
-            action.disabled = true;
+        if (item.feedbackSent) {
+          const status = document.createElement("span");
+          status.className = "message-feedback-state";
+          status.textContent = item.feedbackSent === "up" ? "Thanks — marked helpful" : "Thanks — feedback saved";
+          feedback.append(status);
+        } else {
+          const helpful = document.createElement("button");
+          helpful.type = "button";
+          helpful.className = "item-action";
+          helpful.textContent = "Helpful";
+          helpful.addEventListener("click", async () => {
+            helpful.disabled = true;
             try {
-              await api("/api/feedback", {
+              const data = await api("/api/feedback", {
                 method: "POST",
-                body: JSON.stringify({ prompt: previousUser.content, rating })
+                body: JSON.stringify({ rating: "up", category: "other", engine: item.engine || "unknown" })
               });
-              state.feedback.push({ id: "local-" + Date.now(), prompt: previousUser.content, rating, note: "", createdAt: new Date().toISOString() });
-              toast("Feedback saved. It can guide future replies.");
+              state.feedback.unshift(data.feedback);
+              item.feedbackSent = "up";
               renderChats();
-            } catch (error) { toast(error.message, true); }
-            finally { action.disabled = false; }
+              renderExperience();
+              toast("Feedback saved.");
+            } catch (error) {
+              toast(error.message, true);
+              helpful.disabled = false;
+            }
           });
-          feedback.append(action);
+
+          const needsWork = document.createElement("button");
+          needsWork.type = "button";
+          needsWork.className = "item-action";
+          needsWork.textContent = "Needs work";
+          needsWork.addEventListener("click", () => {
+            item.showFeedbackForm = !item.showFeedbackForm;
+            renderChats();
+          });
+          feedback.append(helpful, needsWork);
+          if (item.showFeedbackForm) {
+            const form = document.createElement("form");
+            form.className = "message-feedback-form";
+            const category = document.createElement("select");
+            category.setAttribute("aria-label", "Feedback category");
+            for (const [value, label] of [
+              ["accuracy", "Accuracy / facts"],
+              ["clarity", "Clarity / explanation"],
+              ["tone", "Tone"],
+              ["relevance", "Relevance"],
+              ["format", "Formatting"],
+              ["other", "Other"]
+            ]) {
+              const option = document.createElement("option");
+              option.value = value;
+              option.textContent = label;
+              category.append(option);
+            }
+            category.value = "clarity";
+            const suggestion = document.createElement("textarea");
+            suggestion.maxLength = 500;
+            suggestion.rows = 2;
+            suggestion.placeholder = "What should JARVIS do differently next time? (optional)";
+            suggestion.setAttribute("aria-label", "Optional improvement suggestion");
+            const submit = document.createElement("button");
+            submit.type = "submit";
+            submit.className = "item-action";
+            submit.textContent = "Save feedback";
+            const cancel = document.createElement("button");
+            cancel.type = "button";
+            cancel.className = "item-action";
+            cancel.textContent = "Cancel";
+            cancel.addEventListener("click", () => {
+              item.showFeedbackForm = false;
+              renderChats();
+            });
+            form.append(category, suggestion, submit, cancel);
+            form.addEventListener("submit", async (event) => {
+              event.preventDefault();
+              submit.disabled = true;
+              try {
+                const data = await api("/api/feedback", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    rating: "down",
+                    category: category.value,
+                    suggestion: suggestion.value,
+                    engine: item.engine || "unknown"
+                  })
+                });
+                state.feedback.unshift(data.feedback);
+                item.feedbackSent = "down";
+                item.showFeedbackForm = false;
+                renderChats();
+                renderExperience();
+                toast("Feedback saved. Review it in Experience before applying a preference.");
+              } catch (error) {
+                toast(error.message, true);
+                submit.disabled = false;
+              }
+            });
+            wrap.append(form);
+          }
         }
         wrap.append(feedback);
       }
