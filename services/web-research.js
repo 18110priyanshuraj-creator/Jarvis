@@ -24,7 +24,7 @@ function cleanText(value, maxLength) {
 }
 
 const RESTRICTED_ITEM = "(?:weapons?|firearms?|guns?|ammunition|explosives?|bombs?|knife|knives|tasers?|pepper spray|mace|self[- ]defense weapons?|drugs?|narcotics|intoxicants?|vapes?|nicotine|cannabis|marijuana|thc|steroids?|gambling|sports betting|prediction markets?)";
-const RESTRICTED_ITEM_PATTERN = new RegExp("\\b" + RESTRICTED_ITEM + "\\b", "i");
+const RESTRICTED_ITEM_PATTERN = new RegExp("\b" + RESTRICTED_ITEM + "\b", "i");
 const SAFE_RESEARCH_REQUEST = /^(?:(?:explain\s+)?history of|what are (?:the )?(?:health risks|health effects|risks|side effects) of|health (?:risks|effects|impacts) of|laws? (?:about|regarding|on)|legal framework for|policy (?:about|on)|prevention of|harm reduction for|addiction (?:treatment|recovery)|how (?:does|do) addiction treatment work|how can i get help (?:for|with) addiction|where can i get help (?:for|with) addiction|support for addiction|find (?:help|support|treatment) for addiction|where can i find (?:help|support|treatment) for addiction|public health (?:research|information) on)/i;
 
 export function isRestrictedResearchQuery(query) {
@@ -35,8 +35,8 @@ export function isRestrictedResearchQuery(query) {
 export function shouldUseLiveWebResearch(message) {
   const query = cleanText(message, MAX_QUERY_LENGTH);
   if (!query) return false;
-  const explicitWebRequest = /\\b(?:search|look up|check|verify|research|find)\\b.{0,50}\\b(?:web|internet|online|google)\\b|\\b(?:internet pe|web pe|online check|google par|live web)\\b/i.test(query);
-  const timeSensitiveRequest = /\\b(?:latest|current|today|tonight|yesterday|this week|this month|this year|recent|right now|as of now|breaking|news|weather|forecast|price today|current price|exchange rate|schedule|opening hours|release date|new version|latest version|election result|live score|updated rules)\\b/i.test(query);
+  const explicitWebRequest = /\b(?:search|look up|check|verify|research|find)\b.{0,50}\b(?:web|internet|online|google)\b|\b(?:internet pe|web pe|online check|google par|live web)\b/i.test(query);
+  const timeSensitiveRequest = /\b(?:latest|current|today|tonight|yesterday|this week|this month|this year|recent|right now|as of now|breaking|news|weather|forecast|price today|current price|exchange rate|schedule|opening hours|release date|new version|latest version|election result|live score|updated rules)\b/i.test(query);
   return explicitWebRequest || timeSensitiveRequest;
 }
 
