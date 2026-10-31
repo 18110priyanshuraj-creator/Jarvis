@@ -552,6 +552,7 @@ function renderGroundedResearch(item, canSave = true) {
             query: item.query,
             answer: item.answer,
             sources: item.sources || [],
+            citations: item.citations || [],
             searchedAt: item.searchedAt
           })
         });
