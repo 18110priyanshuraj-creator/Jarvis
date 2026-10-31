@@ -806,9 +806,9 @@ async function refreshIntegrations() {
 function integrationDetailText(provider, result) {
   const details = result?.details || {};
   if (provider === "github") {
-    return details.login
-      ? "Signed in as " + details.login + (details.publicRepos === null ? "" : " · " + details.publicRepos + " public repositories")
-      : "GitHub connection verified.";
+    return details.latestRepository
+      ? "Repository metadata access verified · Latest: " + details.latestRepository
+      : "GitHub connection verified · No repositories returned.";
   }
   if (provider === "google_drive") return "Connection verified · " + (details.recentFiles ?? 0) + " recent files listed.";
   if (provider === "telegram") return details.username ? "Connected to bot @" + details.username : "Telegram bot connection verified.";
