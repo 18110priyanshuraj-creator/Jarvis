@@ -46,6 +46,8 @@ before(async () => {
       PORT: String(port),
       JARVIS_PASSWORD: "test-only-password-2026",
       JARVIS_DATA_DIR: tempDir,
+      GEMINI_API_KEY: "",
+      GEMINI_CHAT_ENABLED: "false",
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
