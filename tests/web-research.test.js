@@ -82,10 +82,16 @@ test("saved research normalizes metadata and accepts only HTTPS source links", (
       { title: "Energy department", url: "https://energy.example/solar" },
       { title: "Unsafe source", url: "javascript:alert(1)" },
       { title: "Duplicate", url: "https://energy.example/solar" }
+    ],
+    citations: [
+      { claim: "Solar cells convert light into electricity.", sourceUrls: ["https://energy.example/solar", "javascript:alert(1)"] },
+      { claim: "Untrusted link", sourceUrls: ["https://not-in-saved-sources.example/article"] }
     ]
   });
   assert.equal(saved.query, "How does solar power work?");
   assert.equal(saved.sources.length, 1);
   assert.equal(saved.sources[0].domain, "energy.example");
+  assert.equal(saved.citations.length, 1);
+  assert.deepEqual(saved.citations[0].sourceUrls, ["https://energy.example/solar"]);
   assert.throws(() => normalizeSavedResearch({ query: "", answer: "" }), /needs both/i);
 });
