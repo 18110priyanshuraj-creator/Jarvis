@@ -64,7 +64,7 @@
           <p class="eyebrow">JARVIS PERSONAL ASSISTANT</p>
           <h1>What are we working on?</h1>
           <p class="muted intro-copy">Use the built-in offline brain by default. Optional Gemini conversation can be enabled in server settings for more open-ended replies.</p>
-          <p class="composer-note">Privacy: Gemini chat is opt-in. When enabled, up to 8 recent user/assistant messages (max 1,200 characters each) may be sent to Gemini. Saved memories, tasks, screenshots and Android screen text are not included. Separately, if the server has a Gemini API key, paired Android voice transcripts are sent to Gemini for request routing.</p>
+          <p class="composer-note">Privacy: chats stay temporary in server memory for up to one hour of inactivity and disappear on sign-out or server restart. JARVIS saves only notes you explicitly ask it to remember. Relevant current questions can use live, cited web research when enabled; web results are not saved automatically.</p>
           <div class="prompt-grid">
             <button class="prompt-card" data-prompt="Help me make a realistic plan for today."><span>↗</span><strong>Plan my day</strong><small>Turn priorities into steps</small></button>
             <button class="prompt-card" data-prompt="Explain a difficult concept step by step and give me a quick check question at the end."><span>◉</span><strong>Help me learn</strong><small>Understand, then practise</small></button>
@@ -76,7 +76,8 @@
           <textarea id="chat-input" rows="1" maxlength="4000" placeholder="Message JARVIS…" aria-label="Message JARVIS"></textarea>
           <div class="composer-bottom">
             <div class="composer-tools">
-              <button type="button" id="voice-button" class="tool-button" title="Voice input" aria-label="Voice input">🎙 <span>Voice</span></button>
+              <button type="button" id="voice-button" class="tool-button" title="Start voice input" aria-label="Start voice input">🎙 <span>Speak</span></button>
+              <button type="button" id="clear-chat-button" class="tool-button" title="Clear temporary conversation">Clear chat</button>
               <label class="speak-label"><input id="speak-toggle" type="checkbox"> Read replies aloud</label>
             </div>
             <button id="send-button" type="submit" class="primary send-button">Send <span aria-hidden="true">↑</span></button>
@@ -162,7 +163,7 @@
         <div id="device-list" class="item-list"></div>
       </section>
 
-<footer class="page-footer"><span>JARVIS PERSONAL SYSTEM · v0.4.0</span><span>Built for one user, with safety boundaries</span></footer>
+<footer class="page-footer"><span>JARVIS PERSONAL SYSTEM · v0.5.0</span><span>Built for one user, with safety boundaries</span></footer>
     </main>
   </div>
 </body>
