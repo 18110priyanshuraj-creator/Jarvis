@@ -20,7 +20,7 @@ The Phase 1 accessibility service records only the foreground package name, acce
 3. Sync the Gradle project.
 4. Build the app debug variant and install it on the tablet.
 
-The project pins Android Gradle Plugin 8.13.2, Gradle 8.13 and Kotlin Gradle Plugin 2.4.21. The Gradle wrapper distribution properties are included; Android Studio may generate the wrapper scripts and JAR when asked.
+The project pins Android Gradle Plugin 8.13.2, Gradle 8.13 and Kotlin Gradle Plugin 2.4.21. This source branch includes the Gradle wrapper distribution properties but does not include the wrapper launcher scripts or wrapper JAR. For command-line builds, install Gradle 8.13 and run the Gradle wrapper task from the android directory to generate the standard wrapper files; alternatively, configure Android Studio to use a local Gradle 8.13 installation.
 
 ## Pairing
 
