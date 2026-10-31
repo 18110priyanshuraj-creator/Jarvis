@@ -45,7 +45,7 @@ async function requestJson(url, headers, fetchImpl) {
   try {
     response = await fetchImpl(url, {
       method: "GET",
-      headers: { Accept: "application/vnd.github+json", ...headers },
+      headers: { Accept: "application/json", ...headers },
       redirect: "error",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
     });
@@ -74,7 +74,8 @@ async function githubRequest(path, env, fetchImpl) {
   const token = requireCredential("github", env);
   return requestJson("https://api.github.com" + path, {
     Authorization: "Bearer " + token,
-    "X-GitHub-Api-Version": "2026-03-10"
+    "X-GitHub-Api-Version": "2026-03-10",
+    Accept: "application/vnd.github+json"
   }, fetchImpl);
 }
 
