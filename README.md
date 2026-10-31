@@ -71,6 +71,37 @@ JARVIS is a private, single-owner assistant with a web dashboard and an Android 
 - DELETE /api/experience/preferences/:id — delete an approved preference.
 - DELETE /api/feedback/:id — delete a feedback record.
 
+## Workflow execution engine (Phase 6)
+
+- Workflows are stored as local, reusable JSON definitions with a name, description, step list and version.
+- A new workflow starts as a **draft**. Static validation checks the workflow structure and allow-listed step types; it does not execute anything.
+- The user must explicitly approve the validated current version before a Run action becomes available. Each run also requires a separate confirmation in the dashboard.
+- Editing an approved workflow creates a new draft version and removes its approval until the new version has been validated and approved.
+- Supported step types are deliberately local and limited:
+  - `create_task` — create a task in the JARVIS Tasks list.
+  - `save_memory` — save one safe personal memory using the existing memory privacy checks.
+  - `search_knowledge` — search the saved Knowledge Library.
+  - `draft_text` — prepare a text draft in the execution result; nothing is sent or published.
+  - `review_checkpoint` — pause the run so the user can review completed steps before choosing Continue or Stop.
+- Workflow steps execute in order. A failed step stops later steps. Each run keeps a bounded step log, result summaries and status.
+- Users can continue a run at an explicit review checkpoint or stop it. Workflows can also be paused or deleted.
+- Limits: 50 saved workflows, 10 steps per workflow, and 100 recent execution records.
+- The engine does not run shell commands, execute user-supplied code, send messages, publish posts, make purchases/payments, change security settings, or perform unapproved Android device operations.
+- This phase does not connect workflow steps to an autonomous background worker or external app connectors. Actions run in the authenticated dashboard request using the local JARVIS data store.
+
+### Workflow API
+
+- GET /api/workflows — list workflows and recent execution history.
+- POST /api/workflows — create a workflow draft.
+- PATCH /api/workflows/:id — create a new unapproved version of an existing workflow.
+- POST /api/workflows/:id/validate — statically validate the current version.
+- POST /api/workflows/:id/approve — approve a version after validation.
+- POST /api/workflows/:id/run — explicitly start an approved workflow.
+- POST /api/workflow-runs/:id/continue — continue after a review checkpoint.
+- POST /api/workflow-runs/:id/stop — stop an active run.
+- POST /api/workflows/:id/pause — pause a saved workflow.
+- DELETE /api/workflows/:id — delete a workflow while preserving its run history.
+
 ## Voice and Android companion
 
 - The dashboard includes Hindi push-to-talk where supported by the browser and optional spoken replies.
@@ -125,7 +156,7 @@ The current implementation stores text knowledge records in the existing jarvis_
 
 ## Persistent data
 
-Neon PostgreSQL is used when `DATABASE_URL` is configured. Otherwise, local development uses the JSON state file. Chat transcripts are deliberately excluded from both persistent stores. Memories, tasks, structured feedback, user-approved response preferences, devices and manually saved research use the persistent app state.
+Neon PostgreSQL is used when `DATABASE_URL` is configured. Otherwise, local development uses the JSON state file. Chat transcripts are deliberately excluded from both persistent stores. Memories, tasks, structured feedback, user-approved response preferences, approved workflows and bounded workflow execution history, devices and manually saved research use the persistent app state.
 
 ## Built-in offline mode
 

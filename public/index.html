@@ -42,6 +42,7 @@
         <button class="nav-item" data-view="tasks"><span class="nav-icon">☷</span> Tasks <span id="task-count" class="nav-count">0</span></button>
         <button class="nav-item" data-view="memory"><span class="nav-icon">◈</span> Memory</button>
         <button class="nav-item" data-view="experience"><span class="nav-icon">✧</span> Experience</button>
+        <button class="nav-item" data-view="workflows"><span class="nav-icon">↻</span> Workflows</button>
       </nav>
       <div class="sidebar-foot">
         <div class="connection"><span class="status-dot"></span><span><strong>Private workspace</strong><small>Session protected</small></span></div>
@@ -241,6 +242,62 @@
         </div>
       </section>
 
+      <section id="view-workflows" class="view content-view hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">AUTOMATION & EXECUTION</p>
+            <h1>Workflows</h1>
+            <p class="muted">Build reusable local workflows, validate them, approve them and run them only when you choose.</p>
+          </div>
+        </div>
+        <div class="workflow-safety">
+          <strong>Approval and execution boundaries</strong>
+          <p>Only the five listed local step types are supported. Every workflow starts as a draft; validation does not execute it. You must explicitly approve the workflow and press Run. Review checkpoints pause execution. No shell/code execution, message sending, publishing, payments, purchases, or security-sensitive actions are supported.</p>
+        </div>
+        <form id="workflow-form" class="form-card">
+          <h2 id="workflow-form-title">Create a workflow draft</h2>
+          <label for="workflow-name">Workflow name</label>
+          <input id="workflow-name" maxlength="100" required placeholder="Example: Prepare a JEE study session">
+          <label for="workflow-description">Description <span class="muted">(optional)</span></label>
+          <textarea id="workflow-description" rows="2" maxlength="600" placeholder="What should this workflow help you organise?"></textarea>
+          <div class="workflow-builder">
+            <h3>Add a step</h3>
+            <label for="workflow-step-type">Step action</label>
+            <select id="workflow-step-type">
+              <option value="create_task">Create a local task</option>
+              <option value="save_memory">Save a personal memory</option>
+              <option value="search_knowledge">Search saved Knowledge</option>
+              <option value="draft_text">Prepare a text draft</option>
+              <option value="review_checkpoint">Pause for my review</option>
+            </select>
+            <label for="workflow-step-title">Step title</label>
+            <input id="workflow-step-title" maxlength="100" placeholder="Example: Revise mole concept" required>
+            <label id="workflow-step-value-label" for="workflow-step-value">Task details <span class="muted">(optional)</span></label>
+            <textarea id="workflow-step-value" rows="3" maxlength="2000" placeholder="Add context for this step…"></textarea>
+            <label for="workflow-step-category">Memory category <span class="muted">(used for Save a personal memory)</span></label>
+            <select id="workflow-step-category">
+              <option value="fact">Fact</option>
+              <option value="preference">Preference</option>
+              <option value="goal">Goal</option>
+            </select>
+            <div class="form-row">
+              <span class="small muted">Maximum 10 steps per workflow.</span>
+              <button type="button" class="item-action" id="workflow-add-step">Add step</button>
+            </div>
+          </div>
+          <div class="list-heading"><h3>Workflow steps</h3><span class="muted small" id="workflow-step-count">0 / 10</span></div>
+          <div id="workflow-builder-steps" class="item-list"></div>
+          <div class="form-row">
+            <button type="button" class="item-action hidden" id="workflow-cancel-edit">Cancel edit</button>
+            <button type="submit" class="primary" id="workflow-save-button">Save workflow draft</button>
+          </div>
+        </form>
+        <div class="list-heading"><h2>Saved workflows</h2><span class="muted small">Validate · approve · run</span></div>
+        <div id="workflow-list" class="item-list"></div>
+        <div class="list-heading"><h2>Execution history</h2><span class="muted small">Step results and review checkpoints</span></div>
+        <div id="workflow-runs" class="item-list"></div>
+      </section>
+
       <section id="view-devices" class="view content-view hidden">
         <div class="section-heading">
           <div>
@@ -269,7 +326,7 @@
         <div id="device-list" class="item-list"></div>
       </section>
 
-<footer class="page-footer"><span>JARVIS PERSONAL SYSTEM · v1.1.0</span><span>Built for one user, with safety boundaries</span></footer>
+<footer class="page-footer"><span>JARVIS PERSONAL SYSTEM · v1.3.0</span><span>Built for one user, with safety boundaries</span></footer>
     </main>
   </div>
 </body>
