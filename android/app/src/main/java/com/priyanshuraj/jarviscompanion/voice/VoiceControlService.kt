@@ -252,6 +252,14 @@ class VoiceControlService : Service() {
                 mainHandler.post {
                     if (running) {
                         try {
+                            if (!ttsReady || textToSpeech == null) {
+                                LocalActivityLog.record(
+                                    this@VoiceControlService,
+                                    "Plan blocked",
+                                    "Text-to-speech was unavailable, so no preview or action was started."
+                                )
+                                return@post
+                            }
                             val preview = AgentPlanRunner.describe(plan)
                             val categories = AgentPlanRunner.actionKinds(plan)
                             pendingPlan = plan
