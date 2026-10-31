@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { createDevicesRouter } from "./routes/devices.js";
 import { createAgentPlan } from "./services/agent-planner.js";
 import { createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
+import { createGroundedResearch, isWebResearchEnabled, normalizeSavedResearch } from "./services/web-research.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -58,9 +59,16 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many login attempts. Please wait and try again." }
 });
+const webResearchLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 6,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Web research rate limit reached. Please try again later." }
+});
 app.use("/api", apiLimiter);
 
-let store = { chats: [], memories: [], tasks: [], feedback: [], skills: [], devices: [] };
+let store = { chats: [], memories: [], tasks: [], feedback: [], skills: [], devices: [], research: [] };
 let writeQueue = Promise.resolve();
 let neonSql;
 
@@ -77,7 +85,8 @@ function normalizeStore(parsed = {}) {
     tasks: Array.isArray(parsed.tasks) ? parsed.tasks.slice(-200) : [],
     feedback: Array.isArray(parsed.feedback) ? parsed.feedback.slice(-300) : [],
     skills: Array.isArray(parsed.skills) ? parsed.skills.slice(-100) : [],
-    devices: Array.isArray(parsed.devices) ? parsed.devices.slice(-50) : []
+    devices: Array.isArray(parsed.devices) ? parsed.devices.slice(-50) : [],
+    research: Array.isArray(parsed.research) ? parsed.research.slice(-50) : []
   };
 }
 
@@ -230,14 +239,16 @@ async function generateAssistantAnswer(message, history = []) {
 app.get("/api/health", (_req, res) => {
   const conversationAIEnabled = isConversationAIEnabled();
   const plannerAIEnabled = Boolean(process.env.GEMINI_API_KEY);
+  const webResearchEnabled = isWebResearchEnabled();
   res.json({
     ok: true,
     service: "jarvis",
-    version: "0.3.0-phase4",
+    version: "0.4.0-phase5",
     brain: conversationAIEnabled ? "gemini-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
-    externalAI: plannerAIEnabled || conversationAIEnabled
+    webResearchEnabled,
+    externalAI: plannerAIEnabled || conversationAIEnabled || webResearchEnabled
   });
 });
 
@@ -271,7 +282,8 @@ app.get("/api/state", requireAuth, (_req, res) => {
     memories: store.memories,
     tasks: store.tasks.slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))),
     feedback: store.feedback.slice(-100),
-    skills: store.skills
+    skills: store.skills,
+    research: store.research.slice().reverse()
   });
 });
 
@@ -401,6 +413,57 @@ app.get("/api/search", requireAuth, (req, res) => {
     url: ""
   }));
   res.json({ query, results, source: "embedded-local-knowledge", externalSearch: false });
+});
+
+app.post("/api/research", requireAuth, webResearchLimiter, async (req, res) => {
+  const query = cleanText(req.body?.query, 1200);
+  if (!query) return res.status(400).json({ error: "Enter a research question first." });
+  if (!isWebResearchEnabled()) {
+    return res.status(503).json({
+      error: "Live web research is disabled. Configure GEMINI_API_KEY and GEMINI_WEB_RESEARCH_ENABLED=true on the server."
+    });
+  }
+
+  try {
+    const result = await createGroundedResearch(query);
+    res.json(result);
+  } catch (error) {
+    if (error?.code === "RESTRICTED_RESEARCH_QUERY") {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error("Grounded web research failed:", error?.name || "Error");
+    res.status(502).json({ error: "Live web research could not complete this request. Please try again later." });
+  }
+});
+
+app.post("/api/research/saved", requireAuth, async (req, res) => {
+  let normalized;
+  try {
+    normalized = normalizeSavedResearch(req.body);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Saved research is invalid." });
+  }
+
+  if (store.research.length >= 50) {
+    return res.status(409).json({ error: "Saved research limit reached. Delete an older saved item first." });
+  }
+
+  const item = {
+    id: newId(),
+    ...normalized,
+    createdAt: new Date().toISOString()
+  };
+  store.research.push(item);
+  await saveStore();
+  res.status(201).json({ item });
+});
+
+app.delete("/api/research/saved/:id", requireAuth, async (req, res) => {
+  const before = store.research.length;
+  store.research = store.research.filter((item) => item.id !== req.params.id);
+  if (store.research.length === before) return res.status(404).json({ error: "Saved research item not found." });
+  await saveStore();
+  res.json({ ok: true });
 });
 
 
