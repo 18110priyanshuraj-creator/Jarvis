@@ -41,6 +41,7 @@
         <button class="nav-item" data-view="knowledge"><span class="nav-icon">▤</span> Knowledge</button>
         <button class="nav-item" data-view="tasks"><span class="nav-icon">☷</span> Tasks <span id="task-count" class="nav-count">0</span></button>
         <button class="nav-item" data-view="memory"><span class="nav-icon">◈</span> Memory</button>
+        <button class="nav-item" data-view="experience"><span class="nav-icon">✧</span> Experience</button>
       </nav>
       <div class="sidebar-foot">
         <div class="connection"><span class="status-dot"></span><span><strong>Private workspace</strong><small>Session protected</small></span></div>
@@ -212,6 +213,31 @@
         </form>
         <div class="list-heading"><h2>Saved knowledge</h2><span class="muted small">Search, review and delete entries</span></div>
         <div id="knowledge-list" class="item-list"></div>
+      </section>
+
+      <section id="view-experience" class="view content-view hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">EXPERIENCE & SELF-IMPROVEMENT</p>
+            <h1>Experience</h1>
+            <p class="muted">Review feedback, spot recurring issues, and approve response preferences. JARVIS never changes its guidance automatically from ratings.</p>
+          </div>
+        </div>
+        <div class="experience-privacy">
+          <strong>Privacy & control</strong>
+          <p>Feedback stores only your rating, issue category, optional improvement suggestion and assistant engine. Chat prompts and assistant replies are not saved as feedback or training data. Approved preferences guide Gemini replies only; they do not train model weights or enable external actions.</p>
+        </div>
+        <div id="experience-metrics" class="experience-metrics"></div>
+        <div class="experience-columns">
+          <div class="experience-panel">
+            <div class="list-heading"><h2>Approved response preferences</h2><span class="muted small">You control these</span></div>
+            <div id="experience-preferences" class="item-list"></div>
+          </div>
+          <div class="experience-panel">
+            <div class="list-heading"><h2>Feedback review</h2><span class="muted small">Recent feedback and suggestions</span></div>
+            <div id="experience-feedback" class="item-list"></div>
+          </div>
+        </div>
       </section>
 
       <section id="view-devices" class="view content-view hidden">
