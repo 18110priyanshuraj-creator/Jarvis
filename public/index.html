@@ -88,14 +88,35 @@
       </section>
 
       <section id="view-memory" class="view content-view hidden">
-        <div class="section-heading"><div><p class="eyebrow">PERSONAL CONTEXT</p><h1>Memory</h1><p class="muted">Save useful preferences, goals, or facts. Review and delete them anytime.</p></div><span class="counter" id="memory-count">0 saved</span></div>
+        <div class="section-heading">
+          <div><p class="eyebrow">PERSONAL CONTEXT</p><h1>Memory</h1><p class="muted">Only explicitly approved preferences, goals and useful facts are kept here.</p></div>
+          <div class="memory-header-actions">
+            <span class="counter" id="memory-count">0 saved</span>
+            <button type="button" class="item-action" id="export-data-button">Export my data</button>
+          </div>
+        </div>
+        <div class="research-hint" id="storage-overview">
+          <strong>Storage and privacy overview</strong>
+          <p id="storage-overview-text">Temporary chats are not part of long-term storage. Personal memories, knowledge, saved research, tasks and skills are kept separately.</p>
+        </div>
         <form id="memory-form" class="form-card">
           <label for="memory-content">What should JARVIS remember?</label>
-          <textarea id="memory-content" rows="3" maxlength="1000" required placeholder="Example: I prefer explanations in simple Hinglish, with examples."></textarea>
+          <textarea id="memory-content" rows="3" maxlength="500" required placeholder="Example: I prefer explanations in simple Hinglish, with examples."></textarea>
           <div class="form-row"><label class="field-label" for="memory-category">Category<select id="memory-category"><option value="preference">Preference</option><option value="goal">Goal</option><option value="fact">Fact</option></select></label><button class="primary" type="submit">Save memory</button></div>
-          <p class="small muted">Do not save passwords, API keys, private tokens, or other secrets.</p>
+          <p class="small muted">Saving is explicit. Passwords, API keys, OTPs and sensitive personal details are rejected. Normal chats are never saved as memories automatically.</p>
         </form>
-        <div class="list-heading"><h2>Saved notes</h2><span class="muted small">You stay in control</span></div>
+        <form id="memory-search-form" class="search-form">
+          <span aria-hidden="true">⌕</span>
+          <input id="memory-search-input" maxlength="300" placeholder="Search your saved memories…">
+          <select id="memory-category-filter" aria-label="Filter memories by category">
+            <option value="">All categories</option>
+            <option value="preference">Preferences</option>
+            <option value="goal">Goals</option>
+            <option value="fact">Facts</option>
+          </select>
+          <button class="primary" type="submit">Search</button>
+        </form>
+        <div class="list-heading"><h2>Saved memories</h2><span class="muted small">Edit, review or delete anytime</span></div>
         <div id="memory-list" class="item-list"></div>
         <div class="list-heading"><h2>Custom skills</h2><span class="muted small">Saved guidance, not executable code</span></div>
         <form id="skill-form" class="form-card">
