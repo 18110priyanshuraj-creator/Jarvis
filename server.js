@@ -247,7 +247,7 @@ function appendConversationTurn(key, message, result) {
   }
 }
 
-const SENSITIVE_MEMORY_PATTERN = /\\b(password|passcode|pin|otp|one[- ]time code|api key|secret|access token|private key|bank account|card number|medical|health|diagnos(?:is|ed)|medicine|medication|home address|exact address|phone number|email address)\\b/i;
+const SENSITIVE_MEMORY_PATTERN = /\b(password|passcode|pin|otp|one[- ]time code|api key|secret|access token|private key|bank account|card number|medical|health|diagnos(?:is|ed)|medicine|medication|home address|exact address|phone number|email address)\b/i;
 
 function isSafeMemoryContent(content) {
   return typeof content === "string" && content.trim().length >= 3 &&
@@ -255,16 +255,16 @@ function isSafeMemoryContent(content) {
 }
 
 function parseExplicitMemoryIntent(message) {
-  const normalized = cleanText(message, 4000).replace(/^jarvis[,:]?\\s*/i, "");
-  const match = normalized.match(/^(?:please\\s+)?remember(?:\\s+that)?\\s*[:,-]?\\s*(.+)$/i) ||
-    normalized.match(/^(?:please\\s+)?(?:yaad\\s+rakhna|is\\s+baat\\s+ko\\s+yaad\\s+rakhna)\\s*[:,-]?\\s*(.+)$/i);
+  const normalized = cleanText(message, 4000).replace(/^jarvis[,:]?\s*/i, "");
+  const match = normalized.match(/^(?:please\s+)?remember(?:\s+that)?\s*[:,-]?\s*(.+)$/i) ||
+    normalized.match(/^(?:please\s+)?(?:yaad\s+rakhna|is\s+baat\s+ko\s+yaad\s+rakhna)\s*[:,-]?\s*(.+)$/i);
   if (!match) return null;
   const content = cleanText(match[1], 500).replace(/[.!?]+$/, "").trim();
   if (!isSafeMemoryContent(content)) return { blocked: true };
   const lower = content.toLowerCase();
-  const category = /\\b(goal|aim|target|plan|want to|trying to)\\b/.test(lower)
+  const category = /\b(goal|aim|target|plan|want to|trying to)\b/.test(lower)
     ? "goal"
-    : /\\b(prefer|please use|explain|respond|answer|language|style|format)\\b/.test(lower)
+    : /\b(prefer|please use|explain|respond|answer|language|style|format)\b/.test(lower)
       ? "preference"
       : "fact";
   return { content, category, blocked: false };
