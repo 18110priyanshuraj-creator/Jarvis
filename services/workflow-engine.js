@@ -48,7 +48,7 @@ function normalizeStep(raw = {}) {
   if (type === "save_memory") {
     const content = cleanText(raw.content, 500);
     const category = ["preference", "goal", "fact"].includes(raw.category) ? raw.category : "fact";
-    if (content.length < 3 || !safeValue(content)) throw new TypeError("Memory step needs safe content between 3 and 500 characters.");
+    if (content.length < 3 || !safeValue(content)) throw new TypeError("Memory step needs safe content between 3 and 500 characters; private or sensitive content is not allowed.");
     return { type, title, content, category };
   }
   if (type === "search_knowledge") {
