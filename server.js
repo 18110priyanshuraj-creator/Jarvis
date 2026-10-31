@@ -18,6 +18,7 @@ import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMI
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeSkill, pauseSkill, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
 import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, createWorkflowDraft, createWorkflowRun, normalizeWorkflow, pauseWorkflow, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
+import { getIntegrationCatalog, INTEGRATION_PROVIDER_IDS, probeIntegration, runIntegrationAction } from "./services/integrations.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -72,9 +73,16 @@ const webResearchLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Web research rate limit reached. Please try again later." }
 });
+const integrationTestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 8,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Integration test limit reached. Please try again later." }
+});
 app.use("/api", apiLimiter);
 
-let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], devices: [], research: [], knowledge: [] };
+let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], disabledIntegrations: [], devices: [], research: [], knowledge: [] };
 const sessionChats = new Map();
 const MAX_EPHEMERAL_CHAT_MESSAGES = 32;
 const EPHEMERAL_CHAT_TTL_MS = 60 * 60 * 1000;
@@ -121,6 +129,9 @@ function normalizeStore(parsed = {}) {
           item && typeof item.id === "string" && typeof item.workflowId === "string" &&
           Array.isArray(item.steps) && ["running", "waiting_review", "completed", "failed", "cancelled"].includes(item.status)
         )
+      : [],
+    disabledIntegrations: Array.isArray(parsed.disabledIntegrations)
+      ? [...new Set(parsed.disabledIntegrations.filter((item) => INTEGRATION_PROVIDER_IDS.includes(item)))]
       : [],
     devices: Array.isArray(parsed.devices) ? parsed.devices.slice(-50) : [],
     research: Array.isArray(parsed.research) ? parsed.research.slice(-50) : [],
@@ -407,7 +418,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     service: "jarvis",
-    version: "1.3.0-workflow-execution",
+    version: "1.4.0-connected-services",
     brain: conversationAIEnabled ? "gemini-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
@@ -482,7 +493,8 @@ app.get("/api/export", requireAuth, (req, res) => {
       experiencePreferences: store.experiencePreferences,
       skills: store.skills,
       workflows: store.workflows,
-      workflowRuns: store.workflowRuns
+      workflowRuns: store.workflowRuns,
+      disabledIntegrations: store.disabledIntegrations
     },
     excluded: [
       "temporary conversation history",
@@ -762,6 +774,45 @@ app.delete("/api/tasks/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/api/integrations", requireAuth, (_req, res) => {
+  res.json({
+    providers: getIntegrationCatalog(process.env, store.disabledIntegrations),
+    credentialStorage: "server-environment-only",
+    supportedOperations: "read-only"
+  });
+});
+
+app.post("/api/integrations/:provider/test", requireAuth, integrationTestLimiter, async (req, res) => {
+  const provider = req.params.provider;
+  if (!INTEGRATION_PROVIDER_IDS.includes(provider)) return res.status(404).json({ error: "Integration provider not found." });
+  if (store.disabledIntegrations.includes(provider)) return res.status(409).json({ error: "This connection is disabled in JARVIS. Enable it before testing." });
+  try {
+    const result = await probeIntegration(provider);
+    res.json(result);
+  } catch (error) {
+    const status = error instanceof TypeError ? 400 : 502;
+    res.status(status).json({ error: error.message || "Integration test failed." });
+  }
+});
+
+app.post("/api/integrations/:provider/disable", requireAuth, async (req, res) => {
+  const provider = req.params.provider;
+  if (!INTEGRATION_PROVIDER_IDS.includes(provider)) return res.status(404).json({ error: "Integration provider not found." });
+  if (!store.disabledIntegrations.includes(provider)) {
+    store.disabledIntegrations.push(provider);
+    await saveStore();
+  }
+  res.json({ ok: true, providers: getIntegrationCatalog(process.env, store.disabledIntegrations) });
+});
+
+app.post("/api/integrations/:provider/enable", requireAuth, async (req, res) => {
+  const provider = req.params.provider;
+  if (!INTEGRATION_PROVIDER_IDS.includes(provider)) return res.status(404).json({ error: "Integration provider not found." });
+  store.disabledIntegrations = store.disabledIntegrations.filter((item) => item !== provider);
+  await saveStore();
+  res.json({ ok: true, providers: getIntegrationCatalog(process.env, store.disabledIntegrations) });
+});
+
 app.get("/api/workflows", requireAuth, (_req, res) => {
   res.json({
     workflows: store.workflows.slice().reverse(),
@@ -856,6 +907,13 @@ app.delete("/api/workflows/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+async function runEnabledIntegration(provider, action) {
+  if (store.disabledIntegrations.includes(provider)) {
+    throw new Error(provider.replaceAll("_", " ") + " connection is disabled in JARVIS.");
+  }
+  return runIntegrationAction(action);
+}
+
 function workflowStepHandlers() {
   return {
     create_task: async (step) => {
@@ -893,7 +951,11 @@ function workflowStepHandlers() {
     draft_text: async (step) => ({
       draft: step.content,
       summary: "Draft prepared locally. Nothing was sent or published."
-    })
+    }),
+    github_list_repositories: async () => runEnabledIntegration("github", "github_list_repositories"),
+    google_drive_list_files: async () => runEnabledIntegration("google_drive", "google_drive_list_files"),
+    telegram_get_bot_profile: async () => runEnabledIntegration("telegram", "telegram_get_bot_profile"),
+    elevenlabs_get_account: async () => runEnabledIntegration("elevenlabs", "elevenlabs_get_account")
   };
 }
 

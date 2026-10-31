@@ -5,7 +5,11 @@ export const WORKFLOW_STEP_TYPES = Object.freeze([
   "save_memory",
   "search_knowledge",
   "draft_text",
-  "review_checkpoint"
+  "review_checkpoint",
+  "github_list_repositories",
+  "google_drive_list_files",
+  "telegram_get_bot_profile",
+  "elevenlabs_get_account"
 ]);
 
 const WORKFLOW_STATUSES = new Set(["draft", "approved", "paused"]);
@@ -60,6 +64,9 @@ function normalizeStep(raw = {}) {
     const content = cleanText(raw.content, 2000);
     if (content.length < 10 || !safeValue(content)) throw new TypeError("Draft step needs safe text between 10 and 2,000 characters; private or sensitive content is not allowed.");
     return { type, title, content };
+  }
+  if (["github_list_repositories", "google_drive_list_files", "telegram_get_bot_profile", "elevenlabs_get_account"].includes(type)) {
+    return { type, title };
   }
   const message = cleanText(raw.message, 300);
   if (!safeValue(message)) throw new TypeError("Review checkpoint contains private or sensitive content.");

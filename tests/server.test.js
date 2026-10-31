@@ -50,6 +50,10 @@ before(async () => {
       GEMINI_API_KEY: "",
       GEMINI_CHAT_ENABLED: "false",
       GEMINI_WEB_RESEARCH_ENABLED: "false",
+      JARVIS_GITHUB_TOKEN: "",
+      JARVIS_GOOGLE_DRIVE_ACCESS_TOKEN: "",
+      JARVIS_TELEGRAM_BOT_TOKEN: "",
+      JARVIS_ELEVENLABS_API_KEY: ""
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -107,6 +111,8 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(blockedExperience.status, 401);
   const blockedWorkflows = await request("/api/workflows", { headers: {} });
   assert.equal(blockedWorkflows.status, 401);
+  const blockedIntegrations = await request("/api/integrations", { headers: {} });
+  assert.equal(blockedIntegrations.status, 401);
   const blockedExport = await request("/api/export", { headers: {} });
   assert.equal(blockedExport.status, 401);
   const blockedResearch = await request("/api/research", {
@@ -132,6 +138,39 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.match(cookieHeader, /SameSite=Strict/i);
   cookie = cookieHeader.split(";")[0];
   assert.match(cookie, /^jarvis_session=/);
+
+  const integrationCatalogueResponse = await request("/api/integrations");
+  assert.equal(integrationCatalogueResponse.status, 200);
+  const integrationCatalogue = await integrationCatalogueResponse.json();
+  assert.equal(integrationCatalogue.credentialStorage, "server-environment-only");
+  assert.equal(integrationCatalogue.supportedOperations, "read-only");
+  assert.equal(integrationCatalogue.providers.length, 4);
+  assert.equal(integrationCatalogue.providers.every((item) => item.configured === false), true);
+  assert.equal(JSON.stringify(integrationCatalogue).includes("JARVIS_PASSWORD"), false);
+
+  const disabledGithub = await request("/api/integrations/github/disable", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(disabledGithub.status, 200);
+  assert.equal((await disabledGithub.json()).providers.find((item) => item.id === "github").enabled, false);
+
+  const blockedIntegrationProbe = await request("/api/integrations/github/test", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(blockedIntegrationProbe.status, 409);
+
+  const enabledGithub = await request("/api/integrations/github/enable", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(enabledGithub.status, 200);
+  assert.equal((await enabledGithub.json()).providers.find((item) => item.id === "github").disabled, false);
+
+  const integrationProbe = await request("/api/integrations/github/test", {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+  assert.equal(integrationProbe.status, 502);
+  assert.match((await integrationProbe.json()).error, /JARVIS_GITHUB_TOKEN/);
 
   const crossOrigin = await request("/api/tasks", {
     method: "POST",
@@ -384,6 +423,48 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(stoppedRun.run.status, "cancelled");
   assert.equal(stoppedRun.run.steps[2].status, "skipped");
 
+  const createIntegratedWorkflow = await request("/api/workflows", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Read GitHub repositories",
+      steps: [{ type: "github_list_repositories", title: "List my repositories" }]
+    })
+  });
+  assert.equal(createIntegratedWorkflow.status, 201);
+  const integratedDraft = await createIntegratedWorkflow.json();
+  const integratedValidation = await request("/api/workflows/" + integratedDraft.workflow.id + "/validate", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal((await integratedValidation.json()).validation.passed, true);
+  const integratedApproval = await request("/api/workflows/" + integratedDraft.workflow.id + "/approve", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(integratedApproval.status, 200);
+  const disableBeforeRun = await request("/api/integrations/github/disable", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(disableBeforeRun.status, 200);
+  const blockedIntegrationRun = await request("/api/workflows/" + integratedDraft.workflow.id + "/run", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(blockedIntegrationRun.status, 201);
+  const blockedRunPayload = await blockedIntegrationRun.json();
+  assert.equal(blockedRunPayload.run.status, "failed");
+  assert.match(blockedRunPayload.run.steps[0].result.error, /disabled in JARVIS/i);
+
+  const enableBeforeRun = await request("/api/integrations/github/enable", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(enableBeforeRun.status, 200);
+  const integratedRunResponse = await request("/api/workflows/" + integratedDraft.workflow.id + "/run", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(integratedRunResponse.status, 201);
+  const integratedRun = await integratedRunResponse.json();
+  assert.equal(integratedRun.run.status, "failed");
+  assert.match(integratedRun.run.steps[0].result.error, /JARVIS_GITHUB_TOKEN/);
+  assert.equal(JSON.stringify(integratedRun).includes("demo-github-value"), false);
+
   const createFeedback = await request("/api/feedback", {
     method: "POST",
     body: JSON.stringify({
@@ -576,6 +657,9 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.ok(Array.isArray(exportPayload.data.experiencePreferences));
   assert.ok(Array.isArray(exportPayload.data.workflows));
   assert.ok(Array.isArray(exportPayload.data.workflowRuns));
+  assert.ok(Array.isArray(exportPayload.data.disabledIntegrations));
+  assert.equal(Object.hasOwn(exportPayload.data, "integrations"), false);
+  assert.equal(Object.hasOwn(exportPayload.data, "credentials"), false);
   assert.equal(Object.hasOwn(exportPayload.data, "chats"), false);
   assert.equal(Object.hasOwn(exportPayload.data, "devices"), false);
   assert.ok(exportPayload.excluded.includes("temporary conversation history"));

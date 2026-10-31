@@ -320,3 +320,26 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .workflow-item, .workflow-run-item, .workflow-step-preview { flex-direction: column; }
   .workflow-actions { max-width: none; justify-content: flex-start; }
 }
+
+
+.integration-safety, .integration-help { padding: 14px 16px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(110, 160, 255, .06); }
+.integration-safety strong, .integration-help strong { color: #d7e2f8; font-size: .83rem; }
+.integration-safety p, .integration-help p { margin: 6px 0 0; color: #96a7c4; font-size: .76rem; line-height: 1.6; }
+.integration-help ul { margin: 9px 0; padding-left: 20px; color: #aab9d2; font-size: .76rem; line-height: 1.8; overflow-wrap: anywhere; }
+.integration-help code, .integration-provider code { display: inline-block; padding: 4px 7px; border: 1px solid var(--line); border-radius: 7px; color: #b5c8ff; background: #0b1422; font-size: .72rem; overflow-wrap: anywhere; }
+.integration-provider { align-items: flex-start; }
+.integration-provider .list-item-main p { margin-top: 7px; color: #aab9d2; font-size: .76rem; }
+.integration-status { display: inline-flex; width: fit-content; margin-top: 7px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 999px; color: #c2cce0; font-size: .68rem; }
+.integration-status.connected { border-color: #75d6ad55; color: #75d6ad; }
+.integration-status.not-configured { color: #f0c27b; border-color: #f0c27b55; }
+.integration-status.connection-failed { color: #ee9a9a; border-color: #ee8b8b55; }
+.integration-provider code { margin-top: 8px; }
+.integration-actions { display: flex; align-items: flex-start; justify-content: flex-end; }
+.integration-error { color: #ee9a9a !important; }
+.integration-success { color: #75d6ad !important; }
+@media (max-width: 760px) {
+  .integration-provider { flex-direction: column; }
+  .integration-actions { width: 100%; justify-content: flex-start; }
+}
+
+.integration-status.connection-disabled { color: #f0c27b; border-color: #f0c27b55; }

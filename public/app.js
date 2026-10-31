@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
+const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, integrations: [], integrationResults: {}, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
 let toastTimer;
 let activeRecognition = null;
 
@@ -52,6 +52,8 @@ async function refreshState() {
   state.tasks = data.tasks || [];
   const experience = await api("/api/experience");
   const workflowData = await api("/api/workflows");
+  const integrationData = await api("/api/integrations");
+  state.integrations = integrationData.providers || [];
   state.feedback = experience.feedback || data.feedback || [];
   state.experiencePreferences = experience.preferences || data.experiencePreferences || [];
   state.workflows = workflowData.workflows || data.workflows || [];
@@ -64,6 +66,7 @@ async function refreshState() {
   renderSkills();
   renderExperience(experience.summary);
   renderWorkflows();
+  renderIntegrations();
   renderSavedResearch();
   await refreshKnowledge();
 }
@@ -83,7 +86,8 @@ function setView(name) {
     research: ["WEB DISCOVERY", "Research"],
     knowledge: ["PERSONAL KNOWLEDGE LIBRARY", "Knowledge"],
     experience: ["EXPERIENCE & SELF-IMPROVEMENT", "Experience"],
-    workflows: ["AUTOMATION & EXECUTION", "Workflows"]
+    workflows: ["AUTOMATION & EXECUTION", "Workflows"],
+    integrations: ["CONNECTED SERVICES", "Connections"]
   };
   $("#page-kicker").textContent = titles[name][0];
   $("#page-title").textContent = titles[name][1];
@@ -91,6 +95,7 @@ function setView(name) {
   if (name === "devices") refreshDevices().catch((error) => toast(error.message, true));
   if (name === "memory") refreshMemories().catch((error) => toast(error.message, true));
   if (name === "workflows") refreshWorkflows().catch((error) => toast(error.message, true));
+  if (name === "integrations") refreshIntegrations().catch((error) => toast(error.message, true));
 }
 
 function makeEmpty(message) {
@@ -282,6 +287,7 @@ function renderStorageOverview() {
     "Approved response preferences: " + state.experiencePreferences.length,
     "Workflows: " + state.workflows.length,
     "Workflow runs: " + state.workflowRuns.length,
+    "Connected service configurations: " + state.integrations.filter((item) => item.configured).length,
     "Temporary chats: not stored in the persistent database"
   ].join(" · ");
 }
@@ -791,13 +797,129 @@ function renderExperience(summary = null) {
 }
 
 
+async function refreshIntegrations() {
+  const data = await api("/api/integrations");
+  state.integrations = data.providers || [];
+  renderIntegrations();
+}
+
+function integrationDetailText(provider, result) {
+  const details = result?.details || {};
+  if (provider === "github") {
+    return details.latestRepository
+      ? "Repository metadata access verified · Latest: " + details.latestRepository
+      : "GitHub connection verified · No repositories returned.";
+  }
+  if (provider === "google_drive") return "Connection verified · " + (details.recentFiles ?? 0) + " recent files listed.";
+  if (provider === "telegram") return details.username ? "Connected to bot @" + details.username : "Telegram bot connection verified.";
+  if (provider === "elevenlabs") return "Account verified · Plan: " + (details.tier || "unknown");
+  return "Connection verified.";
+}
+
+function renderIntegrations() {
+  const target = $("#integration-provider-list");
+  if (!target) return;
+  target.replaceChildren();
+  if (!state.integrations.length) {
+    target.append(makeEmpty("Integration catalogue is unavailable."));
+    return;
+  }
+  for (const provider of state.integrations) {
+    const row = document.createElement("article");
+    row.className = "list-item integration-provider";
+    const main = document.createElement("div");
+    main.className = "list-item-main";
+    const title = document.createElement("strong");
+    title.textContent = provider.name;
+    const status = document.createElement("span");
+    const lastResult = state.integrationResults[provider.id];
+    status.className = "integration-status " + (lastResult?.connected ? "connected" : lastResult?.error ? "connection-failed" : provider.disabled ? "connection-disabled" : provider.configured ? "configured" : "not-configured");
+    status.textContent = lastResult?.connected ? "Connected" : lastResult?.error ? "Test failed" : provider.disabled ? "Disabled in JARVIS" : provider.configured ? "Configured · not tested" : "Not configured";
+    const access = document.createElement("p");
+    access.textContent = provider.access;
+    const variable = document.createElement("code");
+    variable.textContent = provider.environmentVariable;
+    const meta = document.createElement("div");
+    meta.className = "list-item-meta";
+    meta.textContent = provider.capabilities.map((item) => item.replaceAll("_", " ")).join(" · ");
+    main.append(title, status, access, variable, meta);
+
+    const actions = document.createElement("div");
+    actions.className = "integration-actions";
+    const test = document.createElement("button");
+    test.type = "button";
+    test.className = "item-action";
+    test.textContent = "Test connection";
+    test.disabled = !provider.enabled;
+    test.addEventListener("click", async () => {
+      test.disabled = true;
+      test.textContent = "Testing…";
+      try {
+        const result = await api("/api/integrations/" + encodeURIComponent(provider.id) + "/test", {
+          method: "POST",
+          body: JSON.stringify({})
+        });
+        state.integrationResults[provider.id] = result;
+        renderIntegrations();
+        toast(provider.name + " connection verified.");
+      } catch (error) {
+        state.integrationResults[provider.id] = { connected: false, error: error.message };
+        renderIntegrations();
+        toast(error.message, true);
+      }
+    });
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "item-action";
+    toggle.textContent = !provider.configured ? "Add credential first" : provider.enabled ? "Disconnect" : "Enable";
+    toggle.disabled = !provider.configured;
+    toggle.addEventListener("click", async () => {
+      toggle.disabled = true;
+      const action = provider.enabled ? "disable" : "enable";
+      try {
+        const data = await api("/api/integrations/" + encodeURIComponent(provider.id) + "/" + action, {
+          method: "POST",
+          body: JSON.stringify({})
+        });
+        state.integrations = data.providers || [];
+        delete state.integrationResults[provider.id];
+        renderIntegrations();
+        toast(provider.enabled ? provider.name + " disabled in JARVIS." : provider.name + " enabled in JARVIS.");
+      } catch (error) {
+        toast(error.message, true);
+        toggle.disabled = false;
+      }
+    });
+    actions.append(test, toggle);
+    row.append(main, actions);
+    target.append(row);
+
+    if (lastResult?.error) {
+      const message = document.createElement("p");
+      message.className = "integration-error";
+      message.textContent = lastResult.error;
+      main.append(message);
+    } else if (lastResult?.connected) {
+      const detail = document.createElement("p");
+      detail.className = "integration-success";
+      detail.textContent = integrationDetailText(provider.id, lastResult);
+      main.append(detail);
+    }
+  }
+}
+
 function workflowStepLabel(type) {
   return ({
     create_task: "Create local task",
     save_memory: "Save personal memory",
     search_knowledge: "Search saved Knowledge",
     draft_text: "Prepare text draft",
-    review_checkpoint: "Pause for review"
+    review_checkpoint: "Pause for review",
+    github_list_repositories: "Read GitHub repositories",
+    google_drive_list_files: "Read recent Google Drive files",
+    telegram_get_bot_profile: "Check Telegram bot profile",
+    elevenlabs_get_account: "Read ElevenLabs account summary"
   })[type] || "Workflow step";
 }
 
@@ -806,6 +928,10 @@ function workflowStepDetail(step) {
   if (step.type === "save_memory") return "[" + step.category + "] " + step.content;
   if (step.type === "search_knowledge") return "Search: " + step.query;
   if (step.type === "draft_text") return step.content;
+  if (step.type === "github_list_repositories") return "Read-only · Lists up to eight recently updated repositories using the configured GitHub token.";
+  if (step.type === "google_drive_list_files") return "Read-only · Lists up to eight recent Drive file names and metadata.";
+  if (step.type === "telegram_get_bot_profile") return "Read-only · Checks the configured Telegram bot identity. It does not send messages.";
+  if (step.type === "elevenlabs_get_account") return "Read-only · Reads a limited account and subscription summary.";
   return step.message || "Wait for your review before continuing.";
 }
 
@@ -1071,6 +1197,53 @@ function renderWorkflows() {
           }
           item.append(resultList);
         }
+        const externalRows = Array.isArray(step.result?.repositories)
+          ? step.result.repositories.map((entry) => ({
+              label: entry.fullName || entry.name,
+              meta: (entry.private ? "Private" : "Public") + (entry.updatedAt ? " · Updated " + entry.updatedAt.slice(0, 10) : ""),
+              url: entry.url
+            }))
+          : Array.isArray(step.result?.files)
+            ? step.result.files.map((entry) => ({
+                label: entry.name,
+                meta: entry.mimeType + (entry.modifiedAt ? " · Modified " + entry.modifiedAt.slice(0, 10) : ""),
+                url: entry.url
+              }))
+            : [];
+        if (externalRows.length) {
+          const resultList = document.createElement("ul");
+          for (const entry of externalRows.slice(0, 8)) {
+            const resultItem = document.createElement("li");
+            if (entry.url) {
+              const link = document.createElement("a");
+              link.href = entry.url;
+              link.target = "_blank";
+              link.rel = "noopener noreferrer";
+              link.textContent = entry.label;
+              resultItem.append(link);
+            } else {
+              resultItem.textContent = entry.label;
+            }
+            const metadata = document.createElement("span");
+            metadata.className = "list-item-meta";
+            metadata.textContent = " · " + entry.meta;
+            resultItem.append(metadata);
+            resultList.append(resultItem);
+          }
+          item.append(resultList);
+        }
+        if (step.result?.profile) {
+          const profile = document.createElement("p");
+          profile.textContent = "Bot: @" + (step.result.profile.username || "unknown") +
+            " · First name: " + (step.result.profile.firstName || "not provided");
+          item.append(profile);
+        }
+        if (step.result?.account) {
+          const account = document.createElement("p");
+          account.textContent = "Account: " + (step.result.account.firstName || "Connected") +
+            " · Plan: " + step.result.account.tier;
+          item.append(account);
+        }
         steps.append(item);
       }
       main.append(steps);
@@ -1231,6 +1404,8 @@ $("#logout-button").addEventListener("click", async () => {
   state.workflows = [];
   state.workflowRuns = [];
   state.workflowSteps = [];
+  state.integrations = [];
+  state.integrationResults = {};
   state.editingWorkflowId = null;
   state.tasks = [];
   renderStorageOverview();
@@ -1484,10 +1659,18 @@ $("#workflow-step-type").addEventListener("change", () => {
     save_memory: ["Memory content", "Write the fact, preference, or goal to save…"],
     search_knowledge: ["Search query", "Example: mole concept or circular motion…"],
     draft_text: ["Draft text", "Write the text to prepare locally. It will not be sent or published…"],
-    review_checkpoint: ["Review note (optional)", "What should you review before continuing?…"]
+    review_checkpoint: ["Review note (optional)", "What should you review before continuing?…"],
+    github_list_repositories: ["No input required", "This read-only integration uses the configured GitHub connection."],
+    google_drive_list_files: ["No input required", "This read-only integration uses the configured Google Drive connection."],
+    telegram_get_bot_profile: ["No input required", "This read-only integration uses the configured Telegram bot."],
+    elevenlabs_get_account: ["No input required", "This read-only integration uses the configured ElevenLabs connection."]
   };
-  $("#workflow-step-value-label").textContent = labels[type][0];
-  $("#workflow-step-value").placeholder = labels[type][1];
+  const label = labels[type];
+  const integrationAction = type.startsWith("github_") || type.startsWith("google_drive_") ||
+    type.startsWith("telegram_") || type.startsWith("elevenlabs_");
+  $("#workflow-step-value-label").textContent = label[0];
+  $("#workflow-step-value").placeholder = label[1];
+  $("#workflow-step-value").disabled = integrationAction;
   $("#workflow-step-category").disabled = type !== "save_memory";
 });
 
@@ -1508,6 +1691,7 @@ $("#workflow-add-step").addEventListener("click", () => {
   else if (type === "save_memory") step = { type, title, content: value, category: $("#workflow-step-category").value };
   else if (type === "search_knowledge") step = { type, title, query: value };
   else if (type === "draft_text") step = { type, title, content: value };
+  else if (["github_list_repositories", "google_drive_list_files", "telegram_get_bot_profile", "elevenlabs_get_account"].includes(type)) step = { type, title };
   else step = { type, title, message: value };
   state.workflowSteps.push(step);
   $("#workflow-step-title").value = "";
@@ -1563,6 +1747,9 @@ function resetWorkflowForm() {
   $("#workflow-save-button").textContent = "Save workflow draft";
   $("#workflow-cancel-edit").classList.add("hidden");
   $("#workflow-step-category").disabled = true;
+  $("#workflow-step-value").disabled = false;
+  $("#workflow-step-type").value = "create_task";
+  $("#workflow-step-type").dispatchEvent(new Event("change"));
   renderWorkflowBuilderSteps();
 }
 
