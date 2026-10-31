@@ -1,6 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const state = { chats: [], memories: [], tasks: [], feedback: [], skills: [], devices: [], research: [], activeView: "chat" };
 let toastTimer;
+let activeRecognition = null;
 
 function toast(message, isError = false) {
   const el = $("#toast");
@@ -122,17 +123,34 @@ function renderChats() {
       time.textContent += " · Offline brain";
     }
     wrap.append(time);
+    if (item.role === "assistant" && Array.isArray(item.sources) && item.sources.length) {
+      const sourceList = document.createElement("div");
+      sourceList.className = "message-sources";
+      const sourceHeading = document.createElement("strong");
+      sourceHeading.textContent = "Live sources";
+      sourceList.append(sourceHeading);
+      for (const source of item.sources.slice(0, 10)) {
+        const safe = safeResearchUrl(source?.url);
+        if (!safe) continue;
+        const link = document.createElement("a");
+        link.href = safe;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = source.title || new URL(safe).hostname;
+        sourceList.append(link);
+      }
+      if (sourceList.querySelector("a")) wrap.append(sourceList);
+    }
     if (item.role === "assistant") {
       const previousUser = [...messages.slice(0, index)].reverse().find((entry) => entry.role === "user");
       if (previousUser) {
         const feedback = document.createElement("div");
         feedback.className = "message-feedback";
-        const existing = state.feedback.find((entry) => entry.prompt === previousUser.content);
-        for (const [rating, label] of [["up", "Helpful"], ["down", "Needs work"]]) {
+          for (const [rating, label] of [["up", "Helpful"], ["down", "Needs work"]]) {
           const action = document.createElement("button");
           action.type = "button";
           action.className = "item-action";
-          action.textContent = (existing?.rating === rating ? "✓ " : "") + label;
+          action.textContent = label;
           action.setAttribute("aria-label", "Mark this response " + label.toLowerCase());
           action.addEventListener("click", async () => {
             action.disabled = true;
@@ -329,6 +347,74 @@ document.querySelectorAll(".prompt-card").forEach((button) => {
   });
 });
 
+function setVoiceButtonState(label, disabled = false) {
+  const button = $("#voice-button");
+  if (!button) return;
+  button.innerHTML = "🎙 <span>" + label + "</span>";
+  button.disabled = disabled;
+}
+
+$("#voice-button").addEventListener("click", () => {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition) {
+    toast("This browser does not support voice input. Use JARVIS Companion's Speak once or hands-free control.");
+    return;
+  }
+  if (activeRecognition) {
+    activeRecognition.stop();
+    return;
+  }
+
+  try {
+    const recognition = new Recognition();
+    activeRecognition = recognition;
+    recognition.lang = "hi-IN";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => setVoiceButtonState("Listening…");
+    recognition.onresult = (event) => {
+      const transcript = event.results?.[0]?.[0]?.transcript?.trim();
+      if (!transcript) {
+        toast("No speech was detected. Please try again.");
+        return;
+      }
+      $("#chat-input").value = transcript;
+      $("#chat-form").requestSubmit();
+    };
+    recognition.onerror = (event) => {
+      const messages = {
+        "not-allowed": "Microphone permission was denied. Allow it in your browser settings.",
+        "service-not-allowed": "This browser blocked microphone access.",
+        "no-speech": "No speech was detected. Try speaking closer to the microphone.",
+        "network": "Speech recognition needs a working internet connection."
+      };
+      toast(messages[event.error] || "Voice recognition failed: " + (event.error || "unknown error"), true);
+    };
+    recognition.onend = () => {
+      if (activeRecognition === recognition) activeRecognition = null;
+      setVoiceButtonState("Speak");
+    };
+    recognition.start();
+  } catch (error) {
+    activeRecognition = null;
+    setVoiceButtonState("Speak");
+    toast("Could not start voice input. Check browser microphone permission.", true);
+  }
+});
+
+$("#clear-chat-button").addEventListener("click", async () => {
+  if (!confirm("Clear this temporary conversation? Saved memories, tasks and research will stay.")) return;
+  try {
+    await api("/api/chat/history", { method: "DELETE" });
+    state.chats = [];
+    renderChats();
+    toast("Temporary conversation cleared.");
+  } catch (error) {
+    toast(error.message, true);
+  }
+});
+
 $("#chat-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const input = $("#chat-input");
@@ -357,7 +443,9 @@ $("#chat-form").addEventListener("submit", async (event) => {
     const data = await api("/api/chat", { method: "POST", body: JSON.stringify({ message }) });
     if ($("#speak-toggle").checked && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(new SpeechSynthesisUtterance(data.answer));
+      const utterance = new SpeechSynthesisUtterance(data.answer);
+      utterance.lang = /[\\u0900-\\u097F]/.test(data.answer) ? "hi-IN" : "en-IN";
+      window.speechSynthesis.speak(utterance);
     }
     await refreshState();
   } catch (error) {
