@@ -84,7 +84,7 @@ test("Gemini timeout and retry settings are bounded", () => {
   }, () => {
     const status = getGeminiRuntimeStatus();
     assert.equal(status.requestTimeoutMs, 25000);
-    assert.equal(status.retryAttempts, 2);
+    assert.equal(status.retryAttempts, 1);
   });
 });
 
