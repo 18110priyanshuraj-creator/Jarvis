@@ -1,10 +1,17 @@
 # JARVIS — built-in offline core
 
-JARVIS is a private dashboard with login, local JSON-backed chats, memories, tasks, feedback and skill notes. Its chat engine is a small **self-contained deterministic rule engine** with an embedded knowledge pack. It does not call Gemini, Ollama, an LLM API, a model server, or a remote search service. The server-side chat and knowledge-search routes make no outbound network requests.
+JARVIS is a private dashboard with login, saved chats, memories, tasks, feedback and skill notes. It includes a deterministic **offline rule-based brain** and an optional, server-side Gemini conversation mode. Gemini chat is disabled unless both `GEMINI_API_KEY` is configured and `GEMINI_CHAT_ENABLED=true`; the offline brain remains the fallback.
 
 ## Important capability boundary
 
 This version is **not a general-purpose trained AI model**. A sophisticated, open-ended language model cannot be created merely by deleting an API URL. This build uses explicit rules, a safe arithmetic parser and curated offline notes. It can help with supported operations, but it cannot reliably answer arbitrary questions, follow open-ended custom instructions like an LLM, access live news, or learn new facts from the internet. It tells the user when a request is outside the built-in knowledge instead of inventing a response.
+
+## Optional Gemini conversation mode
+
+- Set `GEMINI_API_KEY` and `GEMINI_CHAT_ENABLED=true` in the server environment to enable conversational replies in dashboard chat and paired Android voice chat.
+- When disabled or unavailable, JARVIS falls back to the built-in offline brain.
+- Recent context is limited to the eight most recent user/assistant messages (up to 1,200 characters each). Saved memories, tasks, feedback, skills, screenshots and Android accessibility text are not sent as conversation context.
+- The API key remains server-side. Never put it in the browser bundle or Android APK.
 
 ## Built-in features
 
