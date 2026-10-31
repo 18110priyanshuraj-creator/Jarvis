@@ -66,6 +66,31 @@ test("sensitive values and contact details are rejected", () => {
   }), /private or sensitive/i);
 });
 
+test("workflow drafts accept only the four predefined read-only integration actions", () => {
+  const workflow = createWorkflowDraft({
+    name: "Read connected services",
+    steps: [
+      { type: "github_list_repositories", title: "List GitHub repositories" },
+      { type: "google_drive_list_files", title: "List recent Drive files" },
+      { type: "telegram_get_bot_profile", title: "Check Telegram bot profile" },
+      { type: "elevenlabs_get_account", title: "Read ElevenLabs account" },
+      { type: "review_checkpoint", title: "Review service results" }
+    ]
+  });
+  const result = validateWorkflow(workflow);
+  assert.equal(result.validation.passed, true);
+  assert.deepEqual(result.workflow.steps.slice(0, 4).map((step) => step.type), [
+    "github_list_repositories",
+    "google_drive_list_files",
+    "telegram_get_bot_profile",
+    "elevenlabs_get_account"
+  ]);
+  assert.throws(() => createWorkflowDraft({
+    name: "Arbitrary integration",
+    steps: [{ type: "http_request", title: "Fetch a custom URL", url: "https://example.com" }]
+  }), /unsupported step type/i);
+});
+
 test("approval requires current validation and pause prevents new runs", () => {
   const workflow = sampleWorkflow();
   assert.throws(() => approveWorkflow(workflow), /pass validation/i);
