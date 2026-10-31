@@ -1174,6 +1174,53 @@ function renderWorkflows() {
           }
           item.append(resultList);
         }
+        const externalRows = Array.isArray(step.result?.repositories)
+          ? step.result.repositories.map((entry) => ({
+              label: entry.fullName || entry.name,
+              meta: (entry.private ? "Private" : "Public") + (entry.updatedAt ? " · Updated " + entry.updatedAt.slice(0, 10) : ""),
+              url: entry.url
+            }))
+          : Array.isArray(step.result?.files)
+            ? step.result.files.map((entry) => ({
+                label: entry.name,
+                meta: entry.mimeType + (entry.modifiedAt ? " · Modified " + entry.modifiedAt.slice(0, 10) : ""),
+                url: entry.url
+              }))
+            : [];
+        if (externalRows.length) {
+          const resultList = document.createElement("ul");
+          for (const entry of externalRows.slice(0, 8)) {
+            const resultItem = document.createElement("li");
+            if (entry.url) {
+              const link = document.createElement("a");
+              link.href = entry.url;
+              link.target = "_blank";
+              link.rel = "noopener noreferrer";
+              link.textContent = entry.label;
+              resultItem.append(link);
+            } else {
+              resultItem.textContent = entry.label;
+            }
+            const metadata = document.createElement("span");
+            metadata.className = "list-item-meta";
+            metadata.textContent = " · " + entry.meta;
+            resultItem.append(metadata);
+            resultList.append(resultItem);
+          }
+          item.append(resultList);
+        }
+        if (step.result?.profile) {
+          const profile = document.createElement("p");
+          profile.textContent = "Bot: @" + (step.result.profile.username || "unknown") +
+            " · First name: " + (step.result.profile.firstName || "not provided");
+          item.append(profile);
+        }
+        if (step.result?.account) {
+          const account = document.createElement("p");
+          account.textContent = "Account: " + (step.result.account.firstName || "Connected") +
+            " · Plan: " + step.result.account.tier;
+          item.append(account);
+        }
         steps.append(item);
       }
       main.append(steps);
