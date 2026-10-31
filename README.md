@@ -51,6 +51,26 @@ JARVIS is a private, single-owner assistant with a web dashboard and an Android 
 - GET /api/skills/:id/versions — list saved version history.
 - DELETE /api/skills/:id — delete a skill and its versions.
 
+## Experience and self-improvement (Phase 5)
+
+- Assistant messages offer **Helpful** and **Needs work** feedback. A negative rating can include a category (accuracy, clarity, tone, relevance, format, or other) and an optional improvement suggestion.
+- Feedback records contain only the rating, category, optional suggestion, engine label and timestamp. The submitted chat prompt and assistant reply are not copied into the feedback record; legacy `prompt` and `note` fields from older clients are ignored.
+- The Experience dashboard shows aggregate feedback counts, issue categories, pending suggestions, and approved response preferences.
+- A suggestion becomes a response preference only after the user explicitly presses **Approve as preference**. Preferences can be paused or deleted at any time.
+- Only user-approved active preferences are included as optional guidance in Gemini conversation context. They cannot override system/safety rules, act as factual evidence, or authorize external actions.
+- Response preferences do not train model weights. There is no automatic fine-tuning or hidden prompt rewriting from ratings.
+- The offline rule-based brain does not interpret open-ended response preferences. They are applied only when the Gemini conversational model is configured and enabled.
+- Text screening rejects common credential/contact patterns, but it is not a complete privacy detector. Do not submit passwords, API keys, contact details or other sensitive information in feedback.
+
+### Experience API
+
+- GET /api/experience — return aggregate counts, structured feedback records and response preferences.
+- POST /api/feedback — save a rating, category, optional suggestion and engine label without storing the chat prompt.
+- POST /api/feedback/:id/approve — explicitly promote a constructive suggestion to a response preference.
+- PATCH /api/experience/preferences/:id — enable or pause an approved preference.
+- DELETE /api/experience/preferences/:id — delete an approved preference.
+- DELETE /api/feedback/:id — delete a feedback record.
+
 ## Voice and Android companion
 
 - The dashboard includes Hindi push-to-talk where supported by the browser and optional spoken replies.
@@ -105,7 +125,7 @@ The current implementation stores text knowledge records in the existing jarvis_
 
 ## Persistent data
 
-Neon PostgreSQL is used when `DATABASE_URL` is configured. Otherwise, local development uses the JSON state file. Chat transcripts are deliberately excluded from both persistent stores. Memories, tasks, feedback ratings, devices and manually saved research use the persistent app state.
+Neon PostgreSQL is used when `DATABASE_URL` is configured. Otherwise, local development uses the JSON state file. Chat transcripts are deliberately excluded from both persistent stores. Memories, tasks, structured feedback, user-approved response preferences, devices and manually saved research use the persistent app state.
 
 ## Built-in offline mode
 
