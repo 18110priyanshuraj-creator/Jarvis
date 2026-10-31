@@ -850,7 +850,7 @@ function renderIntegrations() {
     test.type = "button";
     test.className = "item-action";
     test.textContent = "Test connection";
-    test.disabled = !provider.configured;
+    test.disabled = !provider.enabled;
     test.addEventListener("click", async () => {
       test.disabled = true;
       test.textContent = "Testing…";
@@ -868,7 +868,30 @@ function renderIntegrations() {
         toast(error.message, true);
       }
     });
-    actions.append(test);
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "item-action";
+    toggle.textContent = provider.enabled ? "Disconnect" : "Enable";
+    toggle.disabled = !provider.configured;
+    toggle.addEventListener("click", async () => {
+      toggle.disabled = true;
+      const action = provider.enabled ? "disable" : "enable";
+      try {
+        const data = await api("/api/integrations/" + encodeURIComponent(provider.id) + "/" + action, {
+          method: "POST",
+          body: JSON.stringify({})
+        });
+        state.integrations = data.providers || [];
+        delete state.integrationResults[provider.id];
+        renderIntegrations();
+        toast(provider.enabled ? provider.name + " disabled in JARVIS." : provider.name + " enabled in JARVIS.");
+      } catch (error) {
+        toast(error.message, true);
+        toggle.disabled = false;
+      }
+    });
+    actions.append(test, toggle);
     row.append(main, actions);
     target.append(row);
 
