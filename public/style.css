@@ -219,3 +219,18 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .device-actions { align-items: flex-end; flex-direction: column; }
   .pairing-code-value { letter-spacing: .16em; }
 }
+
+.web-search-button { white-space: nowrap; }
+.research-answer { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85rem; line-height: 1.7; color: #c3cde0; }
+.research-meta { margin-top: 8px; color: #7f91ae; font-size: .68rem; }
+.research-sources { display: grid; gap: 8px; margin-top: 15px; }
+.research-source { display: flex; flex-direction: column; gap: 3px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: #0c1422; }
+.research-source a { color: #b5c8ff; font-size: .8rem; font-weight: 700; overflow-wrap: anywhere; }
+.research-source span { color: #6e9e8e; font-size: .67rem; overflow-wrap: anywhere; }
+.research-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 15px; }
+.research-citations { margin-top: 12px; color: #90a1bd; font-size: .74rem; line-height: 1.6; }
+@media (max-width: 680px) {
+  .search-form { flex-wrap: wrap; padding: 10px; }
+  .search-form input { flex-basis: calc(100% - 45px); }
+  .search-form .primary, .search-form .web-search-button { flex: 1; }
+}
