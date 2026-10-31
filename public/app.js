@@ -112,6 +112,13 @@ function renderChats() {
     const time = document.createElement("div");
     time.className = "message-time";
     time.textContent = item.createdAt ? new Date(item.createdAt).toLocaleString() : "";
+    if (item.role === "assistant" && item.engine === "gemini-conversation") {
+      time.textContent += " · Gemini";
+    } else if (item.role === "assistant" && item.engine === "built-in-offline-fallback") {
+      time.textContent += " · Offline fallback";
+    } else if (item.role === "assistant" && item.engine === "built-in-offline") {
+      time.textContent += " · Offline brain";
+    }
     wrap.append(time);
     if (item.role === "assistant") {
       const previousUser = [...messages.slice(0, index)].reverse().find((entry) => entry.role === "user");
