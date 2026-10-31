@@ -8,9 +8,10 @@ The built-in offline mode is **not a general-purpose trained AI model**. A sophi
 
 ## Optional Gemini conversation mode
 
-- Set `GEMINI_API_KEY` and `GEMINI_CHAT_ENABLED=true` in the server environment to enable conversational replies in dashboard chat and paired Android voice chat.
-- When disabled or unavailable, JARVIS falls back to the built-in offline brain.
-- Recent context is limited to the eight most recent user/assistant messages (up to 1,200 characters each). Saved memories, tasks, feedback, skills, screenshots and Android accessibility text are not sent as conversation context.
+- `GEMINI_API_KEY` enables the Android voice request planner. It receives the current spoken transcript to classify it as chat, safe device action or clarification; screenshots and Android accessibility text are not sent.
+- Set `GEMINI_CHAT_ENABLED=true` as well to enable Gemini conversational replies in dashboard chat and paired Android voice chat.
+- Conversation context is limited to the eight most recent user/assistant messages (up to 1,200 characters each), plus the current request. Saved memories, tasks, feedback, skills, screenshots and Android accessibility text are not sent as conversation context.
+- With the API key absent, the Android planner cannot call Gemini. With chat mode disabled, dashboard chat uses the offline brain; if Gemini chat is enabled but a request fails, it falls back to offline.
 - The API key remains server-side. Never put it in the browser bundle or Android APK.
 
 ## Built-in features
