@@ -833,8 +833,8 @@ function renderIntegrations() {
     title.textContent = provider.name;
     const status = document.createElement("span");
     const lastResult = state.integrationResults[provider.id];
-    status.className = "integration-status " + (lastResult?.connected ? "connected" : provider.configured ? "configured" : "not-configured");
-    status.textContent = lastResult?.connected ? "Connected" : provider.configured ? "Configured · not tested" : "Not configured";
+    status.className = "integration-status " + (lastResult?.connected ? "connected" : lastResult?.error ? "connection-failed" : provider.configured ? "configured" : "not-configured");
+    status.textContent = lastResult?.connected ? "Connected" : lastResult?.error ? "Test failed" : provider.configured ? "Configured · not tested" : "Not configured";
     const access = document.createElement("p");
     access.textContent = provider.access;
     const variable = document.createElement("code");
