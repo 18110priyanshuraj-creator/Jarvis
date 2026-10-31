@@ -279,8 +279,9 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
       description: "Prepare a safe local study session and review it before finishing.",
       steps: [
         { type: "create_task", title: "Revise Newton's laws", description: "Review the three laws and solve two examples." },
+        { type: "save_memory", title: "Save chemistry learning preference", content: "I prefer short worked examples for chemistry revision.", category: "preference" },
         { type: "search_knowledge", title: "Find mole concept notes", query: "mole concept" },
-        { type: "review_checkpoint", title: "Review study plan", message: "Check the task and search results before continuing." },
+        { type: "review_checkpoint", title: "Review study plan", message: "Check the task, memory and search results before continuing." },
         { type: "draft_text", title: "Prepare revision checklist", content: "1. Recall the laws.\n2. Solve two examples.\n3. Review your mistakes." }
       ]
     })
@@ -288,7 +289,7 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(createWorkflow.status, 201);
   const workflowPayload = await createWorkflow.json();
   assert.equal(workflowPayload.workflow.status, "draft");
-  assert.equal(workflowPayload.workflow.steps.length, 4);
+  assert.equal(workflowPayload.workflow.steps.length, 5);
 
   const runUnapprovedWorkflow = await request("/api/workflows/" + workflowPayload.workflow.id + "/run", {
     method: "POST", body: JSON.stringify({})
@@ -324,8 +325,10 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(runPayload.run.status, "waiting_review");
   assert.equal(runPayload.run.steps[0].status, "completed");
   assert.equal(runPayload.run.steps[1].status, "completed");
-  assert.equal(runPayload.run.steps[2].status, "waiting_review");
+  assert.equal(runPayload.run.steps[2].status, "completed");
+  assert.equal(runPayload.run.steps[3].status, "waiting_review");
   assert.ok(runPayload.run.steps[0].result.taskId);
+  assert.ok(runPayload.run.steps[1].result.memoryId);
 
   const duplicateRun = await request("/api/workflows/" + workflowPayload.workflow.id + "/run", {
     method: "POST", body: JSON.stringify({})
@@ -338,8 +341,8 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(continueRun.status, 200);
   const continuedPayload = await continueRun.json();
   assert.equal(continuedPayload.run.status, "completed");
-  assert.equal(continuedPayload.run.steps[2].status, "completed");
-  assert.match(continuedPayload.run.steps[3].result.draft, /Recall the laws/);
+  assert.equal(continuedPayload.run.steps[3].status, "completed");
+  assert.match(continuedPayload.run.steps[4].result.draft, /Recall the laws/);
 
   const workflowState = await request("/api/workflows");
   assert.equal(workflowState.status, 200);
