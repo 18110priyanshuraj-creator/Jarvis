@@ -25,7 +25,7 @@ function cleanText(value, maxLength) {
 
 const RESTRICTED_ITEM = "(?:weapons?|firearms?|guns?|ammunition|explosives?|bombs?|knife|knives|tasers?|pepper spray|mace|self[- ]defense weapons?|drugs?|narcotics|intoxicants?|vapes?|nicotine|cannabis|marijuana|thc|steroids?|gambling|sports betting|prediction markets?)";
 const RESTRICTED_ITEM_PATTERN = new RegExp("\\b" + RESTRICTED_ITEM + "\\b", "i");
-const SAFE_RESEARCH_REQUEST = /^(?:(?:explain\\s+)?history of|what are (?:the )?(?:health risks|health effects|risks|side effects) of|health (?:risks|effects|impacts) of|laws? (?:about|regarding|on)|legal framework for|policy (?:about|on)|prevention of|harm reduction for|addiction (?:treatment|recovery)|how (?:does|do) addiction treatment work|how can i get help (?:for|with) addiction|where can i get help (?:for|with) addiction|support for addiction|find (?:help|support|treatment) for addiction|where can i find (?:help|support|treatment) for addiction|public health (?:research|information) on)/i;
+const SAFE_RESEARCH_REQUEST = /^(?:(?:explain\s+)?history of|what are (?:the )?(?:health risks|health effects|risks|side effects) of|health (?:risks|effects|impacts) of|laws? (?:about|regarding|on)|legal framework for|policy (?:about|on)|prevention of|harm reduction for|addiction (?:treatment|recovery)|how (?:does|do) addiction treatment work|how can i get help (?:for|with) addiction|where can i get help (?:for|with) addiction|support for addiction|find (?:help|support|treatment) for addiction|where can i find (?:help|support|treatment) for addiction|public health (?:research|information) on)/i;
 
 export function isRestrictedResearchQuery(query) {
   const cleanQuery = cleanText(query, MAX_QUERY_LENGTH);
