@@ -587,9 +587,10 @@ function renderSkills() {
 
 function renderExperience(summary = null) {
   const metricsTarget = $("#experience-metrics");
+  const categoriesTarget = $("#experience-categories");
   const feedbackTarget = $("#experience-feedback");
   const preferencesTarget = $("#experience-preferences");
-  if (!metricsTarget || !feedbackTarget || !preferencesTarget) return;
+  if (!metricsTarget || !categoriesTarget || !feedbackTarget || !preferencesTarget) return;
 
   const positive = state.feedback.filter((item) => item.rating === "up").length;
   const needsWork = state.feedback.filter((item) => item.rating === "down").length;
@@ -613,6 +614,23 @@ function renderExperience(summary = null) {
     title.textContent = label;
     card.append(number, title);
     metricsTarget.append(card);
+  }
+
+  const categoryCounts = summary?.categories || Object.fromEntries(
+    ["accuracy", "clarity", "tone", "relevance", "format", "other"].map((category) => [
+      category,
+      state.feedback.filter((item) => item.rating === "down" && item.category === category).length
+    ])
+  );
+  categoriesTarget.replaceChildren();
+  const categoryTitle = document.createElement("strong");
+  categoryTitle.textContent = "Needs-work categories";
+  categoriesTarget.append(categoryTitle);
+  for (const [category, count] of Object.entries(categoryCounts)) {
+    const tag = document.createElement("span");
+    tag.className = "experience-category";
+    tag.textContent = category + " · " + count;
+    categoriesTarget.append(tag);
   }
 
   preferencesTarget.replaceChildren();
