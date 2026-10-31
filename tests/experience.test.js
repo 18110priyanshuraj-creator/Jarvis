@@ -96,8 +96,9 @@ test("experience summary reports aggregate counts without conversation text", ()
     normalizeExperienceFeedback({ rating: "down", category: "clarity", suggestion: "Explain the key point in simpler words and include an example." }),
     normalizeExperienceFeedback({ rating: "down", category: "accuracy", suggestion: "Show the source date when giving information that can change." })
   ];
-  const preference = promoteFeedbackToPreference(feedback[1], []).preference;
-  const summary = summarizeExperience(feedback, [preference]);
+  const promoted = promoteFeedbackToPreference(feedback[1], []);
+  feedback[1] = promoted.feedback;
+  const summary = summarizeExperience(feedback, [promoted.preference]);
   assert.equal(summary.total, 3);
   assert.equal(summary.helpful, 1);
   assert.equal(summary.needsWork, 2);
