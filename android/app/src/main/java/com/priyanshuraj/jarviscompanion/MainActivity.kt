@@ -124,7 +124,7 @@ class MainActivity : Activity() {
                 textSize = 26f
             })
             addView(TextView(this@MainActivity).apply {
-                text = "Phase 2: user-started hands-free voice, app launch, screen observation, safe tap, text entry and scrolling."
+                text = "Phase 3: guided permissions, optional Gemini task planning and local Android control."
                 textSize = 14f
                 setPadding(0, 8, 0, 8)
             })
@@ -251,7 +251,7 @@ class MainActivity : Activity() {
         val token = DeviceTokenStore.read(applicationContext) ?: return
         val serverUrl = getSharedPreferences("jarvis_companion_settings", MODE_PRIVATE)
             .getString("server_url", null) ?: return
-        val accessibilityEnabled = isAccessibilityServiceEnabled()
+        val accessibilityEnabled = PermissionSetup.isAccessibilityEnabled(this)
         executor.execute {
             try {
                 DeviceConnector.heartbeat(serverUrl, token, accessibilityEnabled)
@@ -284,14 +284,17 @@ class MainActivity : Activity() {
                     "You can disable this service anytime in Android Settings."
             )
             .setNegativeButton("Cancel", null)
+            .setNeutralButton("Continue voice-only") { _, _ ->
+                startHandsFreeControl(allowVoiceOnly = true)
+            }
             .setPositiveButton("Open Android settings") { _, _ ->
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             }
             .show()
     }
 
-    private fun startHandsFreeControl() {
-        if (!PermissionSetup.isAccessibilityEnabled(this)) {
+    private fun startHandsFreeControl(allowVoiceOnly: Boolean = false) {
+        if (!PermissionSetup.isAccessibilityEnabled(this) && !allowVoiceOnly) {
             showAccessibilityDisclosure()
             return
         }
