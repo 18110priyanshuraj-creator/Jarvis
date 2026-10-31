@@ -43,6 +43,7 @@
         <button class="nav-item" data-view="memory"><span class="nav-icon">◈</span> Memory</button>
         <button class="nav-item" data-view="experience"><span class="nav-icon">✧</span> Experience</button>
         <button class="nav-item" data-view="workflows"><span class="nav-icon">↻</span> Workflows</button>
+        <button class="nav-item" data-view="integrations"><span class="nav-icon">⛓</span> Connections</button>
       </nav>
       <div class="sidebar-foot">
         <div class="connection"><span class="status-dot"></span><span><strong>Private workspace</strong><small>Session protected</small></span></div>
@@ -269,6 +270,10 @@
               <option value="search_knowledge">Search saved Knowledge</option>
               <option value="draft_text">Prepare a text draft</option>
               <option value="review_checkpoint">Pause for my review</option>
+              <option value="github_list_repositories">Read GitHub repositories</option>
+              <option value="google_drive_list_files">Read recent Google Drive files</option>
+              <option value="telegram_get_bot_profile">Check Telegram bot profile</option>
+              <option value="elevenlabs_get_account">Read ElevenLabs account summary</option>
             </select>
             <label for="workflow-step-title">Step title</label>
             <input id="workflow-step-title" maxlength="100" placeholder="Example: Revise mole concept" required>
@@ -296,6 +301,32 @@
         <div id="workflow-list" class="item-list"></div>
         <div class="list-heading"><h2>Execution history</h2><span class="muted small">Step results and review checkpoints</span></div>
         <div id="workflow-runs" class="item-list"></div>
+      </section>
+
+      <section id="view-integrations" class="view content-view hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">CONNECTED SERVICES</p>
+            <h1>Connections</h1>
+            <p class="muted">Connect read-only services to JARVIS workflows. You control which server credentials are configured.</p>
+          </div>
+        </div>
+        <div class="integration-safety">
+          <strong>Credential privacy</strong>
+          <p>API tokens are read only from your server environment variables. This page never asks you to paste a secret and JARVIS does not save credentials in its database, workflow definitions, run logs or browser storage. All supported operations are read-only.</p>
+          <p>To connect a service, add its environment variable in your hosting provider's server-side environment settings, then restart or redeploy the server.</p>
+        </div>
+        <div class="integration-help">
+          <strong>Supported server variables</strong>
+          <ul>
+            <li><code>JARVIS_GITHUB_TOKEN</code> — read-only GitHub profile and repository access</li>
+            <li><code>JARVIS_GOOGLE_DRIVE_ACCESS_TOKEN</code> — Google Drive file metadata read access</li>
+            <li><code>JARVIS_TELEGRAM_BOT_TOKEN</code> — Telegram bot profile check only; no message sending</li>
+            <li><code>JARVIS_ELEVENLABS_API_KEY</code> — ElevenLabs account summary only</li>
+          </ul>
+          <p class="small muted">Google Drive access tokens expire. Refresh-token OAuth and automatic token refresh are not included in this phase.</p>
+        </div>
+        <div id="integration-provider-list" class="integration-provider-list"></div>
       </section>
 
       <section id="view-devices" class="view content-view hidden">
