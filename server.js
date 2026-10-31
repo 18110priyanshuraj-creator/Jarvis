@@ -12,6 +12,7 @@ import { createDevicesRouter } from "./routes/devices.js";
 import { createAgentPlan } from "./services/agent-planner.js";
 import { createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
 import { createGroundedResearch, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
+import { getGeminiRuntimeStatus } from "./services/gemini-client.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -375,18 +376,27 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
 }
 
 app.get("/api/health", (_req, res) => {
-  const conversationAIEnabled = isConversationAIEnabled();
-  const plannerAIEnabled = Boolean(process.env.GEMINI_API_KEY);
-  const webResearchEnabled = isWebResearchEnabled();
+  const gemini = getGeminiRuntimeStatus();
+  const conversationAIEnabled = gemini.conversationEnabled;
+  const plannerAIEnabled = gemini.plannerEnabled;
+  const webResearchEnabled = gemini.webResearchEnabled;
   res.json({
     ok: true,
     service: "jarvis",
-    version: "0.5.0-selective-memory-voice-web",
+    version: "0.6.0-gemini-runtime",
     brain: conversationAIEnabled ? "gemini-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
     webResearchEnabled,
-    externalAI: plannerAIEnabled || conversationAIEnabled || webResearchEnabled
+    externalAI: plannerAIEnabled || conversationAIEnabled || webResearchEnabled,
+    aiProvider: {
+      provider: gemini.provider,
+      configured: gemini.configured,
+      model: gemini.model,
+      modelValid: gemini.modelValid,
+      requestTimeoutMs: gemini.requestTimeoutMs,
+      retryAttempts: gemini.retryAttempts
+    }
   });
 });
 
