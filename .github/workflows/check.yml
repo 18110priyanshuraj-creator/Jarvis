@@ -45,10 +45,27 @@ jobs:
       - name: Build Android Companion
         run: gradle -p android --no-daemon assembleDebug
 
-      - name: Upload debug APK
+      - name: Verify APK and generate release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk_path="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$apk_path"
+          unzip -t "$apk_path" >/dev/null
+          mkdir -p release-artifacts
+          cp "$apk_path" release-artifacts/JARVIS-Companion-debug.apk
+          sha256sum release-artifacts/JARVIS-Companion-debug.apk > release-artifacts/JARVIS-Companion-debug.apk.sha256
+          {
+            printf 'commit=%s\\n' "$GITHUB_SHA"
+            printf 'branch=%s\\n' "$GITHUB_REF_NAME"
+            printf 'workflow_run_id=%s\\n' "$GITHUB_RUN_ID"
+            printf 'build_variant=debug\\n'
+          } > release-artifacts/build-info.txt
+
+      - name: Upload debug APK and verification files
         uses: actions/upload-artifact@v4
         with:
           name: jarvis-companion-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: release-artifacts/*
           if-no-files-found: error
           retention-days: 7
