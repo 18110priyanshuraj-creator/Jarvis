@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
+const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
 let toastTimer;
 let activeRecognition = null;
 
@@ -51,8 +51,11 @@ async function refreshState() {
   state.memoryTotal = state.memories.length;
   state.tasks = data.tasks || [];
   const experience = await api("/api/experience");
+  const workflowData = await api("/api/workflows");
   state.feedback = experience.feedback || data.feedback || [];
   state.experiencePreferences = experience.preferences || data.experiencePreferences || [];
+  state.workflows = workflowData.workflows || data.workflows || [];
+  state.workflowRuns = workflowData.runs || data.workflowRuns || [];
   state.skills = data.skills || [];
   state.research = data.research || [];
   renderChats();
@@ -60,6 +63,7 @@ async function refreshState() {
   renderTasks();
   renderSkills();
   renderExperience(experience.summary);
+  renderWorkflows();
   renderSavedResearch();
   await refreshKnowledge();
 }
@@ -78,13 +82,15 @@ function setView(name) {
     tasks: ["ORGANIZATION", "Tasks"],
     research: ["WEB DISCOVERY", "Research"],
     knowledge: ["PERSONAL KNOWLEDGE LIBRARY", "Knowledge"],
-    experience: ["EXPERIENCE & SELF-IMPROVEMENT", "Experience"]
+    experience: ["EXPERIENCE & SELF-IMPROVEMENT", "Experience"],
+    workflows: ["AUTOMATION & EXECUTION", "Workflows"]
   };
   $("#page-kicker").textContent = titles[name][0];
   $("#page-title").textContent = titles[name][1];
   if (name === "chat") setTimeout(() => $("#chat-input").focus(), 0);
   if (name === "devices") refreshDevices().catch((error) => toast(error.message, true));
   if (name === "memory") refreshMemories().catch((error) => toast(error.message, true));
+  if (name === "workflows") refreshWorkflows().catch((error) => toast(error.message, true));
 }
 
 function makeEmpty(message) {
@@ -274,6 +280,8 @@ function renderStorageOverview() {
     "Tasks: " + state.tasks.length,
     "Custom skills: " + state.skills.length,
     "Approved response preferences: " + state.experiencePreferences.length,
+    "Workflows: " + state.workflows.length,
+    "Workflow runs: " + state.workflowRuns.length,
     "Temporary chats: not stored in the persistent database"
   ].join(" · ");
 }
@@ -868,6 +876,10 @@ $("#logout-button").addEventListener("click", async () => {
   state.skills = [];
   state.feedback = [];
   state.experiencePreferences = [];
+  state.workflows = [];
+  state.workflowRuns = [];
+  state.workflowSteps = [];
+  state.editingWorkflowId = null;
   state.tasks = [];
   renderStorageOverview();
   showLogin();
