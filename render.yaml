@@ -17,3 +17,5 @@ services:
         value: gemini-3.8-flash
       - key: GEMINI_CHAT_ENABLED
         sync: false
+      - key: GEMINI_WEB_RESEARCH_ENABLED
+        value: "false"
