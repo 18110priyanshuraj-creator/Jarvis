@@ -102,6 +102,34 @@ JARVIS is a private, single-owner assistant with a web dashboard and an Android 
 - POST /api/workflows/:id/pause — pause a saved workflow.
 - DELETE /api/workflows/:id — delete a workflow while preserving its run history.
 
+## Connected Services and Integrations (Phase 7)
+
+- The Connections dashboard lists four optional read-only providers: GitHub, Google Drive, Telegram, and ElevenLabs.
+- Credentials are read only from server environment variables. They are never entered into browser forms or stored in the app JSON/Neon state, workflow definitions, run logs, or data export.
+- All provider requests use fixed HTTPS endpoints and GET only, with an eight-second request timeout, redirect blocking, safe response summaries, and no raw provider error bodies returned to the dashboard.
+- GitHub: checks the authenticated profile and can list up to eight recently updated repositories.
+- Google Drive: lists up to eight recent file metadata records. The configured access token must have read-only Drive metadata scope. Access tokens expire; refresh-token OAuth is not implemented.
+- Telegram: checks the configured bot profile using the read-only getMe endpoint. It does not send messages.
+- ElevenLabs: reads a limited account/subscription summary. It does not generate audio or consume generation credits.
+- Each provider can be tested from the Connections dashboard. A configured credential does not mean the provider has been verified; use **Test connection** to check it.
+- The Workflow builder includes four read-only integration steps. Each executes only as part of a workflow that has been validated, explicitly approved, and separately run by the user.
+- Providers that are not configured fail their workflow step safely; later steps do not execute after the failure. No credential value is included in the result.
+- Limits: the connection-test endpoint is rate limited; provider calls are bounded to eight seconds and each list result is capped at eight records.
+
+### Server environment variables
+
+Set values in the private server environment settings (not in the Git repository):
+- `JARVIS_GITHUB_TOKEN`
+- `JARVIS_GOOGLE_DRIVE_ACCESS_TOKEN`
+- `JARVIS_TELEGRAM_BOT_TOKEN`
+- `JARVIS_ELEVENLABS_API_KEY`
+
+### Integration API
+
+- GET /api/integrations — return provider names, required environment variable names, configured flags and read-only capability descriptions; never returns credential values.
+- POST /api/integrations/:provider/test — test one supported connection and return a limited sanitized profile/summary.
+- Supported workflow actions: `github_list_repositories`, `google_drive_list_files`, `telegram_get_bot_profile`, `elevenlabs_get_account`.
+
 ## Voice and Android companion
 
 - The dashboard includes Hindi push-to-talk where supported by the browser and optional spoken replies.
