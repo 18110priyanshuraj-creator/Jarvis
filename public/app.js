@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], skills: [], devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
+const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], skills: [], editingSkillId: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
 let toastTimer;
 let activeRecognition = null;
 
@@ -332,37 +332,168 @@ function renderSkills() {
   if (!target) return;
   target.replaceChildren();
   if (!state.skills.length) {
-    target.append(makeEmpty("No custom skills saved. Add a short, safe instruction that JARVIS can use as context."));
+    target.append(makeEmpty("No skill drafts yet. Create one above, test its triggers, then approve it."));
     renderStorageOverview();
     return;
   }
+
   for (const skill of [...state.skills].reverse()) {
     const row = document.createElement("article");
-    row.className = "list-item";
+    row.className = "list-item skill-item";
     const main = document.createElement("div");
     main.className = "list-item-main";
     const title = document.createElement("strong");
-    title.textContent = skill.name;
-    const details = document.createElement("p");
-    details.textContent = skill.instructions;
+    title.textContent = skill.name || "Untitled skill";
+    const status = document.createElement("span");
+    status.className = "skill-status skill-status-" + (skill.status || "draft");
+    status.textContent = (skill.status || "draft").replace("-", " ");
     const meta = document.createElement("div");
     meta.className = "list-item-meta";
-    meta.textContent = "Saved instruction · " + new Date(skill.createdAt).toLocaleDateString();
-    main.append(title, details, meta);
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "item-action";
-    del.textContent = "Delete";
-    del.addEventListener("click", async () => {
-      if (!confirm("Delete this skill?")) return;
+    meta.textContent = [
+      "Current v" + (skill.currentVersion || 1),
+      skill.activeVersion ? "Active v" + skill.activeVersion : "Not activated",
+      "Created " + new Date(skill.createdAt).toLocaleDateString()
+    ].join(" · ");
+    const instructions = document.createElement("p");
+    instructions.textContent = skill.instructions || "";
+    const triggerMeta = document.createElement("div");
+    triggerMeta.className = "list-item-meta";
+    triggerMeta.textContent = "Triggers: " + ((skill.triggers || []).join(", ") || "No trigger phrases");
+    main.append(title, status, meta, instructions, triggerMeta);
+
+    const latest = (skill.versions || []).find((version) => version.version === skill.currentVersion);
+    if (latest?.validation) {
+      const validation = document.createElement("div");
+      validation.className = "list-item-meta";
+      validation.textContent = "Latest test: " + (latest.validation.passed ? "Passed" : "Failed") +
+        " · " + (latest.validation.checks || []).filter((item) => item.passed).length +
+        "/" + (latest.validation.checks || []).length + " checks";
+      main.append(validation);
+    }
+
+    const history = document.createElement("details");
+    history.className = "skill-history";
+    const summary = document.createElement("summary");
+    summary.textContent = "Version history (" + (skill.versions || []).length + ")";
+    history.append(summary);
+    for (const version of [...(skill.versions || [])].sort((a, b) => b.version - a.version)) {
+      const item = document.createElement("div");
+      item.className = "list-item-meta";
+      const validationLabel = version.validation
+        ? (version.validation.passed ? " · Tests passed" : " · Tests failed")
+        : " · Not tested";
+      const approvalLabel = version.approvedAt ? " · Approved " + new Date(version.approvedAt).toLocaleDateString() : "";
+      item.textContent = "v" + version.version + " · " + new Date(version.createdAt).toLocaleDateString() + validationLabel + approvalLabel;
+      history.append(item);
+    }
+    main.append(history);
+
+    const actions = document.createElement("div");
+    actions.className = "skill-actions";
+
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "item-action";
+    edit.textContent = "New version";
+    edit.addEventListener("click", () => {
+      const current = (skill.versions || []).find((version) => version.version === skill.currentVersion) || skill;
+      state.editingSkillId = skill.id;
+      $("#skill-name").value = current.name || skill.name || "";
+      $("#skill-instructions").value = current.instructions || skill.instructions || "";
+      $("#skill-triggers").value = (current.triggers || []).join(", ");
+      const positive = (current.testCases || []).find((item) => item.shouldMatch);
+      const negative = (current.testCases || []).find((item) => !item.shouldMatch);
+      $("#skill-positive-test").value = positive?.input || "";
+      $("#skill-negative-test").value = negative?.input || "";
+      $("#skill-form-title").textContent = "Create a new skill version";
+      $("#skill-submit-button").textContent = "Save new version";
+      $("#skill-cancel-edit").classList.remove("hidden");
+      $("#skill-form").scrollIntoView({ behavior: "smooth", block: "start" });
+      $("#skill-name").focus();
+    });
+
+    const validate = document.createElement("button");
+    validate.type = "button";
+    validate.className = "item-action";
+    validate.textContent = "Run tests";
+    validate.addEventListener("click", async () => {
+      validate.disabled = true;
+      try {
+        const data = await api("/api/skills/" + encodeURIComponent(skill.id) + "/validate", {
+          method: "POST", body: JSON.stringify({})
+        });
+        state.skills = state.skills.map((item) => item.id === skill.id ? data.skill : item);
+        renderSkills();
+        toast(data.validation.passed
+          ? "Skill tests passed. Review the skill and approve it to activate."
+          : "Some skill tests failed. Edit the draft and try again.");
+      } catch (error) {
+        toast(error.message, true);
+        validate.disabled = false;
+      }
+    });
+
+    const approve = document.createElement("button");
+    approve.type = "button";
+    approve.className = "item-action";
+    approve.textContent = "Approve & activate";
+    approve.disabled = !latest?.validation?.passed || latest.validation.version !== skill.currentVersion;
+    approve.addEventListener("click", async () => {
+      if (!confirm("Approve this skill version and let it guide matching Gemini requests?")) return;
+      approve.disabled = true;
+      try {
+        const data = await api("/api/skills/" + encodeURIComponent(skill.id) + "/approve", {
+          method: "POST", body: JSON.stringify({})
+        });
+        state.skills = state.skills.map((item) => item.id === skill.id ? data.skill : item);
+        renderSkills();
+        toast("Skill version approved and activated.");
+      } catch (error) {
+        toast(error.message, true);
+        approve.disabled = false;
+      }
+    });
+
+    const pause = document.createElement("button");
+    pause.type = "button";
+    pause.className = "item-action";
+    pause.textContent = "Pause";
+    pause.disabled = !skill.activeVersion || skill.status === "paused";
+    pause.addEventListener("click", async () => {
+      pause.disabled = true;
+      try {
+        const data = await api("/api/skills/" + encodeURIComponent(skill.id) + "/pause", {
+          method: "POST", body: JSON.stringify({})
+        });
+        state.skills = state.skills.map((item) => item.id === skill.id ? data.skill : item);
+        renderSkills();
+        toast("Skill paused. It will no longer be added to matching Gemini requests.");
+      } catch (error) {
+        toast(error.message, true);
+        pause.disabled = false;
+      }
+    });
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "item-action";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      if (!confirm("Delete this skill and all its saved versions?")) return;
+      remove.disabled = true;
       try {
         await api("/api/skills/" + encodeURIComponent(skill.id), { method: "DELETE" });
-        state.skills = state.skills.filter((entry) => entry.id !== skill.id);
+        state.skills = state.skills.filter((item) => item.id !== skill.id);
         renderSkills();
-        toast("Skill deleted.");
-      } catch (error) { toast(error.message, true); }
+        toast("Skill and its version history deleted.");
+      } catch (error) {
+        toast(error.message, true);
+        remove.disabled = false;
+      }
     });
-    row.append(main, del);
+
+    actions.append(edit, validate, approve, pause, remove);
+    row.append(main, actions);
     target.append(row);
   }
   renderStorageOverview();
@@ -650,24 +781,51 @@ $("#export-data-button").addEventListener("click", async (event) => {
 
 $("#skill-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const button = event.submitter;
+  const button = $("#skill-submit-button");
   button.disabled = true;
+  const payload = {
+    name: $("#skill-name").value.trim(),
+    instructions: $("#skill-instructions").value.trim(),
+    triggers: $("#skill-triggers").value.split(",").map((item) => item.trim()).filter(Boolean),
+    testCases: [
+      { input: $("#skill-positive-test").value.trim(), shouldMatch: true },
+      { input: $("#skill-negative-test").value.trim(), shouldMatch: false }
+    ]
+  };
   try {
-    const data = await api("/api/skills", {
-      method: "POST",
-      body: JSON.stringify({
-        name: $("#skill-name").value,
-        instructions: $("#skill-instructions").value
-      })
+    const url = state.editingSkillId
+      ? "/api/skills/" + encodeURIComponent(state.editingSkillId)
+      : "/api/skills";
+    const data = await api(url, {
+      method: state.editingSkillId ? "PATCH" : "POST",
+      body: JSON.stringify(payload)
     });
-    state.skills.push(data.skill);
-    $("#skill-name").value = "";
-    $("#skill-instructions").value = "";
+    if (state.editingSkillId) {
+      state.skills = state.skills.map((item) => item.id === data.skill.id ? data.skill : item);
+    } else {
+      state.skills.push(data.skill);
+    }
+    resetSkillForm();
     renderSkills();
-    toast("Skill saved. The built-in rules can use saved preferences where supported.");
-  } catch (error) { toast(error.message, true); }
-  finally { button.disabled = false; }
+    toast(state.editingSkillId
+      ? "New draft version saved. The previously approved version remains active."
+      : "Skill draft saved. Run its tests before approving it.");
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
 });
+
+function resetSkillForm() {
+  state.editingSkillId = null;
+  $("#skill-form").reset();
+  $("#skill-form-title").textContent = "Create a skill draft";
+  $("#skill-submit-button").textContent = "Save draft";
+  $("#skill-cancel-edit").classList.add("hidden");
+}
+
+$("#skill-cancel-edit").addEventListener("click", resetSkillForm);
 
 $("#task-form").addEventListener("submit", async (event) => {
   event.preventDefault();
