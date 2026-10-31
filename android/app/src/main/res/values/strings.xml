@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">JARVIS Companion</string>
+    <string name="accessibility_service_label">JARVIS app-change observer</string>
+    <string name="accessibility_service_description">Optional Phase 1 observer. It records only the foreground app package and event type. It does not read screen text or perform clicks.</string>
+</resources>
