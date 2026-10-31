@@ -54,7 +54,10 @@ jobs:
           unzip -t "$apk_path" >/dev/null
           mkdir -p release-artifacts
           cp "$apk_path" release-artifacts/JARVIS-Companion-debug.apk
-          sha256sum release-artifacts/JARVIS-Companion-debug.apk > release-artifacts/JARVIS-Companion-debug.apk.sha256
+          (
+            cd release-artifacts
+            sha256sum JARVIS-Companion-debug.apk > JARVIS-Companion-debug.apk.sha256
+          )
           {
             echo "commit=$GITHUB_SHA"
             echo "branch=$GITHUB_REF_NAME"
