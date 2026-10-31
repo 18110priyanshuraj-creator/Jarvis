@@ -81,6 +81,9 @@ test("health endpoint is public without disclosing configuration", async () => {
   const payload = await response.json();
   assert.equal(payload.ok, true);
   assert.equal(payload.service, "jarvis");
+  assert.equal(payload.plannerAIEnabled, false);
+  assert.equal(payload.conversationAIEnabled, false);
+  assert.equal(payload.externalAI, false);
   assert.equal(JSON.stringify(payload).includes("test-only-password-2026"), false);
 });
 
