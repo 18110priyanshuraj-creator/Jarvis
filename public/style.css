@@ -261,3 +261,29 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .message-sources strong { color: #90a1bd; width: 100%; }
 .message-sources a { color: #b5c8ff; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; text-decoration: none; overflow-wrap: anywhere; }
 .message-sources a:hover { text-decoration: underline; }
+
+
+.experience-privacy { padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: rgba(110, 160, 255, .06); }
+.experience-privacy strong { color: #d7e2f8; font-size: .83rem; }
+.experience-privacy p { margin: 6px 0 0; color: #96a7c4; font-size: .76rem; line-height: 1.6; }
+.experience-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 16px 0 22px; }
+.experience-metric { display: flex; flex-direction: column; gap: 5px; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: #0d1727; }
+.experience-metric strong { font-size: 1.55rem; font-variant-numeric: tabular-nums; color: #d7e2f8; }
+.experience-metric span { color: #91a3c0; font-size: .72rem; }
+.experience-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.experience-panel { min-width: 0; }
+.experience-item { align-items: flex-start; }
+.experience-item .list-item-main p { overflow-wrap: anywhere; }
+.experience-actions { display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-end; max-width: 220px; }
+.experience-reviewed { color: #80d5ac; font-size: .72rem; padding: 6px 0; white-space: nowrap; }
+.message-feedback { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.message-feedback-state { color: #83cfae; font-size: .72rem; }
+.message-feedback-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: #0b1422; }
+.message-feedback-form select { min-width: 160px; width: auto; max-width: 100%; }
+.message-feedback-form textarea { flex-basis: 100%; min-height: 58px; }
+@media (max-width: 760px) {
+  .experience-columns { grid-template-columns: 1fr; }
+  .experience-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .experience-item { flex-direction: column; }
+  .experience-actions { max-width: none; justify-content: flex-start; }
+}
