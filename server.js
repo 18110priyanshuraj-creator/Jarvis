@@ -415,7 +415,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     service: "jarvis",
-    version: "1.3.0-workflow-execution",
+    version: "1.4.0-connected-services",
     brain: conversationAIEnabled ? "gemini-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
