@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { chats: [], memories: [], tasks: [], feedback: [], skills: [], devices: [], research: [], activeView: "chat" };
+const state = { chats: [], memories: [], tasks: [], feedback: [], skills: [], devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
 let toastTimer;
 let activeRecognition = null;
 
@@ -57,6 +57,7 @@ async function refreshState() {
   renderTasks();
   renderSkills();
   renderSavedResearch();
+  await refreshKnowledge();
 }
 
 function setView(name) {
@@ -71,7 +72,8 @@ function setView(name) {
     devices: ["ANDROID COMPANION", "Device Control"],
     memory: ["PERSONAL CONTEXT", "Memory"],
     tasks: ["ORGANIZATION", "Tasks"],
-    research: ["WEB DISCOVERY", "Research"]
+    research: ["WEB DISCOVERY", "Research"],
+    knowledge: ["PERSONAL KNOWLEDGE LIBRARY", "Knowledge"]
   };
   $("#page-kicker").textContent = titles[name][0];
   $("#page-title").textContent = titles[name][1];
@@ -653,10 +655,151 @@ function renderGroundedResearch(item, canSave = true) {
         toast(error.message, true);
       }
     });
-    actions.append(save);
+
+    const addKnowledge = document.createElement("button");
+    addKnowledge.type = "button";
+    addKnowledge.className = "item-action";
+    addKnowledge.textContent = "Save to Knowledge";
+    addKnowledge.addEventListener("click", async () => {
+      addKnowledge.disabled = true;
+      try {
+        const data = await api("/api/knowledge", {
+          method: "POST",
+          body: JSON.stringify({
+            title: item.query || "Saved research",
+            content: item.answer || "",
+            category: "general",
+            sourceKind: "web-research",
+            sourceQuery: item.query || "",
+            sources: item.sources || [],
+            citations: item.citations || []
+          })
+        });
+        await refreshKnowledge(state.knowledgeQuery);
+        addKnowledge.textContent = data.duplicate ? "Already saved" : "Added to Knowledge";
+        toast(data.duplicate ? "This knowledge entry is already saved." : "Research added to your Knowledge Library. Check its sources before marking it reviewed.");
+      } catch (error) {
+        addKnowledge.disabled = false;
+        toast(error.message, true);
+      }
+    });
+
+    actions.append(save, addKnowledge);
     card.append(actions);
   }
   target.append(card);
+}
+
+function renderKnowledge() {
+  const target = $("#knowledge-list");
+  if (!target) return;
+  target.replaceChildren();
+  const count = $("#knowledge-count");
+  if (count) count.textContent = state.knowledgeTotal + " saved";
+
+  if (!state.knowledge.length) {
+    target.append(makeEmpty("No saved knowledge yet. Add a note or use “Save to Knowledge” on a research result."));
+    return;
+  }
+
+  for (const item of state.knowledge) {
+    const row = document.createElement("article");
+    row.className = "list-item";
+    const main = document.createElement("div");
+    main.className = "list-item-main";
+    const title = document.createElement("strong");
+    title.textContent = item.title || "Untitled knowledge";
+    const description = document.createElement("p");
+    description.textContent = item.content || "";
+    const meta = document.createElement("div");
+    meta.className = "list-item-meta";
+    const sourceLabel = item.sourceKind === "web-research" ? "Saved web research" : "Your note";
+    const reviewLabel = item.reviewStatus === "user-reviewed"
+      ? "Sources reviewed by you"
+      : item.reviewStatus === "unreviewed" ? "Not yet reviewed" : "User-authored";
+    meta.textContent = [
+      item.category || "general",
+      sourceLabel,
+      reviewLabel,
+      item.createdAt ? new Date(item.createdAt).toLocaleString() : ""
+    ].filter(Boolean).join(" · ");
+    main.append(title, description, meta);
+
+    if (Array.isArray(item.tags) && item.tags.length) {
+      const tags = document.createElement("div");
+      tags.className = "list-item-meta";
+      tags.textContent = "Tags: " + item.tags.join(", ");
+      main.append(tags);
+    }
+
+    if (Array.isArray(item.sources) && item.sources.length) {
+      const sourceList = document.createElement("div");
+      sourceList.className = "research-sources";
+      for (const source of item.sources.slice(0, 6)) {
+        const url = safeResearchUrl(source.url);
+        if (!url) continue;
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.target = "_blank";
+        anchor.rel = "noopener noreferrer";
+        anchor.textContent = source.title || source.domain || new URL(url).hostname;
+        sourceList.append(anchor);
+      }
+      main.append(sourceList);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "device-actions";
+    if (item.sourceKind === "web-research" && item.reviewStatus !== "user-reviewed") {
+      const review = document.createElement("button");
+      review.type = "button";
+      review.className = "item-action";
+      review.textContent = "Mark reviewed";
+      review.addEventListener("click", async () => {
+        review.disabled = true;
+        try {
+          await api("/api/knowledge/" + encodeURIComponent(item.id), {
+            method: "PATCH",
+            body: JSON.stringify({ reviewStatus: "user-reviewed" })
+          });
+          await refreshKnowledge(state.knowledgeQuery);
+          toast("Marked as reviewed by you. This does not mean JARVIS independently verified every claim.");
+        } catch (error) {
+          review.disabled = false;
+          toast(error.message, true);
+        }
+      });
+      actions.append(review);
+    }
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "item-action";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      remove.disabled = true;
+      try {
+        await api("/api/knowledge/" + encodeURIComponent(item.id), { method: "DELETE" });
+        await refreshKnowledge(state.knowledgeQuery);
+        toast("Knowledge entry deleted.");
+      } catch (error) {
+        remove.disabled = false;
+        toast(error.message, true);
+      }
+    });
+    actions.append(remove);
+    row.append(main, actions);
+    target.append(row);
+  }
+}
+
+async function refreshKnowledge(query = state.knowledgeQuery) {
+  state.knowledgeQuery = String(query || "").trim();
+  const suffix = state.knowledgeQuery ? "?q=" + encodeURIComponent(state.knowledgeQuery) : "";
+  const data = await api("/api/knowledge" + suffix);
+  state.knowledge = Array.isArray(data.items) ? data.items : [];
+  state.knowledgeTotal = Number(data.total) || 0;
+  renderKnowledge();
 }
 
 function renderSavedResearch() {
@@ -745,6 +888,22 @@ $("#search-form").addEventListener("submit", async (event) => {
         const snippet = document.createElement("p");
         snippet.textContent = result.snippet || "No description available.";
         card.append(title, snippet);
+        if (result.source === "saved-knowledge") {
+          const meta = document.createElement("div");
+          meta.className = "research-meta";
+          meta.textContent = "Saved knowledge · " + (result.reviewStatus === "user-reviewed" ? "reviewed by you" : "not independently verified");
+          card.append(meta);
+          for (const source of (result.sources || []).slice(0, 4)) {
+            const url = safeResearchUrl(source.url);
+            if (!url) continue;
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.target = "_blank";
+            anchor.rel = "noopener noreferrer";
+            anchor.textContent = "Source: " + (source.title || new URL(url).hostname);
+            card.append(anchor);
+          }
+        }
         target.append(card);
       }
     }
@@ -755,6 +914,45 @@ $("#search-form").addEventListener("submit", async (event) => {
   } finally {
     offlineButton.disabled = false;
     webButton.disabled = false;
+  }
+});
+
+$("#knowledge-search-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = event.currentTarget.querySelector("button[type=submit]");
+  button.disabled = true;
+  try {
+    await refreshKnowledge($("#knowledge-search-input").value);
+    if (state.knowledgeQuery && !state.knowledge.length) toast("No saved knowledge matched that search.");
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("#knowledge-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = event.currentTarget.querySelector("button[type=submit]");
+  button.disabled = true;
+  try {
+    const data = await api("/api/knowledge", {
+      method: "POST",
+      body: JSON.stringify({
+        title: $("#knowledge-title").value.trim(),
+        content: $("#knowledge-content").value.trim(),
+        category: $("#knowledge-category").value,
+        tags: $("#knowledge-tags").value,
+        sourceKind: "manual"
+      })
+    });
+    await refreshKnowledge("");
+    event.currentTarget.reset();
+    toast(data.duplicate ? "That note is already in your Knowledge Library." : "Knowledge note saved.");
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
   }
 });
 
