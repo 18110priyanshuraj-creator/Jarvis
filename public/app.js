@@ -507,6 +507,35 @@ function renderGroundedResearch(item, canSave = true) {
     card.append(sourceHeading, sourceList);
   }
 
+  const evidence = Array.isArray(item.citations) ? item.citations.slice(0, 12) : [];
+  if (evidence.length) {
+    const evidenceHeading = document.createElement("p");
+    evidenceHeading.className = "research-citations";
+    evidenceHeading.textContent = "Claim-level source support";
+    const evidenceList = document.createElement("div");
+    evidenceList.className = "research-sources";
+    for (const citation of evidence) {
+      const row = document.createElement("div");
+      row.className = "research-source";
+      const claim = document.createElement("span");
+      claim.textContent = citation.claim || "Supported claim";
+      row.append(claim);
+      const citedUrls = Array.isArray(citation.sourceUrls) ? citation.sourceUrls.slice(0, 5) : [];
+      for (const rawUrl of citedUrls) {
+        const url = safeResearchUrl(rawUrl);
+        if (!url) continue;
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.target = "_blank";
+        anchor.rel = "noopener noreferrer";
+        anchor.textContent = "Supporting source: " + new URL(url).hostname;
+        row.append(anchor);
+      }
+      evidenceList.append(row);
+    }
+    card.append(evidenceHeading, evidenceList);
+  }
+
   if (canSave && item.engine !== "saved-research") {
     const actions = document.createElement("div");
     actions.className = "research-actions";
