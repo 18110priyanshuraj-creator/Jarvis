@@ -23,8 +23,8 @@ function cleanText(value, maxLength) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
 
-const RESTRICTED_ITEM = "(?:weapons?|firearms?|guns?|ammunition|explosives?|bombs?|knives|self[- ]defense weapons?|drugs?|narcotics|intoxicants?|vapes?|nicotine|cannabis|marijuana|thc|steroids?|gambling|sports betting|prediction markets?)";
-const RESTRICTED_ACTION = "(?:buy|purchase|obtain|get|find|locate|where to get|how to use|use|make|build|hide|conceal|bypass|evade|dose|sell)";
+const RESTRICTED_ITEM = "(?:weapons?|firearms?|guns?|ammunition|explosives?|bombs?|knife|knives|tasers?|pepper spray|mace|self[- ]defense weapons?|drugs?|narcotics|intoxicants?|vapes?|nicotine|cannabis|marijuana|thc|steroids?|gambling|sports betting|prediction markets?)";
+const RESTRICTED_ACTION = "(?:buy|purchase|obtain|where to get|where can i get|how to get|find a seller|locate a seller|make|build|manufacture|how to use|how do i use|use|hide|conceal|bypass|evade|dose|sell)";
 const RESTRICTED_REQUEST = new RegExp("\\b" + RESTRICTED_ACTION + "\\b.{0,90}\\b" + RESTRICTED_ITEM + "\\b|\\b" + RESTRICTED_ITEM + "\\b.{0,90}\\b" + RESTRICTED_ACTION + "\\b", "i");
 
 export function isRestrictedResearchQuery(query) {
@@ -153,10 +153,16 @@ export function normalizeSavedResearch(input) {
     });
   }
 
+  const requestedDate = cleanText(input?.searchedAt, 80);
+  const parsedDate = requestedDate ? new Date(requestedDate) : null;
+  const searchedAt = parsedDate && Number.isFinite(parsedDate.getTime())
+    ? parsedDate.toISOString()
+    : new Date().toISOString();
+
   return {
     query,
     answer,
     sources,
-    searchedAt: cleanText(input?.searchedAt, 80) || new Date().toISOString()
+    searchedAt
   };
 }
