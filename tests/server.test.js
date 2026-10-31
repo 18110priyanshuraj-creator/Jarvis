@@ -48,6 +48,7 @@ before(async () => {
       JARVIS_DATA_DIR: tempDir,
       GEMINI_API_KEY: "",
       GEMINI_CHAT_ENABLED: "false",
+      GEMINI_WEB_RESEARCH_ENABLED: "false",
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -83,6 +84,7 @@ test("health endpoint is public without disclosing configuration", async () => {
   assert.equal(payload.service, "jarvis");
   assert.equal(payload.plannerAIEnabled, false);
   assert.equal(payload.conversationAIEnabled, false);
+  assert.equal(payload.webResearchEnabled, false);
   assert.equal(payload.externalAI, false);
   assert.equal(JSON.stringify(payload).includes("test-only-password-2026"), false);
 });
@@ -90,6 +92,12 @@ test("health endpoint is public without disclosing configuration", async () => {
 test("authentication, local search, tasks, memories, and offline chat behave safely", async () => {
   const blockedState = await request("/api/state", { headers: {} });
   assert.equal(blockedState.status, 401);
+  const blockedResearch = await request("/api/research", {
+    method: "POST",
+    headers: {},
+    body: JSON.stringify({ query: "What changed in the latest science research?" })
+  });
+  assert.equal(blockedResearch.status, 401);
 
   const wrongLogin = await request("/api/login", {
     method: "POST",
@@ -138,11 +146,31 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(createMemory.status, 201);
   const memoryPayload = await createMemory.json();
 
+  const savedResearch = await request("/api/research/saved", {
+    method: "POST",
+    body: JSON.stringify({
+      query: "How does solar energy work?",
+      answer: "Solar panels convert sunlight into electrical energy.",
+      searchedAt: "2026-10-31T00:00:00.000Z",
+      sources: [
+        { title: "Official energy guide", url: "https://energy.example/solar" },
+        { title: "Unsafe source", url: "javascript:alert(1)" }
+      ]
+    })
+  });
+  assert.equal(savedResearch.status, 201);
+  const savedResearchPayload = await savedResearch.json();
+  assert.equal(savedResearchPayload.item.sources.length, 1);
+
   const currentState = await request("/api/state");
   assert.equal(currentState.status, 200);
   const snapshot = await currentState.json();
   assert.equal(snapshot.tasks.some((item) => item.id === taskPayload.task.id), true);
   assert.equal(snapshot.memories.some((item) => item.id === memoryPayload.memory.id), true);
+  assert.equal(snapshot.research.some((item) => item.id === savedResearchPayload.item.id), true);
+
+  const deleteSavedResearch = await request("/api/research/saved/" + savedResearchPayload.item.id, { method: "DELETE" });
+  assert.equal(deleteSavedResearch.status, 200);
 
   const deleteMemory = await request("/api/memories/" + memoryPayload.memory.id, { method: "DELETE" });
   assert.equal(deleteMemory.status, 200);
@@ -172,6 +200,12 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
 
   assert.equal((await request("/api/feedback/" + feedbackPayload.feedback.id, { method: "DELETE" })).status, 200);
   assert.equal((await request("/api/skills/" + skillPayload.skill.id, { method: "DELETE" })).status, 200);
+
+  const disabledWebResearch = await request("/api/research", {
+    method: "POST",
+    body: JSON.stringify({ query: "What changed in the latest science research?" })
+  });
+  assert.equal(disabledWebResearch.status, 503);
 
   const localSearch = await request("/api/search?q=mole%20concept");
   assert.equal(localSearch.status, 200);
