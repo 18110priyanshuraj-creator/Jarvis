@@ -8,6 +8,7 @@ import fs from "node:fs/promises";
 import crypto from "node:crypto";
 import { runLocalBrain, searchLocalKnowledge } from "./brain.js";
 import { fileURLToPath } from "node:url";
+import { createDevicesRouter } from "./routes/devices.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -57,7 +58,7 @@ const loginLimiter = rateLimit({
 });
 app.use("/api", apiLimiter);
 
-let store = { chats: [], memories: [], tasks: [], feedback: [], skills: [] };
+let store = { chats: [], memories: [], tasks: [], feedback: [], skills: [], devices: [] };
 let writeQueue = Promise.resolve();
 let neonSql;
 
@@ -73,7 +74,8 @@ function normalizeStore(parsed = {}) {
     memories: Array.isArray(parsed.memories) ? parsed.memories.slice(-200) : [],
     tasks: Array.isArray(parsed.tasks) ? parsed.tasks.slice(-200) : [],
     feedback: Array.isArray(parsed.feedback) ? parsed.feedback.slice(-300) : [],
-    skills: Array.isArray(parsed.skills) ? parsed.skills.slice(-100) : []
+    skills: Array.isArray(parsed.skills) ? parsed.skills.slice(-100) : [],
+    devices: Array.isArray(parsed.devices) ? parsed.devices.slice(-50) : []
   };
 }
 
@@ -364,6 +366,29 @@ app.get("/api/search", requireAuth, (req, res) => {
   }));
   res.json({ query, results, source: "embedded-local-knowledge", externalSearch: false });
 });
+
+
+async function runDeviceVoiceCommand(message) {
+  const createdAt = new Date().toISOString();
+  store.chats.push({ id: newId(), role: "user", content: message, createdAt });
+  store.chats = store.chats.slice(-100);
+  await saveStore();
+
+  let answer;
+  try {
+    answer = runLocalBrain({ message, memories: store.memories, tasks: store.tasks, skills: store.skills, feedback: store.feedback });
+  } catch (error) {
+    console.error("Device voice command failed:", error?.name || "Error");
+    throw new Error("The built-in offline assistant could not process this voice command.");
+  }
+
+  store.chats.push({ id: newId(), role: "assistant", content: answer, createdAt: new Date().toISOString() });
+  store.chats = store.chats.slice(-100);
+  await saveStore();
+  return answer;
+}
+
+app.use("/api/devices", createDevicesRouter({ getStore: () => store, saveStore, requireAuth, runDeviceVoiceCommand }));
 
 app.use("/api", (_req, res) => res.status(404).json({ error: "API route not found." }));
 app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"] }));

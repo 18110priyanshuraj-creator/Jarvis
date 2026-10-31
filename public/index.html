@@ -36,6 +36,7 @@
       <div class="nav-label">WORKSPACE</div>
       <nav class="main-nav" aria-label="Main navigation">
         <button class="nav-item active" data-view="chat"><span class="nav-icon">✳</span> Assistant</button>
+        <button class="nav-item" data-view="devices"><span class="nav-icon">▣</span> Device Control</button>
         <button class="nav-item" data-view="research"><span class="nav-icon">⌕</span> Research</button>
         <button class="nav-item" data-view="tasks"><span class="nav-icon">☷</span> Tasks <span id="task-count" class="nav-count">0</span></button>
         <button class="nav-item" data-view="memory"><span class="nav-icon">◈</span> Memory</button>
@@ -128,7 +129,36 @@
         <div id="search-results" class="search-results"></div>
       </section>
 
-      <footer class="page-footer"><span>JARVIS OFFLINE CORE · v0.2.0</span><span>Built for one user, with safety boundaries</span></footer>
+      
+      <section id="view-devices" class="view content-view hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">ANDROID COMPANION</p>
+            <h1>Device Control</h1>
+            <p class="muted">Pair your own Android device using a short-lived code. Phase 1 enables secure pairing, device status and voice chat; screen actions are not enabled yet.</p>
+          </div>
+        </div>
+        <div class="form-card">
+          <h2>Pair a new device</h2>
+          <p class="muted">Open JARVIS Companion on your tablet, enter the HTTPS server address and the one-time code shown here.</p>
+          <div class="form-row">
+            <span class="small muted">Code expires after 3 minutes and can only be used once.</span>
+            <button class="primary" id="create-pairing-code" type="button">Generate pairing code</button>
+          </div>
+          <div id="pairing-code-panel" class="pairing-code-panel hidden" aria-live="polite">
+            <div class="small muted">ONE-TIME PAIRING CODE</div>
+            <div id="pairing-code-value" class="pairing-code-value">------</div>
+            <div id="pairing-code-expiry" class="small muted"></div>
+          </div>
+        </div>
+        <div class="list-heading">
+          <h2>Connected devices</h2>
+          <button class="item-action" id="refresh-devices" type="button">Refresh</button>
+        </div>
+        <div id="device-list" class="item-list"></div>
+      </section>
+
+<footer class="page-footer"><span>JARVIS OFFLINE CORE · v0.2.0</span><span>Built for one user, with safety boundaries</span></footer>
     </main>
   </div>
 </body>

@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { chats: [], memories: [], tasks: [], feedback: [], skills: [], activeView: "chat" };
+const state = { chats: [], memories: [], tasks: [], feedback: [], skills: [], devices: [], activeView: "chat" };
 let toastTimer;
 
 function toast(message, isError = false) {
@@ -65,6 +65,7 @@ function setView(name) {
   $("#view-" + name).classList.remove("hidden");
   const titles = {
     chat: ["PERSONAL ASSISTANT", "Assistant"],
+    devices: ["ANDROID COMPANION", "Device Control"],
     memory: ["PERSONAL CONTEXT", "Memory"],
     tasks: ["ORGANIZATION", "Tasks"],
     research: ["WEB DISCOVERY", "Research"]
@@ -72,6 +73,7 @@ function setView(name) {
   $("#page-kicker").textContent = titles[name][0];
   $("#page-title").textContent = titles[name][1];
   if (name === "chat") setTimeout(() => $("#chat-input").focus(), 0);
+  if (name === "devices") refreshDevices().catch((error) => toast(error.message, true));
 }
 
 function makeEmpty(message) {
@@ -505,5 +507,90 @@ $("#voice-button").addEventListener("click", () => {
     toast("Could not start voice input.", true);
   }
 });
+
+
+async function refreshDevices() {
+  const data = await api("/api/devices");
+  state.devices = Array.isArray(data.devices) ? data.devices : [];
+  renderDevices();
+}
+
+function renderDevices() {
+  const target = $("#device-list");
+  if (!target) return;
+  target.replaceChildren();
+  if (!state.devices.length) {
+    target.append(makeEmpty("No paired devices yet. Generate a code above to connect your Android Companion."));
+    return;
+  }
+
+  for (const device of state.devices) {
+    const row = document.createElement("article");
+    row.className = "list-item";
+    const main = document.createElement("div");
+    main.className = "list-item-main";
+    const title = document.createElement("strong");
+    title.textContent = device.name || device.model || "Android device";
+    const meta = document.createElement("div");
+    meta.className = "list-item-meta";
+    const modelText = [device.manufacturer, device.model].filter(Boolean).join(" ");
+    const lastSeen = device.lastSeenAt ? new Date(device.lastSeenAt).toLocaleString() : "Not checked in yet";
+    meta.textContent = [modelText, "Last seen: " + lastSeen, device.accessibilityEnabled ? "Accessibility enabled" : "Accessibility not enabled"].filter(Boolean).join(" · ");
+    main.append(title, meta);
+
+    const status = document.createElement("span");
+    status.className = "device-status";
+    status.textContent = device.revokedAt ? "Revoked" : "Paired";
+    if (device.revokedAt) status.classList.add("revoked");
+
+    const actions = document.createElement("div");
+    actions.className = "device-actions";
+    actions.append(status);
+    if (!device.revokedAt) {
+      const revoke = document.createElement("button");
+      revoke.type = "button";
+      revoke.className = "item-action";
+      revoke.textContent = "Revoke";
+      revoke.addEventListener("click", async () => {
+        if (!confirm("Revoke this device? Its saved device credential will stop working.")) return;
+        revoke.disabled = true;
+        try {
+          await api("/api/devices/" + encodeURIComponent(device.id), { method: "DELETE" });
+          await refreshDevices();
+          toast("Device access revoked.");
+        } catch (error) {
+          toast(error.message, true);
+          revoke.disabled = false;
+        }
+      });
+      actions.append(revoke);
+    }
+    row.append(main, actions);
+    target.append(row);
+  }
+}
+
+async function generatePairingCode() {
+  const button = $("#create-pairing-code");
+  const panel = $("#pairing-code-panel");
+  button.disabled = true;
+  try {
+    const data = await api("/api/devices/pairing-challenges", {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+    $("#pairing-code-value").textContent = data.code;
+    $("#pairing-code-expiry").textContent = "Expires: " + new Date(data.expiresAt).toLocaleTimeString();
+    panel.classList.remove("hidden");
+    toast("One-time pairing code created.");
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+$("#create-pairing-code").addEventListener("click", generatePairingCode);
+$("#refresh-devices").addEventListener("click", () => refreshDevices().catch((error) => toast(error.message, true)));
 
 boot();
