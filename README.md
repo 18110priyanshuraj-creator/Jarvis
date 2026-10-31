@@ -36,11 +36,11 @@ Requirements: Node.js 22 or later.
 5. Run `npm start`.
 6. Open `http://localhost:3000`.
 
-No model download, AI API key or model-server URL is required. The app still needs a web host or a local Node.js process to serve the dashboard; its own browser-to-server requests are necessary for login, chat and storage.
+No model download, AI API key or model-server URL is required to run the offline mode. The optional Gemini planner and conversation mode use the server-side key only when configured. The app still needs a web host or a local Node.js process to serve the dashboard; its own browser-to-server requests are necessary for login, chat and storage.
 
 ## Render deployment and storage
 
-The web app can run as a Node.js service on Render without a model server. The Render hosting URL is still needed to open the web dashboard, but the chat engine does not call any AI provider URL. Free hosted filesystems can be ephemeral: JSON-file chats, memories and tasks may be lost during restarts or redeploys. Use a durable database/volume or export and back up important data if persistence is required.
+The web app can run as a Node.js service on Render without a separate model server. The Render hosting URL is still needed to open the web dashboard. When Gemini conversation is explicitly enabled, the server makes requests to Google's AI service; otherwise dashboard chat uses the offline brain. Free hosted filesystems can be ephemeral: JSON-file chats, memories and tasks may be lost during restarts or redeploys. Use a durable database/volume or export and back up important data if persistence is required.
 
 ## Security
 
