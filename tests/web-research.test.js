@@ -69,7 +69,7 @@ test("research blocks requests to locate or use dangerous and age-restricted ite
   assert.equal(isRestrictedResearchQuery("how to use cannabis"), true);
   assert.equal(isRestrictedResearchQuery("where to get sports betting"), true);
   assert.equal(isRestrictedResearchQuery("Explain the history of the printing press"), false);
-  assert.equal(isRestrictedResearchQuery("How can someone get help for addiction to drugs?"), false);
+  assert.equal(isRestrictedResearchQuery("How can I get help for addiction to drugs?"), false);
   assert.equal(isRestrictedResearchQuery("What are the health risks of cannabis?"), false);
 });
 
