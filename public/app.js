@@ -781,6 +781,7 @@ $("#export-data-button").addEventListener("click", async (event) => {
 
 $("#skill-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const wasEditing = Boolean(state.editingSkillId);
   const button = $("#skill-submit-button");
   button.disabled = true;
   const payload = {
@@ -807,7 +808,7 @@ $("#skill-form").addEventListener("submit", async (event) => {
     }
     resetSkillForm();
     renderSkills();
-    toast(state.editingSkillId
+    toast(wasEditing
       ? "New draft version saved. The previously approved version remains active."
       : "Skill draft saved. Run its tests before approving it.");
   } catch (error) {
