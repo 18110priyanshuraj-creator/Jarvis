@@ -120,14 +120,17 @@
       </section>
 
       <section id="view-research" class="view content-view hidden">
-        <div class="section-heading"><div><p class="eyebrow">WEB DISCOVERY</p><h1>Research</h1><p class="muted">Search the small knowledge base bundled inside JARVIS. No search server or external URL is contacted.</p></div></div>
+        <div class="section-heading"><div><p class="eyebrow">GROUNDED WEB DISCOVERY</p><h1>Research</h1><p class="muted">Use JARVIS’s bundled notes offline or request a live, source-cited web research answer.</p></div></div>
         <form id="search-form" class="search-form">
           <span aria-hidden="true">⌕</span>
-          <input id="search-input" required maxlength="300" placeholder="Search built-in topics such as Newton’s laws, units, mole concept, or debugging…">
-          <button class="primary" id="search-button" type="submit">Search</button>
+          <input id="search-input" required maxlength="1200" placeholder="Ask a research question…">
+          <button class="primary" id="search-button" type="submit">Search offline</button>
+          <button class="item-action web-search-button" id="web-research-button" type="submit">Search live web</button>
         </form>
-        <div class="research-hint"><strong>Source check</strong><p>Prefer official documentation and primary sources. Search uses only JARVIS’s bundled offline notes; it does not browse the live web.</p></div>
-        <div id="search-results" class="search-results"></div>
+        <div class="research-hint"><strong>Live research privacy and cost</strong><p>Live mode is off until enabled in server settings. When enabled, your question is sent to Google Gemini with Google Search grounding. Results show source links and are not saved automatically; use “Save research” to keep one in your private JARVIS history. Google’s Search grounding has a free monthly allowance and may incur usage charges after that. Do not enable paid billing without a parent or guardian reviewing it.</p></div>
+        <div id="search-results" class="search-results" aria-live="polite"></div>
+        <div class="list-heading"><h2>Saved research</h2></div>
+        <div id="saved-research-list" class="item-list"></div>
       </section>
 
       
@@ -159,7 +162,7 @@
         <div id="device-list" class="item-list"></div>
       </section>
 
-<footer class="page-footer"><span>JARVIS OFFLINE CORE · v0.2.0</span><span>Built for one user, with safety boundaries</span></footer>
+<footer class="page-footer"><span>JARVIS PERSONAL SYSTEM · v0.4.0</span><span>Built for one user, with safety boundaries</span></footer>
     </main>
   </div>
 </body>
