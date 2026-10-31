@@ -14,6 +14,15 @@ The built-in offline mode is **not a general-purpose trained AI model**. A sophi
 - With the API key absent, the Android planner cannot call Gemini. With chat mode disabled, dashboard chat uses the offline brain; if Gemini chat is enabled but a request fails, it falls back to offline.
 - The API key remains server-side. Never put it in the browser bundle or Android APK.
 
+## Phase 5 — live web research
+
+- The Research screen keeps local knowledge search and adds a separate live-web action powered by Gemini Google Search grounding.
+- Live research is off by default. Set `GEMINI_API_KEY` and `GEMINI_WEB_RESEARCH_ENABLED=true` in the server environment. This switch is independent of `GEMINI_CHAT_ENABLED`.
+- Gemini returns source metadata; JARVIS displays distinct HTTPS source links and marks answers without source citations as unverified. Retrieved web pages are treated as untrusted input.
+- Live research is limited to six requests per 15 minutes. A research query is sent to Google only when the Live Web Search button is used; it does not send saved memories, screenshots or Android accessibility text.
+- Results are not stored automatically. Select **Save research** to keep a copy in the authenticated JARVIS workspace; up to 50 saved items are retained, and each can be deleted.
+- Google Search grounding usage may incur charges depending on Google AI billing and current allowance. Review the current Google AI pricing and usage limits before enabling paid billing; do not enable paid billing without a parent or guardian reviewing it.
+
 ## Built-in features
 
 - Password-protected dashboard with same-origin checks, session cookies, security headers and login rate limiting.
