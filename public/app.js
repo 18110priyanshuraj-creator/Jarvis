@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], skills: [], editingSkillId: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
+const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
 let toastTimer;
 let activeRecognition = null;
 
@@ -50,13 +50,16 @@ async function refreshState() {
   state.memories = data.memories || [];
   state.memoryTotal = state.memories.length;
   state.tasks = data.tasks || [];
-  state.feedback = data.feedback || [];
+  const experience = await api("/api/experience");
+  state.feedback = experience.feedback || data.feedback || [];
+  state.experiencePreferences = experience.preferences || data.experiencePreferences || [];
   state.skills = data.skills || [];
   state.research = data.research || [];
   renderChats();
   renderMemories();
   renderTasks();
   renderSkills();
+  renderExperience(experience.summary);
   renderSavedResearch();
   await refreshKnowledge();
 }
@@ -74,7 +77,8 @@ function setView(name) {
     memory: ["PERSONAL CONTEXT", "Memory"],
     tasks: ["ORGANIZATION", "Tasks"],
     research: ["WEB DISCOVERY", "Research"],
-    knowledge: ["PERSONAL KNOWLEDGE LIBRARY", "Knowledge"]
+    knowledge: ["PERSONAL KNOWLEDGE LIBRARY", "Knowledge"],
+    experience: ["EXPERIENCE & SELF-IMPROVEMENT", "Experience"]
   };
   $("#page-kicker").textContent = titles[name][0];
   $("#page-title").textContent = titles[name][1];
@@ -150,26 +154,106 @@ function renderChats() {
       if (previousUser) {
         const feedback = document.createElement("div");
         feedback.className = "message-feedback";
-          for (const [rating, label] of [["up", "Helpful"], ["down", "Needs work"]]) {
-          const action = document.createElement("button");
-          action.type = "button";
-          action.className = "item-action";
-          action.textContent = label;
-          action.setAttribute("aria-label", "Mark this response " + label.toLowerCase());
-          action.addEventListener("click", async () => {
-            action.disabled = true;
+        if (item.feedbackSent) {
+          const status = document.createElement("span");
+          status.className = "message-feedback-state";
+          status.textContent = item.feedbackSent === "up" ? "Thanks — marked helpful" : "Thanks — feedback saved";
+          feedback.append(status);
+        } else {
+          const helpful = document.createElement("button");
+          helpful.type = "button";
+          helpful.className = "item-action";
+          helpful.textContent = "Helpful";
+          helpful.addEventListener("click", async () => {
+            helpful.disabled = true;
             try {
-              await api("/api/feedback", {
+              const data = await api("/api/feedback", {
                 method: "POST",
-                body: JSON.stringify({ prompt: previousUser.content, rating })
+                body: JSON.stringify({ rating: "up", category: "other", engine: item.engine || "unknown" })
               });
-              state.feedback.push({ id: "local-" + Date.now(), prompt: previousUser.content, rating, note: "", createdAt: new Date().toISOString() });
-              toast("Feedback saved. It can guide future replies.");
+              state.feedback.unshift(data.feedback);
+              item.feedbackSent = "up";
               renderChats();
-            } catch (error) { toast(error.message, true); }
-            finally { action.disabled = false; }
+              renderExperience();
+              toast("Feedback saved.");
+            } catch (error) {
+              toast(error.message, true);
+              helpful.disabled = false;
+            }
           });
-          feedback.append(action);
+
+          const needsWork = document.createElement("button");
+          needsWork.type = "button";
+          needsWork.className = "item-action";
+          needsWork.textContent = "Needs work";
+          needsWork.addEventListener("click", () => {
+            item.showFeedbackForm = !item.showFeedbackForm;
+            renderChats();
+          });
+          feedback.append(helpful, needsWork);
+          if (item.showFeedbackForm) {
+            const form = document.createElement("form");
+            form.className = "message-feedback-form";
+            const category = document.createElement("select");
+            category.setAttribute("aria-label", "Feedback category");
+            for (const [value, label] of [
+              ["accuracy", "Accuracy / facts"],
+              ["clarity", "Clarity / explanation"],
+              ["tone", "Tone"],
+              ["relevance", "Relevance"],
+              ["format", "Formatting"],
+              ["other", "Other"]
+            ]) {
+              const option = document.createElement("option");
+              option.value = value;
+              option.textContent = label;
+              category.append(option);
+            }
+            category.value = "clarity";
+            const suggestion = document.createElement("textarea");
+            suggestion.maxLength = 500;
+            suggestion.rows = 2;
+            suggestion.placeholder = "What should JARVIS do differently next time? (optional)";
+            suggestion.setAttribute("aria-label", "Optional improvement suggestion");
+            const submit = document.createElement("button");
+            submit.type = "submit";
+            submit.className = "item-action";
+            submit.textContent = "Save feedback";
+            const cancel = document.createElement("button");
+            cancel.type = "button";
+            cancel.className = "item-action";
+            cancel.textContent = "Cancel";
+            cancel.addEventListener("click", () => {
+              item.showFeedbackForm = false;
+              renderChats();
+            });
+            form.append(category, suggestion, submit, cancel);
+            form.addEventListener("submit", async (event) => {
+              event.preventDefault();
+              submit.disabled = true;
+              try {
+                const data = await api("/api/feedback", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    rating: "down",
+                    category: category.value,
+                    suggestion: suggestion.value,
+                    engine: item.engine || "unknown"
+                  })
+                });
+                state.feedback.unshift(data.feedback);
+                item.feedbackSent = "down";
+                item.showFeedbackForm = false;
+                renderChats();
+                renderExperience();
+                toast("Feedback saved. Review it in Experience before applying a preference.");
+              } catch (error) {
+                toast(error.message, true);
+                submit.disabled = false;
+              }
+            });
+            wrap.append(form);
+          }
         }
         wrap.append(feedback);
       }
@@ -189,6 +273,7 @@ function renderStorageOverview() {
     "Saved research: " + state.research.length,
     "Tasks: " + state.tasks.length,
     "Custom skills: " + state.skills.length,
+    "Approved response preferences: " + state.experiencePreferences.length,
     "Temporary chats: not stored in the persistent database"
   ].join(" · ");
 }
@@ -499,6 +584,204 @@ function renderSkills() {
   renderStorageOverview();
 }
 
+
+function renderExperience(summary = null) {
+  const metricsTarget = $("#experience-metrics");
+  const categoriesTarget = $("#experience-categories");
+  const feedbackTarget = $("#experience-feedback");
+  const preferencesTarget = $("#experience-preferences");
+  if (!metricsTarget || !categoriesTarget || !feedbackTarget || !preferencesTarget) return;
+
+  const positive = state.feedback.filter((item) => item.rating === "up").length;
+  const needsWork = state.feedback.filter((item) => item.rating === "down").length;
+  const pending = state.feedback.filter((item) =>
+    item.rating === "down" && String(item.suggestion || "").trim().length >= 20 && !item.preferenceId
+  ).length;
+  const active = state.experiencePreferences.filter((item) => item.active).length;
+  const values = [
+    ["Helpful", summary?.helpful ?? positive],
+    ["Needs work", summary?.needsWork ?? needsWork],
+    ["Pending suggestions", summary?.pendingSuggestions ?? pending],
+    ["Active preferences", summary?.activePreferences ?? active]
+  ];
+  metricsTarget.replaceChildren();
+  for (const [label, value] of values) {
+    const card = document.createElement("div");
+    card.className = "experience-metric";
+    const number = document.createElement("strong");
+    number.textContent = String(value);
+    const title = document.createElement("span");
+    title.textContent = label;
+    card.append(number, title);
+    metricsTarget.append(card);
+  }
+
+  const categoryCounts = summary?.categories || Object.fromEntries(
+    ["accuracy", "clarity", "tone", "relevance", "format", "other"].map((category) => [
+      category,
+      state.feedback.filter((item) => item.rating === "down" && item.category === category).length
+    ])
+  );
+  categoriesTarget.replaceChildren();
+  const categoryTitle = document.createElement("strong");
+  categoryTitle.textContent = "Needs-work categories";
+  categoriesTarget.append(categoryTitle);
+  for (const [category, count] of Object.entries(categoryCounts)) {
+    const tag = document.createElement("span");
+    tag.className = "experience-category";
+    tag.textContent = category + " · " + count;
+    categoriesTarget.append(tag);
+  }
+
+  preferencesTarget.replaceChildren();
+  if (!state.experiencePreferences.length) {
+    preferencesTarget.append(makeEmpty("No approved response preferences yet. Review a suggestion from the feedback list and approve it when it looks right."));
+  } else {
+    for (const preference of [...state.experiencePreferences].reverse()) {
+      const row = document.createElement("article");
+      row.className = "list-item experience-item";
+      const main = document.createElement("div");
+      main.className = "list-item-main";
+      const title = document.createElement("strong");
+      title.textContent = preference.category + " preference";
+      const text = document.createElement("p");
+      text.textContent = preference.content;
+      const meta = document.createElement("div");
+      meta.className = "list-item-meta";
+      meta.textContent = (preference.active ? "Active in Gemini context" : "Paused") +
+        " · Approved " + new Date(preference.approvedAt || preference.createdAt).toLocaleDateString();
+      main.append(title, text, meta);
+      const actions = document.createElement("div");
+      actions.className = "experience-actions";
+
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "item-action";
+      toggle.textContent = preference.active ? "Pause" : "Enable";
+      toggle.addEventListener("click", async () => {
+        toggle.disabled = true;
+        try {
+          const data = await api("/api/experience/preferences/" + encodeURIComponent(preference.id), {
+            method: "PATCH",
+            body: JSON.stringify({ active: !preference.active })
+          });
+          state.experiencePreferences = state.experiencePreferences.map((item) =>
+            item.id === preference.id ? data.preference : item
+          );
+          renderExperience();
+          toast(data.preference.active ? "Response preference enabled." : "Response preference paused.");
+        } catch (error) {
+          toast(error.message, true);
+          toggle.disabled = false;
+        }
+      });
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "item-action";
+      remove.textContent = "Delete";
+      remove.addEventListener("click", async () => {
+        if (!confirm("Delete this approved response preference?")) return;
+        remove.disabled = true;
+        try {
+          await api("/api/experience/preferences/" + encodeURIComponent(preference.id), { method: "DELETE" });
+          state.experiencePreferences = state.experiencePreferences.filter((item) => item.id !== preference.id);
+          renderExperience();
+          toast("Response preference deleted.");
+        } catch (error) {
+          toast(error.message, true);
+          remove.disabled = false;
+        }
+      });
+      actions.append(toggle, remove);
+      row.append(main, actions);
+      preferencesTarget.append(row);
+    }
+  }
+
+  feedbackTarget.replaceChildren();
+  if (!state.feedback.length) {
+    feedbackTarget.append(makeEmpty("No feedback yet. Use Helpful or Needs work below a JARVIS reply to start reviewing its quality."));
+  } else {
+    for (const item of state.feedback.slice(0, 100)) {
+      const row = document.createElement("article");
+      row.className = "list-item experience-item";
+      const main = document.createElement("div");
+      main.className = "list-item-main";
+      const title = document.createElement("strong");
+      title.textContent = item.rating === "up" ? "Marked helpful" : "Needs work · " + (item.category || "other");
+      const meta = document.createElement("div");
+      meta.className = "list-item-meta";
+      meta.textContent = new Date(item.createdAt).toLocaleString() + " · " + (item.engine || "unknown engine");
+      main.append(title, meta);
+      if (item.suggestion) {
+        const suggestion = document.createElement("p");
+        suggestion.textContent = item.suggestion;
+        main.append(suggestion);
+      } else if (item.rating === "down") {
+        const emptySuggestion = document.createElement("div");
+        emptySuggestion.className = "list-item-meta";
+        emptySuggestion.textContent = "No improvement suggestion was added.";
+        main.append(emptySuggestion);
+      }
+
+      const actions = document.createElement("div");
+      actions.className = "experience-actions";
+      if (item.preferenceId) {
+        const reviewed = document.createElement("span");
+        reviewed.className = "experience-reviewed";
+        reviewed.textContent = "Reviewed";
+        actions.append(reviewed);
+      } else if (item.rating === "down" && String(item.suggestion || "").trim().length >= 20) {
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.className = "item-action";
+        approve.textContent = "Approve as preference";
+        approve.disabled = state.experiencePreferences.length >= 30;
+        approve.addEventListener("click", async () => {
+          if (!confirm("Approve this suggestion as a response preference for future matching Gemini conversations?")) return;
+          approve.disabled = true;
+          try {
+            const data = await api("/api/feedback/" + encodeURIComponent(item.id) + "/approve", {
+              method: "POST",
+              body: JSON.stringify({})
+            });
+            state.feedback = state.feedback.map((entry) => entry.id === item.id ? data.feedback : entry);
+            state.experiencePreferences.push(data.preference);
+            renderExperience();
+            toast("Preference approved. You can pause or delete it anytime.");
+          } catch (error) {
+            toast(error.message, true);
+            approve.disabled = false;
+          }
+        });
+        actions.append(approve);
+      }
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "item-action";
+      remove.textContent = "Delete feedback";
+      remove.addEventListener("click", async () => {
+        if (!confirm("Delete this feedback record? Any separately approved preference will remain unchanged.")) return;
+        remove.disabled = true;
+        try {
+          await api("/api/feedback/" + encodeURIComponent(item.id), { method: "DELETE" });
+          state.feedback = state.feedback.filter((entry) => entry.id !== item.id);
+          renderExperience();
+          toast("Feedback record deleted.");
+        } catch (error) {
+          toast(error.message, true);
+          remove.disabled = false;
+        }
+      });
+      actions.append(remove);
+      row.append(main, actions);
+      feedbackTarget.append(row);
+    }
+  }
+}
+
 function renderTasks() {
   const target = $("#task-list");
   target.replaceChildren();
@@ -583,6 +866,8 @@ $("#logout-button").addEventListener("click", async () => {
   state.knowledgeTotal = 0;
   state.research = [];
   state.skills = [];
+  state.feedback = [];
+  state.experiencePreferences = [];
   state.tasks = [];
   renderStorageOverview();
   showLogin();

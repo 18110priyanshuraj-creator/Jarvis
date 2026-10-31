@@ -103,6 +103,8 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(blockedMemories.status, 401);
   const blockedSkills = await request("/api/skills", { headers: {} });
   assert.equal(blockedSkills.status, 401);
+  const blockedExperience = await request("/api/experience", { headers: {} });
+  assert.equal(blockedExperience.status, 401);
   const blockedExport = await request("/api/export", { headers: {} });
   assert.equal(blockedExport.status, 401);
   const blockedResearch = await request("/api/research", {
@@ -270,11 +272,50 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
 
   const createFeedback = await request("/api/feedback", {
     method: "POST",
-    body: JSON.stringify({ prompt: "Explain this simply", rating: "up", note: "Helpful example" })
+    body: JSON.stringify({
+      prompt: "This user prompt must never be persisted as feedback.",
+      rating: "down",
+      category: "clarity",
+      suggestion: "Explain the main idea first, then show one small worked example.",
+      engine: "gemini-conversation",
+      note: "Legacy clients may send a note, but it is not stored."
+    })
   });
   assert.equal(createFeedback.status, 201);
   const feedbackPayload = await createFeedback.json();
-  assert.equal(feedbackPayload.feedback.rating, "up");
+  assert.equal(feedbackPayload.feedback.rating, "down");
+  assert.equal(feedbackPayload.feedback.category, "clarity");
+  assert.match(feedbackPayload.feedback.suggestion, /worked example/);
+  assert.equal(Object.hasOwn(feedbackPayload.feedback, "prompt"), false);
+  assert.equal(Object.hasOwn(feedbackPayload.feedback, "note"), false);
+
+  const experienceOverview = await request("/api/experience");
+  assert.equal(experienceOverview.status, 200);
+  const experiencePayload = await experienceOverview.json();
+  assert.equal(experiencePayload.summary.needsWork, 1);
+  assert.equal(experiencePayload.summary.pendingSuggestions, 1);
+
+  const promoteFeedback = await request("/api/feedback/" + feedbackPayload.feedback.id + "/approve", {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+  assert.equal(promoteFeedback.status, 201);
+  const promotedPayload = await promoteFeedback.json();
+  assert.equal(promotedPayload.preference.active, true);
+  assert.equal(promotedPayload.preference.category, "clarity");
+
+  const pausePreference = await request("/api/experience/preferences/" + promotedPayload.preference.id, {
+    method: "PATCH",
+    body: JSON.stringify({ active: false })
+  });
+  assert.equal(pausePreference.status, 200);
+  assert.equal((await pausePreference.json()).preference.active, false);
+
+  const enablePreference = await request("/api/experience/preferences/" + promotedPayload.preference.id, {
+    method: "PATCH",
+    body: JSON.stringify({ active: true })
+  });
+  assert.equal((await enablePreference.json()).preference.active, true);
 
   const createSkill = await request("/api/skills", {
     method: "POST",
@@ -362,6 +403,7 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(learningSnapshot.skills.some((item) => item.id === skillPayload.skill.id), true);
 
   assert.equal((await request("/api/feedback/" + feedbackPayload.feedback.id, { method: "DELETE" })).status, 200);
+  assert.equal((await request("/api/experience/preferences/" + promotedPayload.preference.id, { method: "DELETE" })).status, 200);
   assert.equal((await request("/api/skills/" + skillPayload.skill.id, { method: "DELETE" })).status, 200);
 
   const disabledWebResearch = await request("/api/research", {
@@ -416,6 +458,8 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.ok(Array.isArray(exportPayload.data.research));
   assert.ok(Array.isArray(exportPayload.data.tasks));
   assert.ok(Array.isArray(exportPayload.data.skills));
+  assert.ok(Array.isArray(exportPayload.data.feedback));
+  assert.ok(Array.isArray(exportPayload.data.experiencePreferences));
   assert.equal(Object.hasOwn(exportPayload.data, "chats"), false);
   assert.equal(Object.hasOwn(exportPayload.data, "devices"), false);
   assert.ok(exportPayload.excluded.includes("temporary conversation history"));
@@ -425,6 +469,9 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(persistedState.includes("What is 2 + 2?"), false);
   assert.equal(persistedState.includes("Remember that I prefer short Hinglish explanations."), false);
   assert.equal(persistedState.includes("Explain this simply"), false);
+  assert.equal(persistedState.includes("This user prompt must never be persisted as feedback."), false);
+  assert.equal(persistedState.includes("Legacy clients may send a note"), false);
+  assert.equal(persistedState.includes("Explain the main idea first, then show one small worked example."), false);
   assert.equal(persistedState.includes("do-not-save"), false);
 
   const clearChat = await request("/api/chat/history", { method: "DELETE" });

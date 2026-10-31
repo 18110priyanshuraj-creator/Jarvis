@@ -16,6 +16,7 @@ import { getGeminiRuntimeStatus } from "./services/gemini-client.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, searchMemories } from "./services/memory.js";
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeSkill, pauseSkill, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
+import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -72,7 +73,7 @@ const webResearchLimiter = rateLimit({
 });
 app.use("/api", apiLimiter);
 
-let store = { memories: [], tasks: [], feedback: [], skills: [], devices: [], research: [], knowledge: [] };
+let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], devices: [], research: [], knowledge: [] };
 const sessionChats = new Map();
 const MAX_EPHEMERAL_CHAT_MESSAGES = 32;
 const EPHEMERAL_CHAT_TTL_MS = 60 * 60 * 1000;
@@ -93,13 +94,16 @@ function normalizeStore(parsed = {}) {
         })
       : [],
     tasks: Array.isArray(parsed.tasks) ? parsed.tasks.slice(-200) : [],
-    // Keep legacy rating metadata only; strip old prompt text and free-form feedback notes.
+    // Never keep conversation prompts; retain only structured ratings and user-approved suggestions.
     feedback: Array.isArray(parsed.feedback)
-      ? parsed.feedback.slice(-300).map((item) => ({
-          id: typeof item?.id === "string" ? item.id : newId(),
-          rating: item?.rating === "up" ? "up" : item?.rating === "down" ? "down" : "",
-          createdAt: typeof item?.createdAt === "string" ? item.createdAt : ""
-        })).filter((item) => item.rating)
+      ? parsed.feedback.slice(-EXPERIENCE_LIMITS.feedback).flatMap((item) => {
+          try { return [normalizeExperienceFeedback(item)]; } catch { return []; }
+        })
+      : [],
+    experiencePreferences: Array.isArray(parsed.experiencePreferences)
+      ? parsed.experiencePreferences.slice(-EXPERIENCE_LIMITS.preferences).flatMap((item) => {
+          try { return [normalizeExperiencePreference(item)]; } catch { return []; }
+        })
       : [],
     skills: Array.isArray(parsed.skills)
       ? parsed.skills.slice(-SKILL_LIMITS.skills).flatMap((item) => {
@@ -354,7 +358,8 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
       const knowledgeContext = buildKnowledgeContext(store.knowledge, message, 3);
       const approvedMemoryContext = buildMemoryContext(memories, message, 5);
       const activeSkillContext = getActiveSkillContext(store.skills, message, 3);
-      const answer = await createConversationReply(message, history, approvedMemoryContext, knowledgeContext, activeSkillContext);
+      const approvedExperienceContext = getActiveExperienceContext(store.experiencePreferences, 5);
+      const answer = await createConversationReply(message, history, approvedMemoryContext, knowledgeContext, activeSkillContext, approvedExperienceContext);
       return {
         answer: webNotice ? webNotice + "\n\n" + answer : answer,
         engine: "gemini-conversation",
@@ -390,7 +395,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     service: "jarvis",
-    version: "1.0.0-skill-learning",
+    version: "1.1.0-experience-engine",
     brain: conversationAIEnabled ? "gemini-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
@@ -438,6 +443,7 @@ app.get("/api/state", requireAuth, (req, res) => {
     memories: store.memories,
     tasks: store.tasks.slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))),
     feedback: store.feedback.slice(-100),
+    experiencePreferences: store.experiencePreferences,
     skills: store.skills,
     research: store.research.slice().reverse()
   });
@@ -458,13 +464,15 @@ app.get("/api/export", requireAuth, (req, res) => {
       knowledge: store.knowledge,
       research: store.research,
       tasks: store.tasks,
+      feedback: store.feedback,
+      experiencePreferences: store.experiencePreferences,
       skills: store.skills
     },
     excluded: [
       "temporary conversation history",
       "device credentials and pairing records",
       "server environment variables and API credentials",
-      "anonymous feedback ratings"
+      "chat prompts and assistant replies are not stored as feedback records"
     ]
   };
   res.setHeader("Cache-Control", "no-store");
@@ -546,23 +554,79 @@ app.delete("/api/memories/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/api/experience", requireAuth, (_req, res) => {
+  res.json({
+    summary: summarizeExperience(store.feedback, store.experiencePreferences),
+    feedback: store.feedback.slice().reverse(),
+    preferences: store.experiencePreferences.slice().reverse()
+  });
+});
+
 app.post("/api/feedback", requireAuth, async (req, res) => {
-  const prompt = cleanText(req.body?.prompt, 1000);
-  const rating = req.body?.rating === "up" ? "up" : req.body?.rating === "down" ? "down" : "";
-  const note = cleanText(req.body?.note, 500);
-  if (!prompt || !rating) return res.status(400).json({ error: "Feedback needs a prompt and an up/down rating." });
-  if (store.feedback.length >= 300) store.feedback = store.feedback.slice(-250);
-  // Keep only the rating: never persist the prompt or free-text note as training data.
-  const item = { id: newId(), rating, createdAt: new Date().toISOString() };
+  let item;
+  try {
+    // The legacy prompt field is accepted for client compatibility but is never persisted.
+    item = normalizeExperienceFeedback({
+      rating: req.body?.rating,
+      category: req.body?.category,
+      suggestion: req.body?.suggestion,
+      engine: req.body?.engine,
+      createdAt: new Date().toISOString()
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Feedback is invalid." });
+  }
+  if (store.feedback.length >= EXPERIENCE_LIMITS.feedback) {
+    store.feedback = store.feedback.slice(-(EXPERIENCE_LIMITS.feedback - 1));
+  }
   store.feedback.push(item);
   await saveStore();
   res.status(201).json({ feedback: item });
 });
 
+app.post("/api/feedback/:id/approve", requireAuth, async (req, res) => {
+  const existing = store.feedback.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Feedback entry not found." });
+  try {
+    const result = promoteFeedbackToPreference(existing, store.experiencePreferences);
+    store.experiencePreferences.push(result.preference);
+    store.feedback = store.feedback.map((item) => item.id === existing.id ? result.feedback : item);
+    await saveStore();
+    res.status(201).json({ preference: result.preference, feedback: result.feedback });
+  } catch (error) {
+    res.status(409).json({ error: error.message || "Feedback cannot be approved as a preference." });
+  }
+});
+
+app.patch("/api/experience/preferences/:id", requireAuth, async (req, res) => {
+  const existing = store.experiencePreferences.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Response preference not found." });
+  let updated;
+  try {
+    updated = setExperiencePreferenceActive(existing, req.body?.active);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Preference update is invalid." });
+  }
+  store.experiencePreferences = store.experiencePreferences.map((item) => item.id === existing.id ? updated : item);
+  await saveStore();
+  res.json({ preference: updated });
+});
+
+app.delete("/api/experience/preferences/:id", requireAuth, async (req, res) => {
+  const before = store.experiencePreferences.length;
+  store.experiencePreferences = store.experiencePreferences.filter((item) => item.id !== req.params.id);
+  if (before === store.experiencePreferences.length) return res.status(404).json({ error: "Response preference not found." });
+  // Keep its source feedback as a reviewed record; deleting a preference does not delete feedback.
+  await saveStore();
+  res.json({ ok: true });
+});
+
 app.delete("/api/feedback/:id", requireAuth, async (req, res) => {
   const before = store.feedback.length;
+  const existing = store.feedback.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Feedback entry not found." });
   store.feedback = store.feedback.filter((item) => item.id !== req.params.id);
-  if (before === store.feedback.length) return res.status(404).json({ error: "Feedback entry not found." });
+  // The user may delete feedback independently; an already approved preference remains separate.
   await saveStore();
   res.json({ ok: true });
 });
