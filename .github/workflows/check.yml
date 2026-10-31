@@ -56,10 +56,10 @@ jobs:
           cp "$apk_path" release-artifacts/JARVIS-Companion-debug.apk
           sha256sum release-artifacts/JARVIS-Companion-debug.apk > release-artifacts/JARVIS-Companion-debug.apk.sha256
           {
-            printf 'commit=%s\\n' "$GITHUB_SHA"
-            printf 'branch=%s\\n' "$GITHUB_REF_NAME"
-            printf 'workflow_run_id=%s\\n' "$GITHUB_RUN_ID"
-            printf 'build_variant=debug\\n'
+            echo "commit=$GITHUB_SHA"
+            echo "branch=$GITHUB_REF_NAME"
+            echo "workflow_run_id=$GITHUB_RUN_ID"
+            echo "build_variant=debug"
           } > release-artifacts/build-info.txt
 
       - name: Upload debug APK and verification files
