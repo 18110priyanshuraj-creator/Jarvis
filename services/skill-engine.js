@@ -162,7 +162,7 @@ export function createSkillVersion(skillInput, input = {}) {
     versions: [...skill.versions, snapshot],
     currentVersion: nextVersion,
     updatedAt: now,
-    paused: false
+    paused: skill.paused
   });
 }
 
