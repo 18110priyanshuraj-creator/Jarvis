@@ -219,7 +219,11 @@ class VoiceControlService : Service() {
             try {
                 val plan = DeviceConnector.agentPlan(serverUrl, token, transcript)
                 mainHandler.post {
-                    if (running) speak(AgentPlanRunner.execute(this@VoiceControlService, plan))
+                    if (running) {
+                        AgentPlanRunner.execute(this@VoiceControlService, plan, mainHandler) { result ->
+                            if (running) speak(result)
+                        }
+                    }
                 }
             } catch (_: Exception) {
                 try {

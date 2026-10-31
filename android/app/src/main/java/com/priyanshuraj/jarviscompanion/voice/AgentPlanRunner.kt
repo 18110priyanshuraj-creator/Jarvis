@@ -1,6 +1,7 @@
 package com.priyanshuraj.jarviscompanion.voice
 
 import android.content.Context
+import android.os.Handler
 import org.json.JSONObject
 
 object AgentPlanRunner {
@@ -9,34 +10,68 @@ object AgentPlanRunner {
         "scroll_down", "scroll_up", "back", "home", "ask_user", "finish"
     )
 
-    fun execute(context: Context, plan: JSONObject): String {
+    /**
+     * Execute one small action at a time on the main thread.
+     * App launches and screen transitions get time to settle before the next UI action.
+     */
+    fun execute(
+        context: Context,
+        plan: JSONObject,
+        handler: Handler,
+        onComplete: (String) -> Unit
+    ) {
         val actions = plan.optJSONArray("actions")
-            ?: return "JARVIS received an invalid plan. Please repeat the command."
-        if (actions.length() !in 1..6) {
-            return "JARVIS refused an action plan outside the allowed size."
+        if (actions == null || actions.length() !in 1..6) {
+            onComplete("JARVIS received an invalid or oversized action plan.")
+            return
         }
 
         val messages = mutableListOf<String>()
         val intro = plan.optString("reply").trim()
-        if (intro.isNotBlank()) messages.add(intro.take(220))
+        if (intro.isNotBlank()) messages.add(intro.take(180))
+        var index = 0
 
-        for (index in 0 until actions.length()) {
-            val action = actions.optJSONObject(index)
-                ?: return "JARVIS stopped because the plan contained an invalid action."
-            val type = action.optString("type")
-            val value = action.optString("value")
+        val runner = object : Runnable {
+            override fun run() {
+                if (index >= actions.length()) {
+                    onComplete(messages.joinToString(". ").take(1200))
+                    return
+                }
 
-            if (type !in allowed || value.length > 180) {
-                messages.add("JARVIS blocked an unsupported action.")
-                break
+                val action = actions.optJSONObject(index)
+                if (action == null) {
+                    messages.add("JARVIS stopped because the plan contained an invalid action.")
+                    onComplete(messages.joinToString(". ").take(1200))
+                    return
+                }
+
+                val type = action.optString("type")
+                val value = action.optString("value")
+                if (type !in allowed || value.length > 180) {
+                    messages.add("JARVIS blocked an unsupported action.")
+                    onComplete(messages.joinToString(". ").take(1200))
+                    return
+                }
+
+                val result = LocalCommandProcessor.executePlannedAction(context, type, value)
+                if (result.message.isNotBlank()) messages.add(result.message.take(380))
+                index++
+
+                if (!result.success || result.shouldStop || index >= actions.length()) {
+                    onComplete(messages.joinToString(". ").take(1200))
+                    return
+                }
+
+                val delay = when (type) {
+                    "open_app" -> 1400L
+                    "tap_label" -> 600L
+                    "back", "home" -> 700L
+                    else -> 300L
+                }
+                handler.postDelayed(this, delay)
             }
-
-            val result = LocalCommandProcessor.executePlannedAction(context, type, value)
-            if (result.message.isNotBlank()) messages.add(result.message.take(420))
-            if (!result.success || result.shouldStop) break
         }
 
-        return messages.joinToString(". ").take(1200)
-            .ifBlank { "JARVIS did not receive an executable action." }
+        handler.post(runner)
     }
 }
