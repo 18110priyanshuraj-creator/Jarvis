@@ -217,13 +217,20 @@ class VoiceControlService : Service() {
 
         networkExecutor.execute {
             try {
-                val answer = DeviceConnector.voiceCommand(serverUrl, token, transcript)
+                val plan = DeviceConnector.agentPlan(serverUrl, token, transcript)
                 mainHandler.post {
-                    if (running) speak(answer)
+                    if (running) speak(AgentPlanRunner.execute(this@VoiceControlService, plan))
                 }
             } catch (_: Exception) {
-                mainHandler.post {
-                    if (running) speak("I could not reach the JARVIS server. Check your connection.")
+                try {
+                    val answer = DeviceConnector.voiceCommand(serverUrl, token, transcript)
+                    mainHandler.post {
+                        if (running) speak("AI planning is unavailable, so I used the offline assistant. " + answer)
+                    }
+                } catch (_: Exception) {
+                    mainHandler.post {
+                        if (running) speak("I could not reach the JARVIS server. Check your connection.")
+                    }
                 }
             }
         }

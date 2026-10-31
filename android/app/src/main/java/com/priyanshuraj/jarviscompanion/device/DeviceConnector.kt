@@ -55,6 +55,15 @@ object DeviceConnector {
             ?: throw IOException("JARVIS returned an empty answer.")
     }
 
+    fun agentPlan(serverUrl: String, token: String, message: String): JSONObject {
+        return request(
+            serverUrl,
+            "/api/devices/plan",
+            JSONObject().put("message", message),
+            token
+        )
+    }
+
     private fun request(
         serverUrl: String,
         path: String,

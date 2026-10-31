@@ -42,7 +42,11 @@ object LocalCommandProcessor {
 
         val appName = openPrefix.find(original)?.groupValues?.getOrNull(1)
             ?: openSuffix.find(original)?.groupValues?.getOrNull(1)
-        if (!appName.isNullOrBlank()) return launchInstalledApp(context, cleanQuoted(appName))
+        if (!appName.isNullOrBlank()) {
+            val composite = Regex("""\b(and|then|after|aur|phir)\b""", RegexOption.IGNORE_CASE)
+            if (composite.containsMatchIn(appName)) return null
+            return launchInstalledApp(context, cleanQuoted(appName))
+        }
 
         if (!allowUiActions) return null
 
@@ -100,6 +104,68 @@ object LocalCommandProcessor {
         }
 
         return null
+    }
+
+
+    data class PlannedActionResult(
+        val success: Boolean,
+        val shouldStop: Boolean,
+        val message: String
+    )
+
+    fun executePlannedAction(context: Context, type: String, value: String): PlannedActionResult {
+        val service = JarvisAccessibilityService.activeService
+        return when (type) {
+            "open_app" -> {
+                val result = launchInstalledApp(context, cleanQuoted(value))
+                val failed = result.startsWith("I could not find") ||
+                    result.startsWith("More than one app") ||
+                    result.startsWith("Android could not open")
+                PlannedActionResult(!failed, failed, result)
+            }
+            "read_screen" -> {
+                if (service == null) PlannedActionResult(false, true, "Enable the JARVIS screen assistant in Android Accessibility settings first.")
+                else PlannedActionResult(true, true, "Current screen, read locally: " + ScreenObserver.describe(service.rootInActiveWindow))
+            }
+            "tap_label" -> {
+                if (service == null) PlannedActionResult(false, true, "Enable the JARVIS screen assistant in Android Accessibility settings first.")
+                else {
+                    val result = UIActionExecutor.clickExactLabel(service, value)
+                    PlannedActionResult(result.ok, !result.ok, result.message)
+                }
+            }
+            "type_text" -> {
+                if (service == null) PlannedActionResult(false, true, "Enable the JARVIS screen assistant in Android Accessibility settings first.")
+                else {
+                    val result = UIActionExecutor.typeIntoFocusedField(service, value)
+                    PlannedActionResult(result.ok, !result.ok, result.message)
+                }
+            }
+            "scroll_down", "scroll_up" -> {
+                if (service == null) PlannedActionResult(false, true, "Enable the JARVIS screen assistant in Android Accessibility settings first.")
+                else {
+                    val result = UIActionExecutor.scroll(service, forward = type == "scroll_down")
+                    PlannedActionResult(result.ok, !result.ok, result.message)
+                }
+            }
+            "back" -> {
+                if (service == null) PlannedActionResult(false, true, "Enable the JARVIS screen assistant in Android Accessibility settings first.")
+                else {
+                    val result = UIActionExecutor.goBack(service)
+                    PlannedActionResult(result.ok, !result.ok, result.message)
+                }
+            }
+            "home" -> {
+                if (service == null) PlannedActionResult(false, true, "Enable the JARVIS screen assistant in Android Accessibility settings first.")
+                else {
+                    val result = UIActionExecutor.goHome(service)
+                    PlannedActionResult(result.ok, !result.ok, result.message)
+                }
+            }
+            "ask_user" -> PlannedActionResult(true, true, value)
+            "finish" -> PlannedActionResult(true, true, value)
+            else -> PlannedActionResult(false, true, "JARVIS rejected an unsupported action.")
+        }
     }
 
     private fun launchInstalledApp(context: Context, requestedName: String): String {
