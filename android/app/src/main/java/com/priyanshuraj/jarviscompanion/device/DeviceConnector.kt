@@ -20,7 +20,7 @@ object DeviceConnector {
             .put("manufacturer", Build.MANUFACTURER)
             .put("model", Build.MODEL)
             .put("androidVersion", Build.VERSION.RELEASE ?: "unknown")
-            .put("appVersion", "0.1.0-phase1")
+            .put("appVersion", "0.1.0-phase4")
 
         val response = request(serverUrl, "/api/devices/pair", body, null)
         val device = response.optJSONObject("device") ?: throw IOException("The server returned no paired-device record.")
@@ -39,7 +39,7 @@ object DeviceConnector {
             "/api/devices/heartbeat",
             JSONObject()
                 .put("accessibilityEnabled", accessibilityEnabled)
-                .put("appVersion", "0.1.0-phase1"),
+                .put("appVersion", "0.1.0-phase4"),
             token
         )
     }

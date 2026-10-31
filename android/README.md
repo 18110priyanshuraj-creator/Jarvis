@@ -109,3 +109,16 @@ The app distinguishes required permissions from optional or unnecessary access:
 - Install unknown apps: controlled by the source app (such as the browser or file manager) used to open a manually downloaded APK. JARVIS itself does not request package-install permission.
 
 Android system permission dialogs and protected settings cannot be silently accepted by JARVIS. The checklist opens the relevant Settings page and asks the user to grant access themselves. Do not enable permissions that the checklist marks Not required.
+
+
+## Phase 4 — approval-first AI plans and private activity history
+
+- AI-generated multi-step plans are previewed aloud before any planned action runs.
+- The Companion waits for an explicit voice decision: say **“approve plan”** (or “plan chalao”) to execute, or **“cancel plan”** (or “mat chalao”) to discard it. Hindi phrases such as **“हाँ प्लान चलाओ”** and **“प्लान रद्द करो”** are also supported.
+- The user hears the exact ordinary text that will be entered into a focused field before approval. Text that resembles passwords, PINs, OTPs, card or payment data, or consequential commands is rejected by the device-side plan validator.
+- If no decision is received within 60 seconds, the plan expires without executing.
+- A pending plan blocks unrelated voice commands until it is approved, cancelled, or expires. Stopping hands-free control also discards a pending plan.
+- Plan validation is repeated on the tablet. The approved plan still uses the existing action allow-list and protected-action checks.
+- The Recent Activity section shows a bounded history stored only on the tablet. It records timestamps, event names and generic action categories—not voice transcripts, typed field contents, app screen text, screenshots or accessibility labels.
+- The activity history can be cleared from the Companion. It is not uploaded to the JARVIS server.
+- Phase 4 does not add storage, Downloads, overlay, notification-listener or package-install permissions.
