@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { chats: [], memories: [], tasks: [], feedback: [], skills: [], devices: [], activeView: "chat" };
+const state = { chats: [], memories: [], tasks: [], feedback: [], skills: [], devices: [], research: [], activeView: "chat" };
 let toastTimer;
 
 function toast(message, isError = false) {
@@ -50,10 +50,12 @@ async function refreshState() {
   state.tasks = data.tasks || [];
   state.feedback = data.feedback || [];
   state.skills = data.skills || [];
+  state.research = data.research || [];
   renderChats();
   renderMemories();
   renderTasks();
   renderSkills();
+  renderSavedResearch();
 }
 
 function setView(name) {
@@ -448,41 +450,194 @@ $("#task-form").addEventListener("submit", async (event) => {
   finally { button.disabled = false; }
 });
 
+function safeResearchUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function renderGroundedResearch(item, canSave = true) {
+  const target = $("#search-results");
+  target.replaceChildren();
+  const card = document.createElement("article");
+  card.className = "result-card";
+
+  const heading = document.createElement("strong");
+  heading.textContent = item.engine === "saved-research" ? "Saved research" : "Live web research";
+  const question = document.createElement("p");
+  question.textContent = item.query || "";
+  const answer = document.createElement("p");
+  answer.className = "research-answer";
+  answer.textContent = item.answer || "No answer was returned.";
+  const meta = document.createElement("div");
+  meta.className = "research-meta";
+  meta.textContent = item.searchedAt ? "Searched " + new Date(item.searchedAt).toLocaleString() : "Saved research · not a new web search";
+
+  card.append(heading, question, meta, answer);
+  const sources = Array.isArray(item.sources) ? item.sources : [];
+  if (!sources.length) {
+    const note = document.createElement("p");
+    note.className = "research-citations";
+    note.textContent = "No live source citations were attached to this answer. Treat it as unverified.";
+    card.append(note);
+  } else {
+    const sourceHeading = document.createElement("p");
+    sourceHeading.className = "research-citations";
+    sourceHeading.textContent = "Grounding sources (" + sources.length + ")";
+    const sourceList = document.createElement("div");
+    sourceList.className = "research-sources";
+    for (const source of sources) {
+      const url = safeResearchUrl(source.url);
+      if (!url) continue;
+      const row = document.createElement("div");
+      row.className = "research-source";
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      anchor.textContent = source.title || source.domain || "Open source";
+      const domain = document.createElement("span");
+      domain.textContent = source.domain || new URL(url).hostname;
+      row.append(anchor, domain);
+      sourceList.append(row);
+    }
+    card.append(sourceHeading, sourceList);
+  }
+
+  if (canSave && item.engine !== "saved-research") {
+    const actions = document.createElement("div");
+    actions.className = "research-actions";
+    const save = document.createElement("button");
+    save.type = "button";
+    save.className = "item-action";
+    save.textContent = "Save research";
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      try {
+        const data = await api("/api/research/saved", {
+          method: "POST",
+          body: JSON.stringify({
+            query: item.query,
+            answer: item.answer,
+            sources: item.sources || [],
+            searchedAt: item.searchedAt
+          })
+        });
+        state.research.unshift(data.item);
+        renderSavedResearch();
+        save.textContent = "Saved";
+        toast("Research saved to your private JARVIS history.");
+      } catch (error) {
+        save.disabled = false;
+        toast(error.message, true);
+      }
+    });
+    actions.append(save);
+    card.append(actions);
+  }
+  target.append(card);
+}
+
+function renderSavedResearch() {
+  const target = $("#saved-research-list");
+  if (!target) return;
+  target.replaceChildren();
+  if (!state.research.length) {
+    target.append(makeEmpty("Nothing saved yet. Live research is never saved automatically."));
+    return;
+  }
+
+  for (const item of state.research) {
+    const row = document.createElement("article");
+    row.className = "list-item";
+    const main = document.createElement("div");
+    main.className = "list-item-main";
+    const title = document.createElement("strong");
+    title.textContent = item.query || "Saved research";
+    const meta = document.createElement("div");
+    meta.className = "list-item-meta";
+    meta.textContent = (item.sources?.length || 0) + " source(s) · Saved " + new Date(item.createdAt).toLocaleString();
+    main.append(title, meta);
+
+    const actions = document.createElement("div");
+    actions.className = "device-actions";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "item-action";
+    open.textContent = "View";
+    open.addEventListener("click", () => {
+      renderGroundedResearch({ ...item, engine: "saved-research" }, false);
+      $("#search-results").scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "item-action";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      remove.disabled = true;
+      try {
+        await api("/api/research/saved/" + encodeURIComponent(item.id), { method: "DELETE" });
+        state.research = state.research.filter((saved) => saved.id !== item.id);
+        renderSavedResearch();
+        toast("Saved research deleted.");
+      } catch (error) {
+        remove.disabled = false;
+        toast(error.message, true);
+      }
+    });
+    actions.append(open, remove);
+    row.append(main, actions);
+    target.append(row);
+  }
+}
+
 $("#search-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const button = $("#search-button");
+  const query = $("#search-input").value.trim();
+  const offlineButton = $("#search-button");
+  const webButton = $("#web-research-button");
+  const useWeb = event.submitter?.id === "web-research-button";
   const target = $("#search-results");
-  button.disabled = true;
+  offlineButton.disabled = true;
+  webButton.disabled = true;
   target.replaceChildren();
-  target.append(makeEmpty("Searching the embedded offline knowledge base…"));
+  target.append(makeEmpty(useWeb
+    ? "Searching the live web and checking source citations…"
+    : "Searching the embedded offline knowledge base…"));
+
   try {
-    const query = $("#search-input").value.trim();
-    const data = await api("/api/search?q=" + encodeURIComponent(query));
-    target.replaceChildren();
-    if (!data.results.length) target.append(makeEmpty("No results were returned for that query."));
-    for (const result of data.results) {
-      const card = document.createElement("article");
-      card.className = "result-card";
-      const title = result.url ? document.createElement("a") : document.createElement("strong");
-      if (result.url) {
-        title.href = result.url;
-        title.target = "_blank";
-        title.rel = "noopener noreferrer";
+    if (useWeb) {
+      const data = await api("/api/research", {
+        method: "POST",
+        body: JSON.stringify({ query })
+      });
+      renderGroundedResearch(data);
+    } else {
+      const data = await api("/api/search?q=" + encodeURIComponent(query.slice(0, 300)));
+      target.replaceChildren();
+      if (!data.results.length) target.append(makeEmpty("No results were returned for that query."));
+      for (const result of data.results) {
+        const card = document.createElement("article");
+        card.className = "result-card";
+        const title = document.createElement("strong");
+        title.textContent = result.title;
+        const snippet = document.createElement("p");
+        snippet.textContent = result.snippet || "No description available.";
+        card.append(title, snippet);
+        target.append(card);
       }
-      title.textContent = result.title;
-      const snippet = document.createElement("p");
-      snippet.textContent = result.snippet || "No description available.";
-      const url = document.createElement("div");
-      url.className = "result-url";
-      url.textContent = result.url;
-      card.append(title, snippet, url);
-      target.append(card);
     }
   } catch (error) {
     target.replaceChildren();
     target.append(makeEmpty(error.message));
     toast(error.message, true);
-  } finally { button.disabled = false; }
+  } finally {
+    offlineButton.disabled = false;
+    webButton.disabled = false;
+  }
 });
 
 $("#voice-button").addEventListener("click", () => {
