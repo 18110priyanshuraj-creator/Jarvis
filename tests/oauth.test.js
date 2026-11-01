@@ -8,6 +8,7 @@ import {
   finishGoogleOAuth,
   getGoogleDriveAccessToken,
   getGoogleOAuthStatus,
+  getIntegrationPermissionCatalog,
   isTokenVaultConfigured,
   revokeGoogleOAuthConnection,
   GOOGLE_DRIVE_METADATA_SCOPE
@@ -248,6 +249,64 @@ test("OAuth callback and revocation failures return safe messages", async () => 
     env,
     fetchImpl: async () => response({ error: "invalid_grant" }, 400)
   }), /rejected the OAuth exchange/i);
+});
+
+test("permission catalogue reports configured and granted permission states without secrets", async () => {
+  const connection = await authorize(async () => response({
+    access_token: "temporary-access-value",
+    refresh_token: "persistent-refresh-value",
+    expires_in: 3600,
+    scope: GOOGLE_DRIVE_METADATA_SCOPE
+  }));
+  const permissionList = getIntegrationPermissionCatalog(connection, {
+    ...env,
+    JARVIS_GITHUB_TOKEN: "configured-github-value",
+    JARVIS_TELEGRAM_BOT_TOKEN: "configured-telegram-value",
+    JARVIS_ELEVENLABS_API_KEY: "configured-eleven-value"
+  });
+  assert.equal(permissionList.find((item) => item.provider === "google_drive").status, "connected");
+  assert.deepEqual(permissionList.find((item) => item.provider === "google_drive").grantedScopes, [GOOGLE_DRIVE_METADATA_SCOPE]);
+  assert.equal(permissionList.find((item) => item.provider === "github").status, "configured");
+  assert.equal(permissionList.find((item) => item.provider === "telegram").status, "configured");
+  assert.equal(permissionList.find((item) => item.provider === "elevenlabs").status, "configured");
+  assert.equal(JSON.stringify(permissionList).includes("configured-github-value"), false);
+  assert.equal(JSON.stringify(permissionList).includes("persistent-refresh-value"), false);
+});
+
+test("Google OAuth configuration rejects insecure public callback URLs", () => {
+  assert.throws(() => beginGoogleOAuth({
+    sessionToken: "test-session-id",
+    env: {
+      ...env,
+      JARVIS_GOOGLE_OAUTH_REDIRECT_URI: "http://public.example.com/api/integrations/google_drive/oauth/callback"
+    }
+  }), /must be HTTPS/i);
+  assert.throws(() => beginGoogleOAuth({
+    sessionToken: "test-session-id",
+    env: {
+      ...env,
+      JARVIS_GOOGLE_OAUTH_REDIRECT_URI: "https://jarvis.example.com/other/callback"
+    }
+  }), /exact JARVIS callback path/i);
+});
+
+test("Google refresh failures do not return provider response bodies", async () => {
+  const connection = await authorize(async () => response({
+    access_token: "temporary-access-value",
+    refresh_token: "persistent-refresh-value",
+    expires_in: 3600,
+    scope: GOOGLE_DRIVE_METADATA_SCOPE
+  }));
+  clearGoogleDriveTokenCache();
+  await assert.rejects(() => getGoogleDriveAccessToken(connection, {
+    env,
+    fetchImpl: async () => response({ error: "invalid_grant", error_description: "private detail must not surface" }, 400)
+  }), (error) => {
+    assert.match(error.message, /rejected the configured credential/i);
+    assert.equal(error.message.includes("private detail"), false);
+    return true;
+  });
+  clearGoogleDriveTokenCache();
 });
 
 test("stored connection status stays disconnected when the configured vault key cannot decrypt it", async () => {
