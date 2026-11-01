@@ -173,7 +173,8 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.match(startGoogleOAuth.headers.get("set-cookie") || "", /SameSite=Lax/i);
 
   const invalidGoogleCallback = await request("/api/integrations/google_drive/oauth/callback?state=not-a-real-state&code=not-a-real-code", {
-    headers: {}
+    headers: {},
+    redirect: "manual"
   });
   assert.equal(invalidGoogleCallback.status, 303);
   assert.match(invalidGoogleCallback.headers.get("location") || "", /integration=google_drive_error/);
