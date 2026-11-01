@@ -6,7 +6,7 @@ export const LIVE_SESSION_MAX_MS = 10 * 60 * 1000;
 export const LIVE_TOKEN_TTL_MS = 12 * 60 * 1000;
 export const LIVE_TOKEN_START_WINDOW_MS = 60 * 1000;
 
-const LIVE_SYSTEM_INSTRUCTION = [
+export const LIVE_SYSTEM_INSTRUCTION = [
   "You are JARVIS, a helpful personal voice assistant.",
   "Speak naturally and concisely. Match the user's language; Hindi, Hinglish and English are all acceptable.",
   "Use clear, age-appropriate language. Explain uncertainty instead of inventing facts.",
@@ -31,14 +31,22 @@ export function getLiveVoiceConfiguration(env = process.env) {
   };
 }
 
-export function buildLiveVoiceConfig() {
+export function buildLiveVoiceSetup(model = DEFAULT_LIVE_MODEL) {
+  if (typeof model !== "string" || !MODEL_PATTERN.test(model.trim())) {
+    throw new TypeError("Gemini Live model identifier is invalid.");
+  }
   return {
-    responseModalities: ["AUDIO"],
-    inputAudioTranscription: {},
-    outputAudioTranscription: {},
+    model: "models/" + model.trim(),
+    generationConfig: {
+      responseModalities: ["AUDIO"],
+      temperature: 0.35,
+      candidateCount: 1
+    },
     systemInstruction: {
       parts: [{ text: LIVE_SYSTEM_INSTRUCTION }]
-    }
+    },
+    inputAudioTranscription: {},
+    outputAudioTranscription: {}
   };
 }
 
@@ -75,10 +83,7 @@ export async function createLiveVoiceToken({
       uses: 1,
       expireTime,
       newSessionExpireTime,
-      liveConnectConstraints: {
-        model: safeModel,
-        config: buildLiveVoiceConfig()
-      }
+      bidiGenerateContentSetup: buildLiveVoiceSetup(safeModel)
     }
   });
 
