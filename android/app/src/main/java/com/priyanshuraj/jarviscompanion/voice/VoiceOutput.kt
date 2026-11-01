@@ -106,6 +106,7 @@ object VoiceOutput {
             val queueMode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
             val result = engine.speak(chunk, queueMode, null, utterancePrefix + "-" + index)
             if (result == TextToSpeech.ERROR) {
+                engine.stop()
                 throw IllegalStateException("Android text-to-speech could not queue a reply chunk.")
             }
         }
