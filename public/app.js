@@ -2180,7 +2180,121 @@ function safeResearchUrl(value) {
   }
 }
 
+function renderSourceBasedAnswer(target, data) {
+  target.replaceChildren();
+  const panel = document.createElement("section");
+  panel.className = "source-answer-result";
+  const heading = document.createElement("strong");
+  heading.textContent = "Source-based answer";
+  const status = document.createElement("div");
+  status.className = "research-meta";
+  status.textContent = data.answerStatus === "source-supported"
+    ? "Source-supported answer · " + data.sourceCount + " pages read"
+    : data.answerStatus === "insufficient-evidence"
+      ? "Insufficient source evidence · do not treat this as a confirmed answer"
+      : "Pages extracted · AI synthesis unavailable";
+  const answer = document.createElement("p");
+  answer.className = "research-answer";
+  answer.textContent = data.answer || "No source-based answer was returned.";
+  panel.append(heading, status, answer);
+
+  const sourceByNumber = new Map((Array.isArray(data.sources) ? data.sources : [])
+    .map(source => [Number(source.number), source]));
+
+  const appendEvidenceSection = (title, items) => {
+    if (!Array.isArray(items) || !items.length) return;
+    const section = document.createElement("section");
+    section.className = "source-answer-section";
+    const sectionHeading = document.createElement("strong");
+    sectionHeading.textContent = title;
+    section.append(sectionHeading);
+    const list = document.createElement("div");
+    list.className = "source-answer-items";
+    for (const item of items) {
+      const row = document.createElement("article");
+      row.className = "source-answer-item";
+      const claim = document.createElement("p");
+      claim.textContent = item.claim || "";
+      row.append(claim);
+      const references = document.createElement("div");
+      references.className = "source-answer-references";
+      for (const number of Array.isArray(item.sourceNumbers) ? item.sourceNumbers : []) {
+        const source = sourceByNumber.get(Number(number));
+        const url = safeResearchUrl(source?.url);
+        if (!source || !url) continue;
+        const link = document.createElement("a");
+        link.href = url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = "[" + number + "] " + (source.title || source.domain || "Source");
+        references.append(link);
+      }
+      if (references.childNodes.length) row.append(references);
+      list.append(row);
+    }
+    section.append(list);
+    panel.append(section);
+  };
+
+  appendEvidenceSection("Key findings", data.findings);
+  appendEvidenceSection("Where sources agree", data.agreements);
+  appendEvidenceSection("Differences between sources", data.differences);
+  appendEvidenceSection("Uncertainty and missing evidence", data.uncertainties);
+
+  if (data.insufficientEvidence && (!Array.isArray(data.uncertainties) || !data.uncertainties.length)) {
+    const note = document.createElement("p");
+    note.className = "research-citations";
+    note.textContent = "The selected pages do not establish a reliable answer. Check the original sources or search for stronger evidence.";
+    panel.append(note);
+  }
+
+  const sourceHeading = document.createElement("strong");
+  sourceHeading.textContent = "Pages read";
+  const sourceList = document.createElement("div");
+  sourceList.className = "source-answer-items";
+  for (const source of Array.isArray(data.sources) ? data.sources : []) {
+    const row = document.createElement("article");
+    row.className = "source-answer-item";
+    const url = safeResearchUrl(source.url);
+    if (url) {
+      const link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "[" + source.number + "] " + (source.title || source.domain || "Source");
+      row.append(link);
+    } else {
+      const unavailable = document.createElement("span");
+      unavailable.textContent = "[" + source.number + "] " + (source.title || "Source") + " — unavailable";
+      row.append(unavailable);
+    }
+    const meta = document.createElement("div");
+    meta.className = "research-meta";
+    meta.textContent = source.status === "read"
+      ? "Read " + (source.retrievedAt ? new Date(source.retrievedAt).toLocaleString() : "")
+      : (source.reason || "Could not read this page.");
+    row.append(meta);
+    if (source.excerpt) {
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "View extracted excerpt";
+      const excerpt = document.createElement("p");
+      excerpt.textContent = source.excerpt;
+      details.append(summary, excerpt);
+      row.append(details);
+    }
+    sourceList.append(row);
+  }
+  panel.append(sourceHeading, sourceList);
+  const note = document.createElement("p");
+  note.className = "research-citations";
+  note.textContent = "Citations link to the exact selected pages. Evidence strength is an AI assessment, not an independent fact-check.";
+  panel.append(note);
+  target.append(panel);
+}
+
 function renderGroundedResearch(item, canSave = true) {
+  const selectableReadSources = [];
   const target = $("#search-results");
   target.replaceChildren();
   const card = document.createElement("article");
@@ -2223,6 +2337,17 @@ function renderGroundedResearch(item, canSave = true) {
       const domain = document.createElement("span");
       domain.textContent = source.domain || new URL(url).hostname;
       row.append(anchor, domain);
+      if (source.readToken && selectableReadSources.length < 5) {
+        const choice = document.createElement("label");
+        choice.className = "source-answer-choice";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = true;
+        checkbox.setAttribute("aria-label", "Use " + (source.title || source.domain || "source") + " in the answer");
+        choice.append(checkbox, document.createTextNode("Use in answer"));
+        row.append(choice);
+        selectableReadSources.push({ checkbox, readToken: source.readToken });
+      }
       if (source.readToken) {
         const readButton = document.createElement("button");
         readButton.type = "button";
@@ -2309,6 +2434,47 @@ function renderGroundedResearch(item, canSave = true) {
       sourceList.append(row);
     }
     card.append(sourceHeading, sourceList);
+
+    if (selectableReadSources.length >= 2) {
+      const answerControls = document.createElement("div");
+      answerControls.className = "source-answer-controls";
+      const answerNote = document.createElement("p");
+      answerNote.className = "research-meta";
+      answerNote.textContent = "Choose 2–5 pages. JARVIS reads the selected pages and keeps factual claims linked to their sources.";
+      const answerButton = document.createElement("button");
+      answerButton.type = "button";
+      answerButton.className = "primary";
+      answerButton.textContent = "Build source-based answer";
+      const answerPanel = document.createElement("div");
+      answerPanel.className = "source-answer-output";
+      answerButton.addEventListener("click", async () => {
+        const readTokens = selectableReadSources
+          .filter(source => source.checkbox.checked)
+          .map(source => source.readToken);
+        if (readTokens.length < 2 || readTokens.length > 5) {
+          toast("Choose between two and five source pages.", true);
+          return;
+        }
+        answerButton.disabled = true;
+        answerButton.textContent = "Reading sources…";
+        answerPanel.replaceChildren(makeEmpty("Reading selected sources and checking their evidence…"));
+        try {
+          const data = await api("/api/research/answer", {
+            method: "POST",
+            body: JSON.stringify({ question: item.query || "", readTokens })
+          });
+          renderSourceBasedAnswer(answerPanel, data);
+        } catch (error) {
+          answerPanel.replaceChildren(makeEmpty(error.message));
+          toast(error.message, true);
+        } finally {
+          answerButton.disabled = false;
+          answerButton.textContent = "Build source-based answer";
+        }
+      });
+      answerControls.append(answerNote, answerButton, answerPanel);
+      card.append(answerControls);
+    }
   }
 
   const evidence = Array.isArray(item.citations) ? item.citations.slice(0, 12) : [];
