@@ -1,4 +1,5 @@
 import { createVoiceController } from "./voice-controller.js";
+import { createLiveVoiceController } from "./live-voice-controller.js";
 const $ = (selector) => document.querySelector(selector);
 const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
 let toastTimer;
@@ -1674,6 +1675,7 @@ $("#login-form").addEventListener("submit", async (event) => {
 });
 
 $("#logout-button").addEventListener("click", async () => {
+  liveVoiceController.stop();
   try { await api("/api/logout", { method: "POST", body: JSON.stringify({}) }); } catch { /* always return to sign-in */ }
   state.chats = [];
   state.memories = [];
@@ -1765,6 +1767,90 @@ const voiceController = createVoiceController({
   }
 });
 
+
+let liveInterimTranscript = null;
+const liveVoiceStatusLabels = {
+  idle: "Live voice off",
+  connecting: "Connecting to Gemini Live…",
+  listening: "Listening — speak naturally",
+  speaking: "JARVIS is speaking…"
+};
+
+function renderLiveTranscript(update) {
+  const target = $("#live-voice-transcript");
+  if (!target || !update || typeof update.text !== "string" || !update.text.trim()) return;
+  if (update.role === "user" && update.interim) {
+    if (!liveInterimTranscript) {
+      liveInterimTranscript = document.createElement("p");
+      liveInterimTranscript.className = "live-transcript-line interim";
+      target.append(liveInterimTranscript);
+    }
+    liveInterimTranscript.textContent = "You: " + update.text.trim();
+    return;
+  }
+  if (update.role === "user" && liveInterimTranscript) {
+    liveInterimTranscript.remove();
+    liveInterimTranscript = null;
+  }
+  const line = document.createElement("p");
+  line.className = "live-transcript-line " + (update.role === "assistant" ? "assistant" : "user");
+  line.textContent = (update.role === "assistant" ? "JARVIS: " : "You: ") + update.text.trim();
+  target.append(line);
+  while (target.children.length > 24) target.firstElementChild.remove();
+}
+
+const liveVoiceController = createLiveVoiceController({
+  fetchToken: () => api("/api/live-voice/token", {
+    method: "POST",
+    body: JSON.stringify({})
+  }),
+  onStateChange: (voiceState) => {
+    const button = $("#live-voice-button");
+    const status = $("#live-voice-status");
+    if (status) status.textContent = liveVoiceStatusLabels[voiceState] || "Live voice off";
+    if (button) {
+      const active = voiceState !== "idle";
+      button.textContent = active ? "Stop live voice" : "Start live voice";
+      button.setAttribute("aria-pressed", String(active));
+      button.disabled = voiceState === "connecting";
+    }
+  },
+  onTranscript: renderLiveTranscript,
+  onError: (code) => {
+    const messages = {
+      unsupported: "This browser does not support real-time audio. Phase 12 Speak remains available.",
+      "microphone-denied": "Microphone permission was denied. Allow microphone access in browser settings.",
+      "microphone-missing": "No microphone was found on this device.",
+      "microphone-busy": "The microphone is being used by another app.",
+      "not-configured": "Live voice is disabled. Enable it in the server environment settings.",
+      "connection-failed": "Could not connect to Gemini Live. Check the network and Live API settings.",
+      "connection-closed": "The Live voice connection closed.",
+      "setup-timeout": "Gemini Live did not finish setting up. Try again.",
+      "session-time-limit": "This Live voice session reached its 10-minute limit.",
+      "session-expiring": "Gemini Live is about to end this session. Start a new call to continue.",
+      "provider-error": "Gemini Live returned an error. Check model access and quota.",
+      "unexpected-tool-request": "This voice session cannot run external tools or device actions.",
+      "invalid-audio": "An invalid audio chunk was received.",
+      "audio-capture-failed": "Microphone audio could not be encoded.",
+      "audio-playback-failed": "JARVIS could not play the incoming audio."
+    };
+    toast(messages[code] || "Live voice stopped because of an unexpected error.", true);
+  }
+});
+
+$("#live-voice-button").addEventListener("click", () => {
+  if (liveVoiceController.getState() !== "idle") {
+    liveVoiceController.stop();
+    return;
+  }
+  liveVoiceController.start();
+});
+
+window.addEventListener("pagehide", () => {
+  liveVoiceController.stop();
+});
+
+
 $("#voice-button").addEventListener("click", () => {
   if (voiceController.getState() === "speaking") {
     voiceController.startListening();
@@ -1803,6 +1889,7 @@ $("#chat-form").addEventListener("submit", async (event) => {
   const button = $("#send-button");
   const message = input.value.trim();
   if (!message || button.disabled) return;
+  liveVoiceController.stop();
   voiceController.stopListening();
   voiceController.stopSpeaking();
   input.value = "";
