@@ -2798,7 +2798,8 @@ async function refreshKnowledge(query = state.knowledgeQuery, reviewFilter = sta
   const params = new URLSearchParams();
   if (state.knowledgeQuery) params.set("q", state.knowledgeQuery);
   if (state.knowledgeFilter !== "all") params.set("review", state.knowledgeFilter);
-  const suffix = params.size ? "?" + params.toString() : "";
+  const queryString = params.toString();
+  const suffix = queryString ? "?" + queryString : "";
   const data = await api("/api/knowledge" + suffix);
   state.knowledge = Array.isArray(data.items) ? data.items : [];
   state.knowledgeTotal = Number(data.total) || 0;
