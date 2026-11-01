@@ -206,6 +206,17 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(googleAuthorizationUrl.searchParams.get("scope"), "https://www.googleapis.com/auth/drive.metadata.readonly");
   assert.equal(googleAuthorizationUrl.searchParams.get("code_challenge_method"), "S256");
   assert.match(startGoogleOAuth.headers.get("set-cookie") || "", /jarvis_google_oauth=/);
+
+  const startGoogleDocsUpgrade = await request("/api/integrations/google_drive/oauth/start", {
+    method: "POST", body: JSON.stringify({ capability: "create_docs" })
+  });
+  assert.equal(startGoogleDocsUpgrade.status, 200);
+  const docsUpgradeUrl = new URL((await startGoogleDocsUpgrade.json()).authorizationUrl);
+  assert.deepEqual(docsUpgradeUrl.searchParams.get("scope").split(" ").sort(), [
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/drive.metadata.readonly"
+  ].sort());
+  assert.equal(docsUpgradeUrl.searchParams.get("code_challenge_method"), "S256");
   assert.match(startGoogleOAuth.headers.get("set-cookie") || "", /HttpOnly/i);
   assert.match(startGoogleOAuth.headers.get("set-cookie") || "", /SameSite=Lax/i);
 
