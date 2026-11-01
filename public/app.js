@@ -2598,4 +2598,26 @@ async function generatePairingCode() {
 $("#create-pairing-code").addEventListener("click", generatePairingCode);
 $("#refresh-devices").addEventListener("click", () => refreshDevices().catch((error) => toast(error.message, true)));
 
+$("#external-action-type").addEventListener("change", updateExternalActionFields);
+$("#action-google-permission").addEventListener("click", startGoogleDocsPermissionUpgrade);
+$("#external-action-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const type = $("#external-action-type").value;
+  const submit = $("#external-action-submit");
+  const payload = type === "telegram_send_message"
+    ? { type, chatId: $("#action-telegram-chat").value, text: $("#action-telegram-text").value }
+    : { type, title: $("#action-google-title").value, content: $("#action-google-content").value };
+  submit.disabled = true;
+  try {
+    const data = await api("/api/actions", { method: "POST", body: JSON.stringify(payload) });
+    state.externalActions = [data.action, ...state.externalActions].slice(0, 100);
+    renderExternalActions();
+    toast("Preview saved. Nothing has been sent or created yet.");
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    updateExternalActionFields();
+  }
+});
+
 boot();
