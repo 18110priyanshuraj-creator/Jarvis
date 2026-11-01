@@ -115,6 +115,24 @@ test("knowledge context only includes user-authored notes and web research the u
   assert.equal(context[0].sources[0].retrievedAt, "2026-10-29T09:00:00.000Z");
 });
 
+test("knowledge never persists credential-bearing source snippets or URLs", () => {
+  const item = normalizeKnowledgeItem({
+    title: "Safe source metadata",
+    content: "A source-backed note.",
+    sourceKind: "web-research",
+    sources: [
+      { title: "Snippet with key", url: "https://example.org/page", snippet: "api_key: pasted-secret-value" },
+      { title: "URL with token", url: "https://example.org/page?access_token=private-token" },
+      { title: "Safe source", url: "https://example.org/clean", snippet: "Public summary of the page." }
+    ]
+  });
+  assert.equal(item.sources.length, 2);
+  assert.equal(item.sources[0].url, "https://example.org/page");
+  assert.equal(Object.hasOwn(item.sources[0], "snippet"), false);
+  assert.equal(item.sources[1].url, "https://example.org/clean");
+  assert.equal(item.sources[1].snippet, "Public summary of the page.");
+});
+
 test("knowledge preserves source publication, retrieval, capture and snippet metadata", () => {
   const item = normalizeKnowledgeItem({
     title: "Source metadata",
