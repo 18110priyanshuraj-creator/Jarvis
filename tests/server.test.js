@@ -104,6 +104,11 @@ test("health endpoint is public without disclosing configuration", async () => {
   assert.equal(payload.webResearchEnabled, false);
   assert.equal(payload.searchProvider.provider, "searxng");
   assert.equal(payload.searchProvider.configured, false);
+  assert.equal(payload.pageReader.enabled, false);
+  assert.equal(payload.sourceAnswer.enabled, false);
+  assert.equal(payload.sourceAnswer.minimumSources, 2);
+  assert.equal(payload.sourceAnswer.maximumSources, 5);
+  assert.equal(payload.sourceAnswer.requiresSessionBoundPageTokens, true);
   assert.equal(payload.externalAI, false);
   assert.equal(payload.aiProvider.provider, "openai-compatible");
   assert.equal(payload.aiProvider.configured, false);
