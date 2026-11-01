@@ -980,12 +980,15 @@ function renderIntegrationPermissions() {
     card.className = "list-item integration-permission";
     const title = document.createElement("strong");
     title.textContent = permission.provider.replaceAll("_", " ");
+    const status = document.createElement("span");
+    status.className = "integration-status " + (permission.status === "connected" || permission.status === "configured" ? "connected" : "not-configured");
+    status.textContent = permission.status.replaceAll("_", " ");
     const model = document.createElement("div");
     model.className = "list-item-meta";
     model.textContent = permission.authModel;
     const boundary = document.createElement("p");
     boundary.textContent = permission.accessBoundary;
-    card.append(title, model, boundary);
+    card.append(title, status, model, boundary);
     const scopes = permission.grantedScopes?.length ? permission.grantedScopes : permission.requestedScopes || [];
     for (const scope of scopes) {
       const scopeLine = document.createElement("p");
