@@ -9,6 +9,7 @@ import crypto from "node:crypto";
 import { runLocalBrain, searchLocalKnowledge } from "./brain.js";
 import { fileURLToPath } from "node:url";
 import { createDevicesRouter } from "./routes/devices.js";
+import { createRuntimeStore } from "./services/runtime-store.js";
 import { createAgentPlan } from "./services/agent-planner.js";
 import { createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
 import { createGroundedResearch, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
@@ -38,7 +39,6 @@ const PASSWORD = process.env.JARVIS_PASSWORD || "";
 const DATA_DIR = path.resolve(process.env.JARVIS_DATA_DIR || path.join(__dirname, "data"));
 const STORE_FILE = path.join(DATA_DIR, "state.json");
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
-const sessions = new Map();
 
 if (process.env.NODE_ENV === "production" && !PASSWORD) {
   console.error("JARVIS_PASSWORD is required in production. Set it in the host's environment settings.");
@@ -121,9 +121,6 @@ const oauthCallbackLimiter = rateLimit({
 app.use("/api", apiLimiter);
 
 let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [] };
-const sessionChats = new Map();
-const MAX_EPHEMERAL_CHAT_MESSAGES = 32;
-const EPHEMERAL_CHAT_TTL_MS = 60 * 60 * 1000;
 let writeQueue = Promise.resolve();
 let neonSql;
 
@@ -132,6 +129,8 @@ function getNeonSql() {
   if (!neonSql) neonSql = neon(process.env.DATABASE_URL);
   return neonSql;
 }
+
+const runtimeStore = createRuntimeStore({ getSql: getNeonSql });
 
 function normalizeStore(parsed = {}) {
   return {
@@ -238,19 +237,21 @@ function clearGoogleOAuthCookie(res) {
   res.append("Set-Cookie", "jarvis_google_oauth=; HttpOnly; SameSite=Lax; Path=/api/integrations/google_drive/oauth/callback; Max-Age=0" + secure);
 }
 
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
   const token = parseCookies(req.headers.cookie).jarvis_session;
-  const session = token ? sessions.get(token) : null;
-  if (!session || session.expiresAt <= Date.now()) {
-    if (token) {
-      sessions.delete(token);
-      sessionChats.delete("session:" + token);
+  if (!token) return res.status(401).json({ error: "Please sign in to continue." });
+  try {
+    const valid = await runtimeStore.refreshSession(token, SESSION_TTL_MS);
+    if (!valid) {
+      clearSessionCookie(res);
+      return res.status(401).json({ error: "Please sign in to continue." });
     }
-    return res.status(401).json({ error: "Please sign in to continue." });
+    req.sessionToken = token;
+    return next();
+  } catch (error) {
+    console.error("Session validation failed:", error?.name || "Error");
+    return res.status(503).json({ error: "Authentication is temporarily unavailable. Please try again." });
   }
-  session.expiresAt = Date.now() + SESSION_TTL_MS;
-  req.sessionToken = token;
-  next();
 }
 
 app.use("/api", (req, res, next) => {
@@ -271,6 +272,7 @@ app.use("/api", (req, res, next) => {
 async function loadStore() {
   const sql = getNeonSql();
   if (sql) {
+    await runtimeStore.ensureTables();
     await sql`CREATE TABLE IF NOT EXISTS jarvis_app_state (
       id SMALLINT PRIMARY KEY CHECK (id = 1),
       state JSONB NOT NULL,
@@ -326,36 +328,12 @@ function saveStore() {
   return writeQueue;
 }
 
-function getConversationMessages(key) {
-  const now = Date.now();
-  for (const [entryKey, entry] of sessionChats) {
-    if (now - entry.updatedAt > EPHEMERAL_CHAT_TTL_MS) sessionChats.delete(entryKey);
-  }
-  let entry = sessionChats.get(key);
-  if (!entry) {
-    entry = { messages: [], updatedAt: now };
-    sessionChats.set(key, entry);
-  }
-  entry.updatedAt = now;
-  return entry.messages;
+async function getConversationMessages(key) {
+  return runtimeStore.getConversationMessages(key);
 }
 
-function appendConversationTurn(key, message, result) {
-  const messages = getConversationMessages(key);
-  const createdAt = new Date().toISOString();
-  messages.push({ id: newId(), role: "user", content: message, createdAt });
-  messages.push({
-    id: newId(),
-    role: "assistant",
-    content: result.answer,
-    engine: result.engine,
-    sources: Array.isArray(result.sources) ? result.sources : [],
-    citations: Array.isArray(result.citations) ? result.citations : [],
-    createdAt: new Date().toISOString()
-  });
-  if (messages.length > MAX_EPHEMERAL_CHAT_MESSAGES) {
-    messages.splice(0, messages.length - MAX_EPHEMERAL_CHAT_MESSAGES);
-  }
+async function appendConversationTurn(key, message, result) {
+  return runtimeStore.appendConversationTurn(key, message, result);
 }
 
 function parseExplicitMemoryIntent(message) {
@@ -375,7 +353,7 @@ function parseExplicitMemoryIntent(message) {
 }
 
 async function processAssistantTurn(message, conversationKey) {
-  const history = getConversationMessages(conversationKey)
+  const history = (await getConversationMessages(conversationKey))
     .filter((item) => item.role === "user" || item.role === "assistant")
     .slice(-8)
     .map(({ role, content }) => ({ role, content }));
@@ -405,7 +383,7 @@ async function processAssistantTurn(message, conversationKey) {
     result = await generateAssistantAnswer(message, history, store.memories);
   }
 
-  appendConversationTurn(conversationKey, message, result);
+  await appendConversationTurn(conversationKey, message, result);
   return result;
 }
 
@@ -491,38 +469,46 @@ app.get("/api/health", (_req, res) => {
       modelValid: gemini.modelValid,
       requestTimeoutMs: gemini.requestTimeoutMs,
       retryAttempts: gemini.retryAttempts
-    }
+    },
+    runtimeStorage: runtimeStore.mode()
   });
 });
 
-app.post("/api/login", loginLimiter, (req, res) => {
+app.post("/api/login", loginLimiter, async (req, res) => {
   const candidate = cleanText(req.body?.password, 500);
   if (!PASSWORD || !candidate || !passwordsMatch(candidate, PASSWORD)) {
     return res.status(401).json({ error: "Incorrect password or server password is not configured." });
   }
-  for (const [sessionId, session] of sessions) {
-    if (session.expiresAt <= Date.now()) sessions.delete(sessionId);
-  }
   const token = crypto.randomBytes(32).toString("base64url");
-  sessions.set(token, { createdAt: Date.now(), expiresAt: Date.now() + SESSION_TTL_MS });
+  try {
+    await runtimeStore.createSession(token, SESSION_TTL_MS);
+  } catch (error) {
+    console.error("Session creation failed:", error?.name || "Error");
+    return res.status(503).json({ error: "Authentication is temporarily unavailable. Please try again." });
+  }
   setSessionCookie(res, token);
   res.json({ ok: true });
 });
 
-app.post("/api/logout", requireAuth, (req, res) => {
-  sessions.delete(req.sessionToken);
-  sessionChats.delete("session:" + req.sessionToken);
+app.post("/api/logout", requireAuth, async (req, res) => {
   clearSessionCookie(res);
-  res.json({ ok: true });
+  try {
+    await runtimeStore.deleteSession(req.sessionToken);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("Session cleanup failed:", error?.name || "Error");
+    res.status(503).json({ error: "The session was signed out locally, but server cleanup could not be confirmed." });
+  }
 });
 
 app.get("/api/session", requireAuth, (_req, res) => {
   res.json({ authenticated: true });
 });
 
-app.get("/api/state", requireAuth, (req, res) => {
-  res.json({
-    chats: getConversationMessages("session:" + req.sessionToken),
+app.get("/api/state", requireAuth, async (req, res, next) => {
+  try {
+    res.json({
+    chats: await getConversationMessages("session:" + req.sessionToken),
     memories: store.memories,
     tasks: store.tasks.slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))),
     feedback: store.feedback.slice(-100),
@@ -531,12 +517,19 @@ app.get("/api/state", requireAuth, (req, res) => {
     workflows: store.workflows,
     workflowRuns: store.workflowRuns.slice().reverse().slice(0, 50),
     research: store.research.slice().reverse()
-  });
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
-app.delete("/api/chat/history", requireAuth, (req, res) => {
-  sessionChats.delete("session:" + req.sessionToken);
-  res.json({ ok: true });
+app.delete("/api/chat/history", requireAuth, async (req, res, next) => {
+  try {
+    await runtimeStore.deleteConversationMessages("session:" + req.sessionToken);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get("/api/export", requireAuth, (req, res) => {
@@ -996,13 +989,13 @@ app.get("/api/integrations", requireAuth, (_req, res) => {
   res.json(integrationCatalogResponse());
 });
 
-app.post("/api/integrations/google_drive/oauth/start", requireAuth, oauthStartLimiter, (req, res) => {
+app.post("/api/integrations/google_drive/oauth/start", requireAuth, oauthStartLimiter, async (req, res) => {
   if (store.disabledIntegrations.includes("google_drive")) {
     return res.status(409).json({ error: "Enable Google Drive in JARVIS before starting OAuth." });
   }
   try {
     const capability = req.body?.capability === "create_docs" ? "create_docs" : "read";
-    const result = beginGoogleOAuth({ sessionToken: req.sessionToken, capability });
+    const result = await beginGoogleOAuth({ sessionToken: req.sessionToken, capability, runtimeStore });
     setGoogleOAuthCookie(res, result.browserBinding);
     res.setHeader("Cache-Control", "no-store");
     res.json({ authorizationUrl: result.authorizationUrl });
@@ -1025,12 +1018,8 @@ app.get("/api/integrations/google_drive/oauth/callback", oauthCallbackLimiter, a
       oauthError,
       browserBinding,
       existingConnection,
-      isSessionValid: (sessionToken) => {
-        const session = sessions.get(sessionToken);
-        if (!session || session.expiresAt <= Date.now()) return false;
-        session.expiresAt = Date.now() + SESSION_TTL_MS;
-        return true;
-      }
+      runtimeStore,
+      isSessionValid: (sessionHash) => runtimeStore.refreshSessionByHash(sessionHash, SESSION_TTL_MS)
     });
     store.oauthConnections = store.oauthConnections.filter((item) => item.provider !== "google_drive");
     store.oauthConnections.push(connection);
