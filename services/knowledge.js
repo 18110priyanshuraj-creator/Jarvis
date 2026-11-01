@@ -12,6 +12,7 @@ const SECRET_ASSIGNMENT = /(?:\b|_)(?:api[_ -]?key|access[_ -]?token|password|pa
 const GOOGLE_API_KEY = /\bAIza[0-9A-Za-z_-]{30,}\b/;
 const LONG_BEARER = /\bBearer\s+[A-Za-z0-9._~+/-]{24,}/i;
 const TRUSTED_REVIEW_STATES = new Set(["user-authored", "user-reviewed"]);
+const SENSITIVE_URL_PARAMETER = /(?:^|[_-])(?:api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|token|secret|password|auth|signature|sig)(?:$|[_-])/i;
 
 function cleanText(value, maxLength) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
@@ -57,11 +58,15 @@ function normalizeSources(value) {
     let parsed;
     try { parsed = new URL(rawUrl); } catch { continue; }
     if (parsed.protocol !== "https:" || parsed.username || parsed.password) continue;
+    if ([...parsed.searchParams.keys()].some((key) => SENSITIVE_URL_PARAMETER.test(key))) continue;
     parsed.hash = "";
     const url = parsed.href;
     if (seen.has(url)) continue;
     seen.add(url);
-    const snippet = cleanText(item?.snippet, MAX_SOURCE_SNIPPET);
+    const candidateSnippet = cleanText(item?.snippet, MAX_SOURCE_SNIPPET);
+    const snippet = SECRET_ASSIGNMENT.test(candidateSnippet) ||
+      GOOGLE_API_KEY.test(candidateSnippet) || LONG_BEARER.test(candidateSnippet)
+      ? "" : candidateSnippet;
     sources.push({
       title: cleanText(item?.title, 180) || parsed.hostname,
       url,
