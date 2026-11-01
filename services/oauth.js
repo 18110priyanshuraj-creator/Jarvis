@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 
 export const GOOGLE_DRIVE_METADATA_SCOPE =
   "https://www.googleapis.com/auth/drive.metadata.readonly";
+export const GOOGLE_DRIVE_FILE_SCOPE =
+  "https://www.googleapis.com/auth/drive.file";
 const GOOGLE_CALLBACK_PATH = "/api/integrations/google_drive/oauth/callback";
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const TOKEN_TIMEOUT_MS = 8000;
@@ -91,7 +93,8 @@ export function normalizeGoogleOAuthConnection(input = {}) {
       typeof encrypted.tag !== "string" ||
       typeof encrypted.ciphertext !== "string" ||
       !Array.isArray(input.grantedScopes) ||
-      !input.grantedScopes.includes(GOOGLE_DRIVE_METADATA_SCOPE)) {
+      !input.grantedScopes.includes(GOOGLE_DRIVE_METADATA_SCOPE) ||
+      input.grantedScopes.some((scope) => ![GOOGLE_DRIVE_METADATA_SCOPE, GOOGLE_DRIVE_FILE_SCOPE].includes(scope))) {
     throw new TypeError("Invalid encrypted Google Drive connection record.");
   }
   const connectedAt = cleanString(input.connectedAt, 40);
@@ -105,7 +108,7 @@ export function normalizeGoogleOAuthConnection(input = {}) {
       tag: encrypted.tag.slice(0, 64),
       ciphertext: encrypted.ciphertext.slice(0, 8192)
     },
-    grantedScopes: [GOOGLE_DRIVE_METADATA_SCOPE],
+    grantedScopes: [...new Set(input.grantedScopes)],
     connectedAt: Number.isFinite(Date.parse(connectedAt)) ? new Date(connectedAt).toISOString() : new Date().toISOString(),
     updatedAt: Number.isFinite(Date.parse(updatedAt)) ? new Date(updatedAt).toISOString() : new Date().toISOString()
   };
@@ -151,6 +154,8 @@ export function getGoogleOAuthStatus(connection, env = process.env) {
     vaultConfigured,
     canConnect: oauthClientConfigured && vaultConfigured,
     requiredScopes: [GOOGLE_DRIVE_METADATA_SCOPE],
+    docsScope: GOOGLE_DRIVE_FILE_SCOPE,
+    canCreateDocs: credentialHealthy && normalized.grantedScopes.includes(GOOGLE_DRIVE_FILE_SCOPE),
     grantedScopes: credentialHealthy ? normalized.grantedScopes : [],
     connectedAt: credentialHealthy ? normalized.connectedAt : null,
     redirectPath: GOOGLE_CALLBACK_PATH,
@@ -165,11 +170,15 @@ function prunePendingStates() {
   }
 }
 
-export function beginGoogleOAuth({ sessionToken, env = process.env }) {
+export function beginGoogleOAuth({ sessionToken, capability = "read", env = process.env }) {
   if (!cleanString(sessionToken, 200)) throw new Error("Sign in to JARVIS before connecting Google Drive.");
+  if (!["read", "create_docs"].includes(capability)) throw new TypeError("Unsupported Google Drive permission capability.");
   getEncryptionKey(env);
   const config = getGoogleConfig(env);
   prunePendingStates();
+  const requestedScopes = capability === "create_docs"
+    ? [GOOGLE_DRIVE_METADATA_SCOPE, GOOGLE_DRIVE_FILE_SCOPE]
+    : [GOOGLE_DRIVE_METADATA_SCOPE];
 
   const state = crypto.randomBytes(32).toString("base64url");
   const browserBinding = crypto.randomBytes(32).toString("base64url");
@@ -177,6 +186,8 @@ export function beginGoogleOAuth({ sessionToken, env = process.env }) {
   const challenge = hash(verifier).toString("base64url");
   pendingStates.set(state, {
     sessionToken,
+    requestedScopes,
+    capability,
     browserBindingHash: hash(browserBinding).toString("base64url"),
     verifier,
     createdAt: Date.now(),
@@ -187,7 +198,7 @@ export function beginGoogleOAuth({ sessionToken, env = process.env }) {
   url.searchParams.set("client_id", config.clientId);
   url.searchParams.set("redirect_uri", config.redirectUri);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", GOOGLE_DRIVE_METADATA_SCOPE);
+  url.searchParams.set("scope", requestedScopes.join(" "));
   url.searchParams.set("access_type", "offline");
   url.searchParams.set("include_granted_scopes", "false");
   url.searchParams.set("prompt", "consent");
@@ -274,8 +285,11 @@ export async function finishGoogleOAuth(options = {}) {
   }, fetchImpl);
 
   const scopes = typeof tokens.scope === "string" ? tokens.scope.split(/\s+/).filter(Boolean) : [];
-  if (scopes.length !== 1 || scopes[0] !== GOOGLE_DRIVE_METADATA_SCOPE) {
-    throw new Error("Google did not grant only the required read-only Drive metadata permission. No connection was saved.");
+  const grantedRequestedScopes = [...new Set(scopes)].sort();
+  const expectedRequestedScopes = [...pending.requestedScopes].sort();
+  if (grantedRequestedScopes.length !== expectedRequestedScopes.length ||
+      grantedRequestedScopes.some((scope, index) => scope !== expectedRequestedScopes[index])) {
+    throw new Error("Google did not grant exactly the permissions requested for this action. No connection was saved.");
   }
   let refreshToken = typeof tokens.refresh_token === "string" ? tokens.refresh_token : "";
   if (!refreshToken && options.existingConnection) {
@@ -292,7 +306,7 @@ export async function finishGoogleOAuth(options = {}) {
   const connection = normalizeGoogleOAuthConnection({
     provider: "google_drive",
     encryptedRefreshToken: encryptSecret(refreshToken, { env, purpose: "google-drive-refresh-token" }),
-    grantedScopes: [GOOGLE_DRIVE_METADATA_SCOPE],
+    grantedScopes: pending.requestedScopes,
     connectedAt: now,
     updatedAt: now
   });
@@ -392,8 +406,10 @@ export function getIntegrationPermissionCatalog(connection, env = process.env) {
       status: google.connected ? "connected" : "not_connected",
       requestedScopes: google.requiredScopes,
       grantedScopes: google.grantedScopes,
-      actions: ["List file names and metadata"],
-      accessBoundary: "Read-only Drive metadata. File contents and write operations are not requested."
+      actions: google.canCreateDocs ? ["List file names and metadata", "Create new Google Docs files"] : ["List file names and metadata"],
+      accessBoundary: google.canCreateDocs
+        ? "Reads file names and metadata. drive.file allows JARVIS to create and edit files created by this app; it does not request broad Drive access or permission to edit unrelated existing files."
+        : "Read-only Drive metadata. Creating Google Docs requires a separate explicit drive.file consent upgrade."
     },
     {
       provider: "github",
