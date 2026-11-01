@@ -123,7 +123,7 @@ function rankMemories(memories, query, category = "", limit = 100, includePaused
   const cleanQuery = cleanText(query, 4000);
   const normalizedQuery = normalizedSearchText(cleanQuery);
   const allowedCategory = VALID_CATEGORIES.has(category) ? category : "";
-  const boundedLimit = Number.isInteger(limit) ? Math.min(100, Math.max(1, limit)) : 50;
+  const boundedLimit = Number.isInteger(limit) ? Math.min(MAX_MEMORIES, Math.max(1, limit)) : 50;
   const filtered = records.filter((item) =>
     (!allowedCategory || item.category === allowedCategory) &&
     (includePaused || item.enabled !== false)
