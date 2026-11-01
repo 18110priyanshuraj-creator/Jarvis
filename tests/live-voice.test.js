@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildLiveVoiceConfig,
+  buildLiveVoiceSetup,
   createLiveVoiceToken,
   getLiveVoiceConfiguration,
   LIVE_SESSION_MAX_MS,
@@ -30,18 +30,21 @@ test("Live voice stays disabled unless explicitly opted in with a valid key and 
   assert.equal(enabled.configured, true);
 });
 
-test("Live voice config enables audio in both directions and keeps conversation guardrails", () => {
-  const config = buildLiveVoiceConfig();
-  assert.deepEqual(config.responseModalities, ["AUDIO"]);
-  assert.deepEqual(config.inputAudioTranscription, {});
-  assert.deepEqual(config.outputAudioTranscription, {});
-  const instruction = config.systemInstruction.parts[0].text;
+test("Live websocket setup requests audio with transcription and safe conversation-only instructions", () => {
+  const setup = buildLiveVoiceSetup("gemini-3.8-live");
+  assert.equal(setup.model, "models/gemini-3.8-live");
+  assert.deepEqual(setup.generationConfig.responseModalities, ["AUDIO"]);
+  assert.equal(setup.generationConfig.candidateCount, 1);
+  assert.deepEqual(setup.inputAudioTranscription, {});
+  assert.deepEqual(setup.outputAudioTranscription, {});
+  const instruction = setup.systemInstruction.parts[0].text;
   assert.match(instruction, /conversation-only mode/i);
   assert.match(instruction, /cannot open apps/i);
   assert.match(instruction, /Do not ask for passwords/i);
+  assert.throws(() => buildLiveVoiceSetup("not a model"), TypeError);
 });
 
-test("token creation uses one use, bounded expiry, and server-specified live configuration", async () => {
+test("token creation uses a one-use constrained setup and bounded expiry", async () => {
   const now = Date.parse("2026-11-01T12:00:00.000Z");
   let received;
   const result = await createLiveVoiceToken({
@@ -64,8 +67,7 @@ test("token creation uses one use, bounded expiry, and server-specified live con
   assert.equal(received.config.uses, 1);
   assert.equal(received.config.expireTime, new Date(now + LIVE_TOKEN_TTL_MS).toISOString());
   assert.equal(received.config.newSessionExpireTime, new Date(now + LIVE_TOKEN_START_WINDOW_MS).toISOString());
-  assert.equal(received.config.liveConnectConstraints.model, "gemini-3.8-live");
-  assert.deepEqual(received.config.liveConnectConstraints.config.responseModalities, ["AUDIO"]);
+  assert.deepEqual(received.config.bidiGenerateContentSetup, buildLiveVoiceSetup("gemini-3.8-live"));
   assert.equal(result.token, "ephemeral-test-token");
   assert.equal(result.model, "gemini-3.8-live");
   assert.equal(result.expiresAt, received.config.expireTime);
