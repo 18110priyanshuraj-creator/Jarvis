@@ -2286,6 +2286,62 @@ function renderSourceBasedAnswer(target, data) {
     sourceList.append(row);
   }
   panel.append(sourceHeading, sourceList);
+  if (data.answerStatus === "source-supported" &&
+      data.aiSynthesized === true &&
+      Array.isArray(data.findings) && data.findings.length > 0) {
+    const saveAnswer = document.createElement("button");
+    saveAnswer.type = "button";
+    saveAnswer.className = "item-action";
+    saveAnswer.textContent = "Save answer to Knowledge · needs review";
+    saveAnswer.addEventListener("click", async () => {
+      saveAnswer.disabled = true;
+      try {
+        const sections = [
+          data.answer || "",
+          Array.isArray(data.agreements) && data.agreements.length
+            ? "Where sources agree:\n" + data.agreements.map(item => "• " + item.claim).join("\n") : "",
+          Array.isArray(data.differences) && data.differences.length
+            ? "Differences between sources:\n" + data.differences.map(item => "• " + item.claim).join("\n") : "",
+          Array.isArray(data.uncertainties) && data.uncertainties.length
+            ? "Uncertainty and missing evidence:\n" + data.uncertainties.map(item => "• " + item.claim).join("\n") : ""
+        ].filter(Boolean);
+        const readableSources = (Array.isArray(data.sources) ? data.sources : [])
+          .filter(source => source.status === "read" && safeResearchUrl(source.url))
+          .map(source => ({
+            title: source.title || source.domain || "Research source",
+            url: source.url,
+            snippet: source.excerpt || "",
+            retrievedAt: source.retrievedAt || null
+          }));
+        const payload = await api("/api/knowledge", {
+          method: "POST",
+          body: JSON.stringify({
+            title: (data.query || "Source-based research").slice(0, 180),
+            content: sections.join("\n\n").slice(0, 8000),
+            category: "general",
+            tags: ["research", "source-based"],
+            sourceKind: "web-research",
+            sourceQuery: data.query || "",
+            capturedAt: data.generatedAt || new Date().toISOString(),
+            sources: readableSources,
+            citations: Array.isArray(data.citations) ? data.citations : []
+          })
+        });
+        await refreshKnowledge(state.knowledgeQuery, state.knowledgeFilter);
+        saveAnswer.textContent = payload.duplicate
+          ? "Saved source history updated"
+          : "Saved · awaiting your review";
+        toast(payload.duplicate
+          ? "Existing knowledge updated with the new source history; its review decision was preserved."
+          : "Saved to Knowledge. Review the original sources before approving it for assistant context.");
+      } catch (error) {
+        saveAnswer.disabled = false;
+        toast(error.message, true);
+      }
+    });
+    panel.append(saveAnswer);
+  }
+
   const note = document.createElement("p");
   note.className = "research-citations";
   note.textContent = "Citations link to the exact selected pages. Evidence strength is an AI assessment, not an independent fact-check.";
@@ -2875,12 +2931,20 @@ $("#knowledge-search-form").addEventListener("submit", async (event) => {
   const button = event.currentTarget.querySelector("button[type=submit]");
   button.disabled = true;
   try {
-    await refreshKnowledge($("#knowledge-search-input").value);
+    await refreshKnowledge($("#knowledge-search-input").value, state.knowledgeFilter);
     if (state.knowledgeQuery && !state.knowledge.length) toast("No saved knowledge matched that search.");
   } catch (error) {
     toast(error.message, true);
   } finally {
     button.disabled = false;
+  }
+});
+
+$("#knowledge-review-filter").addEventListener("change", async (event) => {
+  try {
+    await refreshKnowledge(state.knowledgeQuery, event.currentTarget.value);
+  } catch (error) {
+    toast(error.message, true);
   }
 });
 
