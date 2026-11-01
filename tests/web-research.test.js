@@ -11,7 +11,7 @@ import {
 } from "../services/web-research.js";
 
 const ENV_KEYS = [
-  "NODE_ENV", "JARVIS_SEARCH_BASE_URL", "JARVIS_SEARCH_API_KEY", "JARVIS_SEARCH_ENABLED",
+  "NODE_ENV", "JARVIS_SEARCH_BASE_URL", "JARVIS_SEARCH_API_KEY", "JARVIS_SEARCH_ENABLED", "JARVIS_SEARCH_ENGINES",
   "JARVIS_SEARCH_TIMEOUT_MS", "JARVIS_SEARCH_RETRY_ATTEMPTS", "JARVIS_SEARCH_MAX_RESULTS",
   "JARVIS_SEARCH_LANGUAGE", "JARVIS_AI_BASE_URL", "JARVIS_AI_API_KEY", "JARVIS_AI_MODEL",
   "JARVIS_AI_ENABLED", "JARVIS_AI_CHAT_ENABLED"
@@ -37,7 +37,8 @@ async function withEnv(values, callback) {
 const enabledSearch = {
   NODE_ENV: "test",
   JARVIS_SEARCH_BASE_URL: "http://127.0.0.1:8888",
-  JARVIS_SEARCH_ENABLED: "true"
+  JARVIS_SEARCH_ENABLED: "true",
+  JARVIS_SEARCH_ENGINES: "google,duckduckgo,bing"
 };
 
 test("search stays disabled when the trusted SearXNG endpoint is missing or invalid", async () => {
@@ -90,6 +91,8 @@ test("SearXNG result normalization accepts unique HTTPS links only", () => {
 
 test("live web search is selected for explicit internet requests and time-sensitive topics", () => {
   assert.equal(shouldUseLiveWebResearch("Please search the internet for the latest JEE notification"), true);
+  assert.equal(shouldUseLiveWebResearch("Google se search karke JEE update batao"), true);
+  assert.equal(shouldUseLiveWebResearch("Internet par check karke batao"), true);
   assert.equal(shouldUseLiveWebResearch("Internet se seekh kar latest update batao"), true);
   assert.equal(shouldUseLiveWebResearch("What is the weather today?"), true);
   assert.equal(shouldUseLiveWebResearch("Explain Newton's second law with an example"), false);
@@ -127,6 +130,8 @@ test("search calls only the server-configured endpoint and returns honest snippe
     assert.equal(captured.url.searchParams.get("format"), "json");
     assert.equal(captured.url.searchParams.get("safesearch"), "2");
     assert.equal(captured.url.searchParams.get("q"), "latest JEE notification");
+    assert.equal(captured.url.searchParams.get("engines"), "google,duckduckgo,bing");
+    assert.deepEqual(getWebResearchStatus().engines, ["google", "duckduckgo", "bing"]);
     assert.equal(captured.options.method, "GET");
     assert.equal(captured.options.redirect, "error");
     assert.equal(result.externalSearch, true);
