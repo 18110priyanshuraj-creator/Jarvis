@@ -568,26 +568,26 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
 }
 
 app.get("/api/health", (_req, res) => {
-  const gemini = getGeminiRuntimeStatus();
-  const conversationAIEnabled = gemini.conversationEnabled;
-  const plannerAIEnabled = gemini.plannerEnabled;
-  const webResearchEnabled = gemini.webResearchEnabled;
+  const modelRuntime = getGeminiRuntimeStatus();
+  const conversationAIEnabled = modelRuntime.conversationEnabled;
+  const plannerAIEnabled = modelRuntime.plannerEnabled;
+  const webResearchEnabled = modelRuntime.webResearchEnabled;
   res.json({
     ok: true,
     service: "jarvis",
     version: "1.6.0-controlled-actions",
-    brain: conversationAIEnabled ? "gemini-conversation-with-offline-fallback" : "built-in-offline-rules",
+    brain: conversationAIEnabled ? "online-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
     webResearchEnabled,
-    externalAI: plannerAIEnabled || conversationAIEnabled || webResearchEnabled || liveVoiceEnabled,
+    externalAI: plannerAIEnabled || conversationAIEnabled || webResearchEnabled,
     aiProvider: {
-      provider: gemini.provider,
-      configured: gemini.configured,
-      model: gemini.model,
-      modelValid: gemini.modelValid,
-      requestTimeoutMs: gemini.requestTimeoutMs,
-      retryAttempts: gemini.retryAttempts
+      provider: "external-llm",
+      configured: modelRuntime.configured,
+      model: modelRuntime.configured ? "configured-model" : "not-configured",
+      modelValid: modelRuntime.modelValid,
+      requestTimeoutMs: modelRuntime.requestTimeoutMs,
+      retryAttempts: modelRuntime.retryAttempts
     },
     runtimeStorage: runtimeStore.mode()
   });
