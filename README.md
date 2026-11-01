@@ -1,13 +1,13 @@
 # JARVIS — voice assistant with selective memory
 
-JARVIS is a private, single-owner assistant with a web dashboard and an Android Companion. It combines a provider-independent AI chat/planning adapter, a temporary legacy web-research adapter scheduled for replacement in Phase 14, temporary chat context, explicitly requested long-term memories, and consent-based Android controls. A built-in offline brain remains available as a limited fallback.
+JARVIS is a private, single-owner assistant with a web dashboard and an Android Companion. It combines a provider-independent AI chat/planning adapter, SearXNG-based live search, optional secure full-page reading, temporary chat context, explicitly requested long-term memories, and consent-based Android controls. A built-in offline brain remains available as a limited fallback.
 
 ## How JARVIS handles information
 
 - **Ordinary chats are temporary.** With `DATABASE_URL` configured, JARVIS stores up to 32 messages per conversation in shared Neon tables and expires them after one hour of inactivity. Without a database, local development uses process memory. Chat messages are never written into the durable `jarvis_app_state` snapshot or JSON state file.
 - **Long-term memory is selective.** JARVIS saves a preference or fact only when the user explicitly says something like "Remember that I prefer concise Hinglish explanations" or "Yaad rakhna: ...". The Memory screen can review and delete saved notes.
 - **Secrets and sensitive personal details are rejected.** Do not ask JARVIS to store passwords, PINs, OTPs, API keys, bank/card details, medical information, home addresses, phone numbers or email addresses.
-- **Internet research is not memory.** Relevant current/time-sensitive prompts and explicit requests to check the internet can be routed to Google Search grounding. Responses show available source links. A search result is used to answer the current question and is not saved as a long-term memory or research record automatically.
+- **Internet research is not memory.** Relevant current/time-sensitive prompts and explicit requests to check the internet can be routed to the server-configured SearXNG search provider. Optional AI synthesis is separate. When enabled, users can read full HTTPS webpages from returned search sources; page text remains untrusted and is never saved automatically.
 - **Tasks, explicitly saved research and approved memories** remain in the persistent app state. These are separate from ordinary chat transcripts.
 
 ## Memory and Personal Data Controls (Phase 3)
@@ -294,6 +294,26 @@ JARVIS_SEARCH_LANGUAGE=all
 ```
 
 Use a SearXNG instance that you operate or trust. Do not point this setting at a URL supplied by a chat message or search result. Production is not live-search-enabled until this endpoint is configured and `/api/health` reports `searchProvider.enabled=true`.
+
+## Full-Page Reading & Research (Phase 15)
+
+- Each live search source can receive a short-lived signed token tied to the authenticated JARVIS session. The read API accepts that token, not a browser-selected URL or arbitrary request headers.
+- Only HTTPS URLs on port 443 are eligible. DNS is resolved to IPv4, every returned address must be public, and the request is pinned to a validated address to reduce DNS-rebinding/SSRF risk.
+- Redirects, private/reserved/link-local/multicast IPs, IPv6-only targets, compressed responses, PDFs and binary content are rejected. Request duration, response bytes and extracted characters are bounded.
+- HTML extraction removes scripts, styles, embedded frames, forms and navigation-oriented markup before presenting plain text. Page titles, metadata, source URL and retrieval time are retained.
+- The optional Phase 13 AI provider may summarize the extracted page. Retrieved page text is untrusted prompt-injection material; AI is instructed to use only page evidence, cite the page, and ignore embedded instructions.
+- Reading is off by default and must be explicitly enabled with `JARVIS_PAGE_READ_ENABLED=true`. It does not crawl links, execute page code, auto-save content, train model weights or read PDF files in this phase. A user must explicitly choose “Save page to Knowledge” to retain a bounded summary.
+
+### Configure full-page reading (server environment only)
+
+```dotenv
+JARVIS_PAGE_READ_ENABLED=true
+JARVIS_PAGE_READ_TIMEOUT_MS=15000
+JARVIS_PAGE_READ_MAX_BYTES=2000000
+JARVIS_PAGE_READ_MAX_CHARS=30000
+```
+
+The read controls appear only on live search source cards after page reading is enabled. Tokens expire after 15 minutes and are bound to the login session.
 
 ## Built-in offline mode
 

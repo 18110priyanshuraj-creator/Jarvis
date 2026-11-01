@@ -135,6 +135,12 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
     body: JSON.stringify({ query: "What changed in the latest science research?" })
   });
   assert.equal(blockedResearch.status, 401);
+  const blockedPageRead = await request("/api/research/read", {
+    method: "POST",
+    headers: {},
+    body: JSON.stringify({ readToken: "not-a-token" })
+  });
+  assert.equal(blockedPageRead.status, 401);
 
   const wrongLogin = await request("/api/login", {
     method: "POST",

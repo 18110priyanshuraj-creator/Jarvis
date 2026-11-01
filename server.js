@@ -13,6 +13,7 @@ import { createRuntimeStore } from "./services/runtime-store.js";
 import { createAgentPlan } from "./services/agent-planner.js";
 import { createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
 import { createWebResearch, getWebResearchStatus, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
+import { createPageReadToken, createWebPageRead, getWebPageReadStatus, verifyPageReadToken } from "./services/web-page-reader.js";
 import { getAIProviderStatus } from "./services/ai-provider.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, searchMemories } from "./services/memory.js";
@@ -82,6 +83,13 @@ const webResearchLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Web research rate limit reached. Please try again later." }
+});
+const pageReadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 12,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Full-page reading rate limit reached. Please try again later." }
 });
 const integrationTestLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -1496,6 +1504,12 @@ app.post("/api/research", requireAuth, webResearchLimiter, async (req, res) => {
 
   try {
     const result = await createWebResearch(query);
+    if (getWebPageReadStatus().enabled) {
+      result.sources = result.sources.map(source => ({
+        ...source,
+        readToken: createPageReadToken(source.url, req.sessionToken, PASSWORD)
+      }));
+    }
     res.json(result);
   } catch (error) {
     if (error?.code === "RESTRICTED_RESEARCH_QUERY") {
@@ -1503,6 +1517,32 @@ app.post("/api/research", requireAuth, webResearchLimiter, async (req, res) => {
     }
     console.error("Web search failed:", safeErrorMetadata(error));
     res.status(502).json({ error: "Live web research could not complete this request. Please try again later." });
+  }
+});
+
+app.post("/api/research/read", requireAuth, pageReadLimiter, async (req, res) => {
+  if (!getWebPageReadStatus().enabled) {
+    return res.status(503).json({ error: "Full-page reading is disabled. Set JARVIS_PAGE_READ_ENABLED=true on the server." });
+  }
+  const pageUrl = verifyPageReadToken(req.body?.readToken, req.sessionToken, PASSWORD);
+  if (!pageUrl) {
+    return res.status(403).json({ error: "Choose a source from a recent JARVIS live search result. Search again to refresh page access." });
+  }
+
+  try {
+    const result = await createWebPageRead(pageUrl, { question: cleanText(req.body?.question, 800) });
+    res.json(result);
+  } catch (error) {
+    const code = error?.code || "PAGE_READ_FAILED";
+    const clientErrors = [
+      "PAGE_URL_BLOCKED", "PAGE_ADDRESS_BLOCKED", "PAGE_REDIRECT_BLOCKED",
+      "PAGE_CONTENT_TYPE_BLOCKED", "PAGE_ENCODING_BLOCKED", "PAGE_TEXT_EMPTY"
+    ];
+    const status = code === "PAGE_RESPONSE_TOO_LARGE" ? 413
+      : code === "PAGE_TIMEOUT" ? 504
+      : clientErrors.includes(code) ? 400 : 502;
+    console.error("Full-page read failed:", code);
+    res.status(status).json({ error: error?.message || "The source webpage could not be read safely." });
   }
 });
 
