@@ -243,6 +243,9 @@ export async function finishGoogleOAuth(options = {}) {
   const pending = pendingStates.get(state);
   if (!pending) throw new Error("Google OAuth state is invalid, expired, or already used.");
   pendingStates.delete(state);
+  if (pending.expiresAt <= Date.now()) {
+    throw new Error("Google OAuth state expired. Start the connection again.");
+  }
 
   const browserHash = hash(cleanString(options.browserBinding, 200)).toString("base64url");
   if (!timingSafeStringEqual(browserHash, pending.browserBindingHash)) {
