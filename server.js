@@ -14,6 +14,7 @@ import { createAgentPlan } from "./services/agent-planner.js";
 import { createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
 import { createGroundedResearch, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
 import { getGeminiRuntimeStatus } from "./services/gemini-client.js";
+import { createLiveVoiceToken, getLiveVoiceConfiguration } from "./services/live-voice.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, searchMemories } from "./services/memory.js";
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeSkill, pauseSkill, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
@@ -54,7 +55,7 @@ app.use(helmet({
       scriptSrc: ["'self'"],
       styleSrc: ["'self'"],
       imgSrc: ["'self'", "data:"],
-      connectSrc: ["'self'"],
+      connectSrc: ["'self'", "wss://generativelanguage.googleapis.com"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       frameAncestors: ["'none'"]
@@ -118,6 +119,14 @@ const oauthCallbackLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false
 });
+const liveVoiceLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Live voice start limit reached. Please wait before starting another session." }
+});
+
 app.use("/api", apiLimiter);
 
 let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [] };
@@ -579,6 +588,7 @@ app.get("/api/health", (_req, res) => {
     plannerAIEnabled,
     conversationAIEnabled,
     webResearchEnabled,
+    liveVoiceEnabled: getLiveVoiceConfiguration().enabled,
     externalAI: plannerAIEnabled || conversationAIEnabled || webResearchEnabled,
     aiProvider: {
       provider: gemini.provider,
@@ -621,6 +631,30 @@ app.post("/api/logout", requireAuth, async (req, res) => {
 
 app.get("/api/session", requireAuth, (_req, res) => {
   res.json({ authenticated: true });
+});
+
+app.post("/api/live-voice/token", requireAuth, liveVoiceLimiter, async (_req, res) => {
+  const configuration = getLiveVoiceConfiguration();
+  if (!configuration.enabled) {
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(503).json({ error: "Live voice is disabled or not configured on the server." });
+  }
+
+  try {
+    const result = await createLiveVoiceToken({
+      apiKey: process.env.GEMINI_API_KEY,
+      model: configuration.model
+    });
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Pragma", "no-cache");
+    return res.json(result);
+  } catch (error) {
+    console.error("Live voice token provisioning failed:", safeErrorMetadata(error));
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(503).json({
+      error: "Live voice could not be started. Check the server Live API configuration."
+    });
+  }
 });
 
 app.get("/api/state", requireAuth, async (req, res, next) => {
