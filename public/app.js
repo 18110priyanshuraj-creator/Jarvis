@@ -1812,7 +1812,7 @@ const liveVoiceController = createLiveVoiceController({
       const active = voiceState !== "idle";
       button.textContent = active ? "Stop live voice" : "Start live voice";
       button.setAttribute("aria-pressed", String(active));
-      button.disabled = voiceState === "connecting";
+      button.disabled = false;
     }
   },
   onTranscript: renderLiveTranscript,
@@ -1823,6 +1823,7 @@ const liveVoiceController = createLiveVoiceController({
       "microphone-missing": "No microphone was found on this device.",
       "microphone-busy": "The microphone is being used by another app.",
       "not-configured": "Live voice is disabled. Enable it in the server environment settings.",
+      "rate-limited": "Too many Live voice starts. Wait before trying again.",
       "connection-failed": "Could not connect to Gemini Live. Check the network and Live API settings.",
       "connection-closed": "The Live voice connection closed.",
       "setup-timeout": "Gemini Live did not finish setting up. Try again.",
