@@ -1673,6 +1673,7 @@ $("#login-form").addEventListener("submit", async (event) => {
 });
 
 $("#logout-button").addEventListener("click", async () => {
+  stopHandsFreeMode();
   try { await api("/api/logout", { method: "POST", body: JSON.stringify({}) }); } catch { /* always return to sign-in */ }
   state.chats = [];
   state.memories = [];
@@ -1883,7 +1884,6 @@ $("#chat-form").addEventListener("submit", async (event) => {
   const button = $("#send-button");
   const message = input.value.trim();
   if (!message || button.disabled) return;
-  liveVoiceController.stop();
   if (voiceModeActive) awaitingAssistantReply = true;
   voiceController.stopListening();
   voiceController.stopSpeaking();
