@@ -128,7 +128,10 @@ Set values in the private server environment settings (not in the Git repository
 ### Integration API
 
 - GET /api/integrations — return provider names, required environment variable names, configured flags and read-only capability descriptions; never returns credential values.
-- POST /api/integrations/:provider/test — test one supported connection and return a limited sanitized profile/summary.
+- POST /api/integrations/:provider/test — test one enabled, supported connection and return a limited sanitized profile/summary.
+- POST /api/integrations/:provider/disable — block future connection tests and workflow actions for that provider inside JARVIS.
+- POST /api/integrations/:provider/enable — allow that configured provider to be used by JARVIS again.
+- Disabling is not provider-side token revocation. Remove/rotate the credential in the hosting environment and revoke it with the provider for full revocation.
 - Supported workflow actions: `github_list_repositories`, `google_drive_list_files`, `telegram_get_bot_profile`, `elevenlabs_get_account`.
 
 ## Voice and Android companion
