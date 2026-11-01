@@ -181,8 +181,8 @@ export async function createAgentPlan(message) {
     if (localPlan) {
       return {
         ...localPlan,
-        engine: "offline-local-rules",
-        model: "local-device-rules",
+        engine: "built-in-device-rules",
+        model: "built-in-rule-parser",
         provider: "built-in",
         externalAI: false
       };
