@@ -129,6 +129,8 @@ test("health endpoint is public without disclosing configuration", async () => {
 test("authentication, local search, tasks, memories, and offline chat behave safely", async () => {
   const blockedState = await request("/api/state", { headers: {} });
   assert.equal(blockedState.status, 401);
+  const blockedDiagnostics = await request("/api/diagnostics", { headers: {} });
+  assert.equal(blockedDiagnostics.status, 401);
   const blockedKnowledge = await request("/api/knowledge", { headers: {} });
   assert.equal(blockedKnowledge.status, 401);
   const blockedMemories = await request("/api/memories", { headers: {} });
@@ -179,6 +181,34 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.match(cookieHeader, /SameSite=Strict/i);
   cookie = cookieHeader.split(";")[0];
   assert.match(cookie, /^jarvis_session=/);
+
+  const diagnosticsResponse = await request("/api/diagnostics");
+  assert.equal(diagnosticsResponse.status, 200);
+  const diagnostics = await diagnosticsResponse.json();
+  assert.equal(diagnostics.ok, true);
+  assert.equal(diagnostics.status, "attention");
+  assert.equal(diagnostics.version, "1.12.0-system-readiness");
+  assert.ok(Number.isFinite(Date.parse(diagnostics.generatedAt)));
+  assert.ok(diagnostics.warningCount > 0);
+  assert.equal(diagnostics.errorCount, 0);
+
+  const checkById = (id) => diagnostics.checks.find((item) => item.id === id);
+  assert.equal(checkById("service").status, "ready");
+  assert.equal(checkById("primary-storage").status, "warning");
+  assert.equal(checkById("primary-storage").details.mode, "local-json-file");
+  assert.equal(checkById("temporary-chat-storage").details.mode, "process-memory");
+  assert.equal(checkById("ai-conversation").details.conversationEnabled, false);
+  assert.equal(checkById("live-web-search").details.enabled, false);
+  assert.equal(checkById("google-drive").details.canConnect, true);
+  assert.equal(checkById("android-companion").details.pairedDevices, 0);
+  assert.equal(diagnostics.inventory.tasks, 0);
+  assert.equal(diagnostics.inventory.knowledgeItems, 0);
+
+  const diagnosticsJson = JSON.stringify(diagnostics);
+  assert.equal(diagnosticsJson.includes("test-only-password-2026"), false);
+  assert.equal(diagnosticsJson.includes("local-test-client-secret"), false);
+  assert.equal(diagnosticsJson.includes(Buffer.alloc(32, 11).toString("base64")), false);
+  assert.equal(diagnosticsJson.includes("123456789:" + "A".repeat(32)), false);
 
   const disabledSourceAnswer = await request("/api/research/answer", {
     method: "POST",
