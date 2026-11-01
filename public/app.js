@@ -1,7 +1,7 @@
 import { createVoiceController } from "./voice-controller.js";
 import { createOrbitalVisual } from "./orbital-visual.js";
 const $ = (selector) => document.querySelector(selector);
-const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", knowledgeFilter: "all", knowledgeSummary: { total: 0, trusted: 0, unreviewed: 0, rejected: 0 }, activeView: "chat" };
+const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", knowledgeFilter: "all", knowledgeSummary: { total: 0, trusted: 0, unreviewed: 0, rejected: 0 }, diagnostics: null, activeView: "chat" };
 let toastTimer;
 
 function toast(message, isError = false) {
@@ -105,7 +105,8 @@ function setView(name) {
     experience: ["EXPERIENCE & SELF-IMPROVEMENT", "Experience"],
     workflows: ["AUTOMATION & EXECUTION", "Workflows"],
     integrations: ["CONNECTED SERVICES", "Connections"],
-    actions: ["CONTROLLED ACTIONS", "Action Center"]
+    actions: ["CONTROLLED ACTIONS", "Action Center"],
+    system: ["SYSTEM READINESS", "System Status"]
   };
   $("#page-kicker").textContent = titles[name][0];
   $("#page-title").textContent = titles[name][1];
@@ -118,6 +119,7 @@ function setView(name) {
   if (name === "workflows") refreshWorkflows().catch((error) => toast(error.message, true));
   if (name === "integrations") refreshIntegrations().catch((error) => toast(error.message, true));
   if (name === "actions") refreshExternalActions().catch((error) => toast(error.message, true));
+  if (name === "system") refreshSystemDiagnostics().catch((error) => toast(error.message, true));
 }
 
 function makeEmpty(message) {
@@ -3094,6 +3096,102 @@ $("#knowledge-form").addEventListener("submit", async (event) => {
 
 
 
+function renderSystemDiagnostics() {
+  const summary = $("#diagnostic-summary");
+  const target = $("#diagnostic-check-list");
+  const timestamp = $("#diagnostic-generated-at");
+  if (!summary || !target) return;
+  summary.replaceChildren();
+  target.replaceChildren();
+
+  const data = state.diagnostics;
+  if (!data) {
+    summary.append(makeEmpty("Run a system check to view the current JARVIS readiness report."));
+    return;
+  }
+
+  const heading = document.createElement("div");
+  heading.className = "diagnostic-overview";
+  const title = document.createElement("strong");
+  title.textContent = data.status === "ready"
+    ? "All configured core checks are ready"
+    : data.status === "degraded"
+      ? "Storage needs attention"
+      : "JARVIS is running with some optional services unavailable";
+  const description = document.createElement("p");
+  description.textContent = data.summary || "Readiness check completed.";
+  const status = document.createElement("span");
+  status.className = "diagnostic-status diagnostic-status-" + String(data.status || "attention");
+  status.textContent = String(data.status || "attention").replaceAll("_", " ");
+  heading.append(title, description, status);
+  summary.append(heading);
+
+  if (!Array.isArray(data.checks) || !data.checks.length) {
+    target.append(makeEmpty("No system checks were returned."));
+  } else {
+    for (const check of data.checks) {
+      const card = document.createElement("article");
+      card.className = "diagnostic-card";
+      const cardHeader = document.createElement("div");
+      cardHeader.className = "diagnostic-card-header";
+      const name = document.createElement("strong");
+      name.textContent = check.label || check.id || "System check";
+      const badge = document.createElement("span");
+      badge.className = "diagnostic-status diagnostic-status-" + String(check.status || "warning");
+      badge.textContent = String(check.status || "warning");
+      cardHeader.append(name, badge);
+
+      const copy = document.createElement("p");
+      copy.textContent = check.summary || "";
+      card.append(cardHeader, copy);
+
+      if (check.details && typeof check.details === "object") {
+        const details = document.createElement("div");
+        details.className = "diagnostic-details";
+        for (const [key, value] of Object.entries(check.details)) {
+          if (value === null || value === undefined || key === "providers") continue;
+          const item = document.createElement("span");
+          item.textContent = key.replace(/([A-Z])/g, " $1").replaceAll("_", " ") + ": " +
+            (Array.isArray(value) ? value.join(", ") : String(value));
+          details.append(item);
+        }
+        if (Array.isArray(check.details.providers)) {
+          for (const provider of check.details.providers) {
+            const item = document.createElement("span");
+            item.textContent = provider.name + ": " +
+              (provider.enabled ? "enabled" : provider.configured ? "configured, disabled" : "not configured");
+            details.append(item);
+          }
+        }
+        if (details.childElementCount) card.append(details);
+      }
+      target.append(card);
+    }
+  }
+
+  if (timestamp) {
+    timestamp.textContent = data.generatedAt
+      ? "Checked " + new Date(data.generatedAt).toLocaleString() + " · " + data.warningCount + " warning(s)"
+      : "";
+  }
+}
+
+async function refreshSystemDiagnostics() {
+  const button = $("#refresh-diagnostics");
+  const target = $("#diagnostic-check-list");
+  if (button) button.disabled = true;
+  if (target) {
+    target.replaceChildren();
+    target.append(makeEmpty("Checking JARVIS storage and configured capabilities…"));
+  }
+  try {
+    state.diagnostics = await api("/api/diagnostics");
+    renderSystemDiagnostics();
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 async function refreshDevices() {
   const data = await api("/api/devices");
   state.devices = Array.isArray(data.devices) ? data.devices : [];
@@ -3177,6 +3275,7 @@ async function generatePairingCode() {
 
 $("#create-pairing-code").addEventListener("click", generatePairingCode);
 $("#refresh-devices").addEventListener("click", () => refreshDevices().catch((error) => toast(error.message, true)));
+$("#refresh-diagnostics").addEventListener("click", () => refreshSystemDiagnostics().catch((error) => toast(error.message, true)));
 
 $("#external-action-type").addEventListener("change", updateExternalActionFields);
 $("#action-google-permission").addEventListener("click", startGoogleDocsPermissionUpgrade);
