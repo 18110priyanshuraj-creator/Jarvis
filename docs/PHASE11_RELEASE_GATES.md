@@ -22,6 +22,12 @@ The Android job:
 
 Concurrency cancels superseded runs for the same branch or pull request. Workflow permissions are limited to repository contents read access. The workflow does not access production secrets or perform a production deployment.
 
+## Merge protection limitation
+
+CI runs on pull requests, but required-check enforcement is a separate GitHub repository setting. The Phase 0 audit found no branch protection on `main`, and Phase 11 does not silently change repository permissions. Until an administrator enables branch protection or a repository ruleset and marks both CI jobs as required, failed checks may not block a merge or a direct push. Configure these required checks before treating the release process as fully enforced:
+- `Node.js tests and dependency audit`
+- `Android Companion build and APK verification`
+
 ## Dependency updates
 
 Dependabot checks npm dependencies, Android Gradle dependencies, and GitHub Actions weekly. Updates arrive as pull requests and still have to pass the normal CI gates and human review.
@@ -31,7 +37,7 @@ Dependabot checks npm dependencies, Android Gradle dependencies, and GitHub Acti
 1. Review and verify the Phase 10 shared-runtime change on a non-production preview environment, including Neon schema creation and session/OAuth behavior across separate server instances.
 2. Merge Phase 10 only after its review and preview checks are complete.
 3. Retarget the Phase 11 pull request to `main` after Phase 10 is merged.
-4. Require the Node.js tests, production dependency audit, and Android build/APK verification to pass.
+4. Enable branch protection/repository ruleset required checks, then require the Node.js tests, production dependency audit, and Android build/APK verification to pass.
 5. Verify the resulting Vercel preview, authentication, database connectivity, Google OAuth callback, and Android Companion pairing before any production promotion.
 6. Promote to production only as a deliberate, separately reviewed action.
 
