@@ -1,4 +1,4 @@
-import { getGeminiClient, getGeminiModel, getGeminiRuntimeStatus } from "./gemini-client.js";
+import { createChatCompletion, getAIProviderStatus } from "./ai-provider.js";
 
 const MAX_HISTORY_MESSAGES = 8;
 const MAX_HISTORY_CHARS = 1200;
@@ -23,7 +23,7 @@ function cleanText(value, maxLength) {
 }
 
 export function isConversationAIEnabled() {
-  return getGeminiRuntimeStatus().conversationEnabled;
+  return getAIProviderStatus().conversationEnabled;
 }
 
 export function buildConversationContents(message, history = []) {
@@ -32,17 +32,17 @@ export function buildConversationContents(message, history = []) {
     .filter((item) => item && (item.role === "user" || item.role === "assistant"))
     .slice(-MAX_HISTORY_MESSAGES)
     .map((item) => ({
-      role: item.role === "assistant" ? "model" : "user",
-      parts: [{ text: cleanText(item.content, MAX_HISTORY_CHARS) }]
+      role: item.role,
+      content: cleanText(item.content, MAX_HISTORY_CHARS)
     }))
-    .filter((item) => item.parts[0].text.length > 0);
+    .filter((item) => item.content.length > 0);
 
   const currentMessage = cleanText(message, 4000);
   if (!currentMessage) throw new TypeError("Conversation message cannot be empty.");
 
   return [
     ...recent,
-    { role: "user", parts: [{ text: currentMessage }] }
+    { role: "user", content: currentMessage }
   ];
 }
 
@@ -102,24 +102,18 @@ export async function createConversationReply(message, history = [], memories = 
     throw error;
   }
 
-  const model = getGeminiModel();
-  const client = getGeminiClient();
-  if (!client) {
-    const error = new Error("Online AI mode is disabled or not configured.");
-    error.code = "AI_NOT_CONFIGURED";
-    throw error;
-  }
-  const response = await client.models.generateContent({
-    model,
-    contents: buildConversationContents(message, history),
-    config: {
-      systemInstruction: buildConversationSystemInstruction(memories, knowledge, skills, experiencePreferences),
-      temperature: 0.35,
-      maxOutputTokens: 1200
-    }
+  const response = await createChatCompletion([
+    {
+      role: "system",
+      content: buildConversationSystemInstruction(memories, knowledge, skills, experiencePreferences)
+    },
+    ...buildConversationContents(message, history)
+  ], {
+    temperature: 0.35,
+    maxTokens: 1200
   });
 
-  const answer = cleanText(response.text, 5000);
+  const answer = cleanText(response.content, 5000);
   if (!answer) throw new Error("The online AI service returned an empty reply.");
   return answer;
 }

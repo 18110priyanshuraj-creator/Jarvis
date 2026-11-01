@@ -13,28 +13,33 @@ test("conversation context is bounded and only includes user and assistant text"
   const contents = buildConversationContents("Follow-up question", history);
   assert.equal(contents.length, 9);
   assert.equal(contents[0].role, "user");
-  assert.equal(contents[0].parts[0].text.startsWith("turn-4"), true);
-  assert.equal(contents[0].parts[0].text.length, 1200);
-  assert.equal(contents.at(-1).parts[0].text, "Follow-up question");
-  assert.equal(contents.some((item) => item.parts[0].text.includes("must not be forwarded")), false);
+  assert.equal(contents[0].content.startsWith("turn-4"), true);
+  assert.equal(contents[0].content.length, 1200);
+  assert.equal(contents.at(-1).content, "Follow-up question");
+  assert.equal(contents.some((item) => item.content.includes("must not be forwarded")), false);
 });
 
 test("conversation mode stays disabled unless both opt-in and API key are present", () => {
-  const oldEnabled = process.env.GEMINI_CHAT_ENABLED;
-  const oldKey = process.env.GEMINI_API_KEY;
+  const keys = ["NODE_ENV", "JARVIS_AI_BASE_URL", "JARVIS_AI_API_KEY", "JARVIS_AI_MODEL", "JARVIS_AI_ENABLED", "JARVIS_AI_CHAT_ENABLED"];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   try {
-    process.env.GEMINI_CHAT_ENABLED = "true";
-    process.env.GEMINI_API_KEY = "";
-    assert.equal(isConversationAIEnabled(), false);
-    process.env.GEMINI_API_KEY = "test-only-key";
+    process.env.NODE_ENV = "test";
+    process.env.JARVIS_AI_BASE_URL = "http://127.0.0.1:11434/v1";
+    process.env.JARVIS_AI_API_KEY = "";
+    process.env.JARVIS_AI_MODEL = "test-model";
+    process.env.JARVIS_AI_ENABLED = "true";
+    process.env.JARVIS_AI_CHAT_ENABLED = "true";
     assert.equal(isConversationAIEnabled(), true);
-    process.env.GEMINI_CHAT_ENABLED = "false";
+    process.env.JARVIS_AI_CHAT_ENABLED = "false";
+    assert.equal(isConversationAIEnabled(), false);
+    process.env.JARVIS_AI_ENABLED = "false";
+    process.env.JARVIS_AI_CHAT_ENABLED = "true";
     assert.equal(isConversationAIEnabled(), false);
   } finally {
-    if (oldEnabled === undefined) delete process.env.GEMINI_CHAT_ENABLED;
-    else process.env.GEMINI_CHAT_ENABLED = oldEnabled;
-    if (oldKey === undefined) delete process.env.GEMINI_API_KEY;
-    else process.env.GEMINI_API_KEY = oldKey;
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
   }
 });
 

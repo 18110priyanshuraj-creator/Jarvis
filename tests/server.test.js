@@ -47,8 +47,13 @@ before(async () => {
       JARVIS_PASSWORD: "test-only-password-2026",
       JARVIS_DATA_DIR: tempDir,
       DATABASE_URL: "",
+      JARVIS_AI_BASE_URL: "",
+      JARVIS_AI_API_KEY: "",
+      JARVIS_AI_MODEL: "",
+      JARVIS_AI_ENABLED: "false",
+      JARVIS_AI_CHAT_ENABLED: "false",
+      JARVIS_AI_PLANNER_ENABLED: "false",
       GEMINI_API_KEY: "",
-      GEMINI_CHAT_ENABLED: "false",
       GEMINI_WEB_RESEARCH_ENABLED: "false",
       JARVIS_GITHUB_TOKEN: "",
       JARVIS_GOOGLE_DRIVE_ACCESS_TOKEN: "",
@@ -96,8 +101,9 @@ test("health endpoint is public without disclosing configuration", async () => {
   assert.equal(payload.conversationAIEnabled, false);
   assert.equal(payload.webResearchEnabled, false);
   assert.equal(payload.externalAI, false);
-  assert.equal(payload.aiProvider.provider, "external-llm");
+  assert.equal(payload.aiProvider.provider, "openai-compatible");
   assert.equal(payload.aiProvider.configured, false);
+  assert.equal(payload.aiProvider.baseUrlConfigured, false);
   assert.equal(payload.aiProvider.model, "not-configured");
   assert.equal(Object.hasOwn(payload.aiProvider, "apiKey"), false);
   assert.equal(JSON.stringify(payload).includes("test-only-password-2026"), false);
