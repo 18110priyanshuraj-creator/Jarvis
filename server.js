@@ -17,7 +17,7 @@ import { createPageReadToken, createWebPageRead, getWebPageReadStatus, verifyPag
 import { createSourceBasedAnswer, SOURCE_ANSWER_LIMITS } from "./services/source-answer.js";
 import { getAIProviderStatus } from "./services/ai-provider.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, mergeDuplicateKnowledge, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
-import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, searchMemories } from "./services/memory.js";
+import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, previewMemoryContext, searchMemories } from "./services/memory.js";
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeSkill, pauseSkill, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
 import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, createWorkflowDraft, createWorkflowRun, normalizeWorkflow, pauseWorkflow, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
@@ -490,7 +490,7 @@ function parseExplicitMemoryIntent(message) {
 async function processAssistantTurn(message, conversationKey) {
   const history = (await getConversationMessages(conversationKey))
     .filter((item) => item.role === "user" || item.role === "assistant")
-    .slice(-8)
+    .slice(-10)
     .map(({ role, content }) => ({ role, content }));
 
   const memoryIntent = parseExplicitMemoryIntent(message);
@@ -505,7 +505,7 @@ async function processAssistantTurn(message, conversationKey) {
     const candidate = normalizeMemory({ content: memoryIntent.content, category: memoryIntent.category });
     const existing = store.memories.find((item) => isDuplicateMemory([item], candidate));
     if (existing) {
-      result = { answer: "That preference or fact is already in your saved memory.", engine: "memory", externalAI: false };
+      result = { answer: existing.enabled === false ? "That note is already saved, but paused from chat context. You can resume it in Memory." : "That preference or fact is already in your saved memory.", engine: "memory", externalAI: false };
     } else if (store.memories.length >= 200) {
       result = { answer: "Your memory list is full. Delete an old note before saving another.", engine: "memory", externalAI: false };
     } else {
@@ -593,7 +593,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     service: "jarvis",
-    version: "1.10.0-persistent-knowledge",
+    version: "1.11.0-intelligent-memory-context",
     brain: conversationAIEnabled ? "online-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
@@ -638,6 +638,13 @@ app.get("/api/health", (_req, res) => {
       rejectedResearchInAssistantContext: false,
       automaticSaving: false,
       maxItems: KNOWLEDGE_LIMITS.items
+    },
+    memoryPolicy: {
+      explicitSavingOnly: true,
+      pausedMemoriesInAssistantContext: false,
+      contextPreviewAvailable: true,
+      maxContextItems: MEMORY_LIMITS.contextItems,
+      temporaryChatHistoryMessages: 10
     },
     runtimeStorage: runtimeStore.mode()
   });
@@ -746,10 +753,19 @@ app.post("/api/chat", requireAuth, async (req, res) => {
 app.get("/api/memories", requireAuth, (req, res) => {
   const query = cleanText(req.query.q, 300);
   const category = cleanText(req.query.category, 30);
-  const requestedLimit = Number.parseInt(String(req.query.limit || String(KNOWLEDGE_LIMITS.items)), 10);
-  const limit = Number.isFinite(requestedLimit) ? Math.min(KNOWLEDGE_LIMITS.items, Math.max(1, requestedLimit)) : KNOWLEDGE_LIMITS.items;
+  const requestedLimit = Number.parseInt(String(req.query.limit || String(MEMORY_LIMITS.items)), 10);
+  const limit = Number.isFinite(requestedLimit) ? Math.min(MEMORY_LIMITS.items, Math.max(1, requestedLimit)) : MEMORY_LIMITS.items;
   const items = searchMemories(store.memories, query, category, limit);
+  res.setHeader("Cache-Control", "no-store");
   res.json({ query, category, total: store.memories.length, count: items.length, items });
+});
+
+app.post("/api/memories/preview", requireAuth, (req, res) => {
+  const query = cleanText(req.body?.query, 4000);
+  if (!query) return res.status(400).json({ error: "Enter a prompt to preview memory context." });
+  const preview = previewMemoryContext(store.memories, query, MEMORY_LIMITS.contextItems);
+  res.setHeader("Cache-Control", "no-store");
+  res.json(preview);
 });
 
 app.post("/api/memories", requireAuth, async (req, res) => {
@@ -781,6 +797,7 @@ app.patch("/api/memories/:id", requireAuth, async (req, res) => {
       ...existing,
       content: typeof req.body?.content === "string" ? req.body.content : existing.content,
       category: typeof req.body?.category === "string" ? req.body.category : existing.category,
+      enabled: typeof req.body?.enabled === "boolean" ? req.body.enabled : existing.enabled !== false,
       updatedAt: new Date().toISOString()
     });
   } catch (error) {
