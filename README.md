@@ -171,6 +171,31 @@ Set values in the private server environment settings (not in the Git repository
 - GET /api/integrations/google_drive/oauth/callback — validate state/session and exchange the authorization code.
 - POST /api/integrations/google_drive/oauth/revoke — revoke the stored Google refresh token and remove the encrypted local connection.
 
+## Controlled External Actions (Phase 9)
+
+- The Action Center adds two fixed provider actions: send one plain-text Telegram message to an allow-listed numeric chat ID, or create a new Google Doc and insert the approved text.
+- Creating an action only saves a preview. It never calls the provider. The preview expires after 15 minutes and the user must open it, review the exact destination/content and type the displayed confirmation phrase: `SEND MESSAGE` or `CREATE GOOGLE DOC`.
+- Each preview can execute only once. Pending previews can be cancelled. A request that times out or fails after the provider might have received it is marked failed and cannot be retried from that same preview; inspect the provider before creating a new one.
+- Telegram sends only the configured chat ID and plain text through the Bot API `sendMessage` method. It does not accept public usernames/channels, bulk targets, HTML/Markdown parsing, paid broadcast options, media, or scheduled delivery. The server rechecks `JARVIS_TELEGRAM_ALLOWED_CHAT_IDS` immediately before sending.
+- Google Docs creation requires a separate incremental consent upgrade to `https://www.googleapis.com/auth/drive.file` in addition to the existing metadata scope. This allows JARVIS to create and edit files created by this app; it does not request broad Drive access or edit unrelated existing files. Content is inserted with the Google Docs batchUpdate method.
+- No action can be triggered from the normal Workflow Run path. Workflows remain local/read-only for external services; the Action Center is the only place where these two external writes can be confirmed.
+- The action audit history is saved in JARVIS and included in the user's personal data export. It contains the user-entered preview text but never provider tokens, OAuth access/refresh tokens, client secrets or the token-vault encryption key.
+- Provider actions are rate limited. There is no scheduler, arbitrary URL/action tool, group broadcast mode, content publishing or payment function.
+
+### Phase 9 server environment
+
+- `JARVIS_TELEGRAM_BOT_TOKEN` — private bot credential.
+- `JARVIS_TELEGRAM_ALLOWED_CHAT_IDS` — comma-separated numeric chat IDs allowed to receive messages. Keep this list small; do not add public channels or destinations you do not control.
+- Google Drive also requires the Phase 8 OAuth client and stable encrypted token-vault key. From Connections, choose the separate **Enable Docs creation permission** consent step.
+
+### External action API
+
+- GET /api/actions/capabilities — provider readiness and allowed Telegram destination IDs.
+- GET /api/actions — preview and audit history.
+- POST /api/actions — create a preview only; no provider call.
+- POST /api/actions/:id/execute — perform one action only after the exact typed confirmation phrase.
+- POST /api/actions/:id/cancel — cancel a pending preview.
+
 ## Voice and Android companion
 
 - The dashboard includes Hindi push-to-talk where supported by the browser and optional spoken replies.
