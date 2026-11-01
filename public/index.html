@@ -64,47 +64,95 @@
       </header>
 
       <section id="view-chat" class="view chat-view">
-        <div class="chat-intro">
-          <div class="orb" aria-hidden="true"><span>J</span></div>
-          <p class="eyebrow">JARVIS PERSONAL ASSISTANT</p>
-          <h1>What are we working on?</h1>
-          <p class="muted intro-copy">Use the built-in offline brain by default. Optional Gemini conversation can be enabled in server settings for more open-ended replies.</p>
-          <p class="composer-note">Privacy: chats stay temporary in server memory for up to one hour of inactivity and disappear on sign-out or server restart. JARVIS saves only notes you explicitly ask it to remember. Relevant current questions can use live, cited web research when enabled; web results are not saved automatically.</p>
-          <div class="prompt-grid">
-            <button class="prompt-card" data-prompt="Help me make a realistic plan for today."><span>↗</span><strong>Plan my day</strong><small>Turn priorities into steps</small></button>
-            <button class="prompt-card" data-prompt="Explain a difficult concept step by step and give me a quick check question at the end."><span>◉</span><strong>Help me learn</strong><small>Understand, then practise</small></button>
-            <button class="prompt-card" data-prompt="Help me research this topic. Tell me what evidence and sources I should verify."><span>⌕</span><strong>Explore a topic</strong><small>Research with caution</small></button>
-          </div>
-        </div>
-        <div class="live-voice-panel" aria-label="Real-time voice conversation">
-          <div class="live-voice-controls">
-            <button type="button" id="live-voice-button" class="tool-button" aria-pressed="false">Start live voice</button>
-            <span id="live-voice-status" class="live-voice-status" role="status" aria-live="polite">Live voice off</span>
-          </div>
-          <p class="small muted">Live voice streams microphone audio to Google Gemini during this call. JARVIS does not save these transcripts in your chat history. Use Stop live voice to end microphone access.</p>
-          <div id="live-voice-transcript" class="live-voice-transcript" role="log" aria-live="polite" aria-relevant="additions text"></div>
-        </div>
-        <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
-        <form id="chat-form" class="composer">
-          <textarea id="chat-input" rows="1" maxlength="4000" placeholder="Message JARVIS…" aria-label="Message JARVIS"></textarea>
-          <div class="composer-bottom">
-            <div class="composer-tools">
-              <button type="button" id="voice-button" class="tool-button" title="Start voice input" aria-label="Start voice input" aria-pressed="false">🎙 <span>Speak</span></button>
-              <label class="voice-language-label" for="voice-language">Input
-                <select id="voice-language" aria-label="Voice input language">
-                  <option value="hi-IN" selected>Hindi</option>
-                  <option value="en-IN">English (India)</option>
-                </select>
-              </label>
-              <span id="voice-status" class="voice-status" role="status" aria-live="polite">Voice ready</span>
-              <button type="button" id="stop-speech-button" class="tool-button hidden" title="Stop spoken reply" aria-label="Stop spoken reply" disabled>Stop speaking</button>
-              <button type="button" id="clear-chat-button" class="tool-button" title="Clear temporary conversation">Clear chat</button>
-              <label class="speak-label"><input id="speak-toggle" type="checkbox"> Read replies aloud</label>
+        <div class="assistant-layout">
+          <div class="assistant-primary">
+            <div class="chat-intro">
+              <div class="hero-core">
+                <div class="orb" aria-hidden="true"><span>J</span></div>
+                <div class="core-caption"><span class="core-pulse"></span> J.A.R.V.I.S CORE</div>
+                <small>PERSONAL ASSISTANT SYSTEM</small>
+              </div>
+              <div class="hero-copy">
+                <p class="eyebrow">PERSONAL COMMAND INTERFACE / 01</p>
+                <h1>At your command.</h1>
+                <p class="muted intro-copy">Talk naturally, ask questions, research topics, plan your work, or open a JARVIS workspace. Choose text or voice whenever you are ready.</p>
+                <p class="intro-privacy">PRIVATE SESSION <span>•</span> CHAT HISTORY IS TEMPORARY <span>•</span> SAVED MEMORY REQUIRES YOUR ACTION</p>
+              </div>
+              <div class="intro-readouts" aria-label="JARVIS feature status">
+                <div class="readout"><span class="readout-symbol">◈</span><span><strong>LOCAL CORE</strong><small>AVAILABLE</small></span></div>
+                <div class="readout"><span class="readout-symbol">◉</span><span><strong>LIVE VOICE</strong><small>OPT-IN ONLY</small></span></div>
+                <div class="readout"><span class="readout-symbol">▣</span><span><strong>ANDROID LINK</strong><small>PAIR TO CONNECT</small></span></div>
+              </div>
+              <div class="prompt-grid">
+                <button class="prompt-card" data-prompt="Help me make a realistic plan for today."><span>↗</span><strong>Plan my day</strong><small>Turn priorities into steps</small></button>
+                <button class="prompt-card" data-prompt="Explain a difficult concept step by step and give me a quick check question at the end."><span>◉</span><strong>Help me learn</strong><small>Understand, then practise</small></button>
+                <button class="prompt-card" data-prompt="Help me research this topic. Tell me what evidence and sources I should verify."><span>⌕</span><strong>Explore a topic</strong><small>Research with caution</small></button>
+              </div>
             </div>
-            <button id="send-button" type="submit" class="primary send-button">Send <span aria-hidden="true">↑</span></button>
+            <div class="live-voice-panel" aria-label="Real-time voice conversation">
+              <div class="live-voice-controls">
+                <div class="live-voice-heading"><span class="core-pulse"></span><strong>NEURAL VOICE LINK</strong><small>REAL-TIME AUDIO</small></div>
+                <button type="button" id="live-voice-button" class="tool-button" aria-pressed="false">Start live voice</button>
+                <span id="live-voice-status" class="live-voice-status" role="status" aria-live="polite">Live voice off</span>
+              </div>
+              <p class="small muted">Live voice sends microphone audio to Google Gemini only while the session is active. Transcripts are not saved in JARVIS chat history. Stop live voice to end microphone access.</p>
+              <div id="live-voice-transcript" class="live-voice-transcript" role="log" aria-live="polite" aria-relevant="additions text"></div>
+            </div>
+            <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
+            <form id="chat-form" class="composer">
+              <textarea id="chat-input" rows="1" maxlength="4000" placeholder="Give JARVIS an instruction…" aria-label="Message JARVIS"></textarea>
+              <div class="composer-bottom">
+                <div class="composer-tools">
+                  <button type="button" id="voice-button" class="tool-button" title="Start voice input" aria-label="Start voice input" aria-pressed="false">🎙 <span>Speak</span></button>
+                  <label class="voice-language-label" for="voice-language">Input
+                    <select id="voice-language" aria-label="Voice input language">
+                      <option value="hi-IN" selected>Hindi</option>
+                      <option value="en-IN">English (India)</option>
+                    </select>
+                  </label>
+                  <span id="voice-status" class="voice-status" role="status" aria-live="polite">Voice ready</span>
+                  <button type="button" id="stop-speech-button" class="tool-button hidden" title="Stop spoken reply" aria-label="Stop spoken reply" disabled>Stop speaking</button>
+                  <button type="button" id="clear-chat-button" class="tool-button" title="Clear temporary conversation">Clear chat</button>
+                  <label class="speak-label"><input id="speak-toggle" type="checkbox"> Read replies aloud</label>
+                </div>
+                <button id="send-button" type="submit" class="primary send-button">Send <span aria-hidden="true">↑</span></button>
+              </div>
+              <p class="composer-note">JARVIS can make mistakes. Verify important information. Connected actions still require the relevant permission and confirmation.</p>
+            </form>
           </div>
-          <p class="composer-note">JARVIS can make mistakes. Verify important information. External actions are not enabled.</p>
-        </form>
+
+          <aside class="command-rail" aria-label="JARVIS command deck">
+            <section class="rail-card reactor-card">
+              <div class="rail-card-heading"><span>CORE TELEMETRY</span><span class="rail-live">● READY</span></div>
+              <div class="reactor-visual" aria-hidden="true">
+                <div class="reactor-ring ring-a"></div>
+                <div class="reactor-ring ring-b"></div>
+                <div class="reactor-ring ring-c"></div>
+                <div class="reactor-center">J</div>
+                <span class="reactor-node node-a"></span><span class="reactor-node node-b"></span>
+              </div>
+              <div class="reactor-caption"><strong>J.A.R.V.I.S</strong><span>PERSONAL AI INTERFACE</span></div>
+              <div class="rail-divider"></div>
+              <div class="core-facts"><span>OFFLINE CORE</span><strong>AVAILABLE</strong></div>
+              <div class="core-facts"><span>GEMINI LIVE</span><strong>SERVER OPT-IN</strong></div>
+              <div class="core-facts"><span>DEVICE BRIDGE</span><strong>PAIRING REQUIRED</strong></div>
+            </section>
+
+            <section class="rail-card quick-access-card">
+              <div class="rail-card-heading"><span>QUICK ACCESS</span><span>01—05</span></div>
+              <button type="button" class="rail-action" data-view-shortcut="devices"><span>▣</span><strong>Device Control</strong><small>Android companion</small><b>↗</b></button>
+              <button type="button" class="rail-action" data-view-shortcut="research"><span>⌕</span><strong>Research</strong><small>Grounded web discovery</small><b>↗</b></button>
+              <button type="button" class="rail-action" data-view-shortcut="tasks"><span>☷</span><strong>Tasks</strong><small>Personal task list</small><b>↗</b></button>
+              <button type="button" class="rail-action" data-view-shortcut="knowledge"><span>▤</span><strong>Knowledge</strong><small>Your saved library</small><b>↗</b></button>
+              <button type="button" class="rail-action" data-view-shortcut="memory"><span>◈</span><strong>Memory</strong><small>Review saved context</small><b>↗</b></button>
+            </section>
+
+            <section class="rail-note">
+              <span class="rail-note-icon">⌁</span>
+              <div><strong>CONTROL POLICY</strong><p>JARVIS does not silently send, publish, purchase, or change device settings. Supported external actions show a preview and require your confirmation.</p></div>
+            </section>
+          </aside>
+        </div>
       </section>
 
       <section id="view-memory" class="view content-view hidden">
