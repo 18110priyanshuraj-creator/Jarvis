@@ -1706,6 +1706,10 @@ document.querySelectorAll(".nav-item").forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
 });
 
+document.querySelectorAll("[data-view-shortcut]").forEach((button) => {
+  button.addEventListener("click", () => setView(button.dataset.viewShortcut));
+});
+
 document.querySelectorAll(".prompt-card").forEach((button) => {
   button.addEventListener("click", () => {
     $("#chat-input").value = button.dataset.prompt || "";
