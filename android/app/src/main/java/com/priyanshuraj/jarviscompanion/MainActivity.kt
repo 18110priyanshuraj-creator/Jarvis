@@ -21,6 +21,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.priyanshuraj.jarviscompanion.accessibility.JarvisAccessibilityService
+import com.priyanshuraj.jarviscompanion.LocalActivityLog
 import com.priyanshuraj.jarviscompanion.device.DeviceConnector
 import com.priyanshuraj.jarviscompanion.device.DeviceTokenStore
 import com.priyanshuraj.jarviscompanion.voice.LocalCommandProcessor
@@ -35,6 +36,7 @@ class MainActivity : Activity() {
     private lateinit var pairingCodeInput: EditText
     private lateinit var statusText: TextView
     private lateinit var permissionChecklistText: TextView
+    private lateinit var activityLogText: TextView
     private lateinit var voiceButton: Button
     private var speechRecognizer: SpeechRecognizer? = null
     private var textToSpeech: TextToSpeech? = null
@@ -65,6 +67,10 @@ class MainActivity : Activity() {
         }
 
         permissionChecklistText = TextView(this).apply {
+            textSize = 13f
+            setPadding(0, 8, 0, 12)
+        }
+        activityLogText = TextView(this).apply {
             textSize = 13f
             setPadding(0, 8, 0, 12)
         }
@@ -119,6 +125,25 @@ class MainActivity : Activity() {
             }
         }
 
+        val refreshActivityButton = Button(this).apply {
+            text = "Refresh activity history"
+            setOnClickListener { refreshActivityLog() }
+        }
+        val clearActivityButton = Button(this).apply {
+            text = "Clear activity history"
+            setOnClickListener {
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Clear local activity history?")
+                    .setMessage("This removes activity entries stored on this tablet. It does not affect pairing or the dashboard.")
+                    .setNegativeButton("Keep", null)
+                    .setPositiveButton("Clear") { _, _ ->
+                        LocalActivityLog.clear(this@MainActivity)
+                        refreshActivityLog()
+                    }
+                    .show()
+            }
+        }
+
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 24, 24, 24)
@@ -155,6 +180,19 @@ class MainActivity : Activity() {
             addView(requestNotificationsButton, matchWidth())
             addView(apkInstallHelpButton, matchWidth())
             addView(forgetButton, matchWidth())
+            addView(TextView(this@MainActivity).apply {
+                text = "RECENT ACTIVITY"
+                textSize = 18f
+                setPadding(0, 24, 0, 8)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "Stored only on this tablet: timestamps, event names and generic action categories. Voice transcripts, typed field contents and screen text are not saved."
+                textSize = 12f
+                setPadding(0, 0, 0, 8)
+            })
+            addView(activityLogText, matchWidth())
+            addView(refreshActivityButton, matchWidth())
+            addView(clearActivityButton, matchWidth())
             addView(statusText, matchWidth())
         }
         setContentView(ScrollView(this).apply { addView(content) })
@@ -175,6 +213,7 @@ class MainActivity : Activity() {
         super.onResume()
         refreshStatus()
         refreshPermissionChecklist()
+        refreshActivityLog()
         sendHeartbeat()
     }
 
@@ -184,6 +223,10 @@ class MainActivity : Activity() {
 
     private fun refreshPermissionChecklist() {
         permissionChecklistText.text = PermissionSetup.render(this)
+    }
+
+    private fun refreshActivityLog() {
+        activityLogText.text = LocalActivityLog.render(this)
     }
 
     private fun openAppSettings() {

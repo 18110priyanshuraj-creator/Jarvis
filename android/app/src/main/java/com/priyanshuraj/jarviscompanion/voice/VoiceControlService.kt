@@ -19,8 +19,10 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.priyanshuraj.jarviscompanion.R
+import com.priyanshuraj.jarviscompanion.LocalActivityLog
 import com.priyanshuraj.jarviscompanion.device.DeviceConnector
 import com.priyanshuraj.jarviscompanion.device.DeviceTokenStore
+import org.json.JSONObject
 import java.util.Locale
 import java.util.concurrent.Executors
 
@@ -36,6 +38,8 @@ class VoiceControlService : Service() {
     private var lastSpeechUtteranceId: String? = null
     private var requestGeneration = 0L
     private var cancelActivePlan: (() -> Unit)? = null
+    private var pendingPlan: JSONObject? = null
+    private var pendingPlanTimeout: Runnable? = null
     private var voiceStatus = "Microphone session is active. Speak a command or use Stop to end it."
 
     override fun onCreate() {
@@ -270,16 +274,47 @@ class VoiceControlService : Service() {
     }
 
     private fun handleTranscript(transcript: String) {
-        cancelActivePlan?.invoke()
-        cancelActivePlan = null
-        val requestId = ++requestGeneration
-
         if (LocalCommandProcessor.isStopCommand(transcript)) {
             invalidatePendingWork()
             stopAfterSpeech = true
             speak("Hands-free control is stopping.")
             return
         }
+
+        val waitingPlan = pendingPlan
+        if (waitingPlan != null) {
+            when (approvalDecision(transcript)) {
+                1 -> {
+                    cancelPendingPlan(null)
+                    val categories = try {
+                        AgentPlanRunner.actionKinds(waitingPlan)
+                    } catch (_: Exception) {
+                        "approved device actions"
+                    }
+                    LocalActivityLog.record(this, "Plan approved", categories)
+                    cancelActivePlan?.invoke()
+                    cancelActivePlan = AgentPlanRunner.execute(
+                        this@VoiceControlService,
+                        waitingPlan,
+                        mainHandler
+                    ) { result ->
+                        LocalActivityLog.record(this@VoiceControlService, "Execution ended", categories)
+                        cancelActivePlan = null
+                        if (running) speak(result)
+                    }
+                }
+                -1 -> {
+                    cancelPendingPlan("The user rejected the pending plan.")
+                    speak("Plan cancelled. No action was run.")
+                }
+                else -> speak("A plan is waiting for your decision. Say approve plan to run it, or cancel plan to discard it.")
+            }
+            return
+        }
+
+        cancelActivePlan?.invoke()
+        cancelActivePlan = null
+        val requestId = ++requestGeneration
 
         val localResponse = LocalCommandProcessor.handle(this, transcript, allowUiActions = true)
         if (localResponse != null) {
@@ -301,16 +336,48 @@ class VoiceControlService : Service() {
                 when (plan.optString("mode", "device_action")) {
                     "device_action" -> mainHandler.post {
                         if (running && requestId == requestGeneration) {
-                            cancelActivePlan?.invoke()
-                            cancelActivePlan = AgentPlanRunner.execute(
-                                this@VoiceControlService,
-                                plan,
-                                mainHandler
-                            ) { result ->
-                                if (requestId == requestGeneration) {
-                                    cancelActivePlan = null
-                                    if (running) speak(result)
+                            try {
+                                if (!ttsReady || textToSpeech == null) {
+                                    LocalActivityLog.record(
+                                        this@VoiceControlService,
+                                        "Plan blocked",
+                                        "Speech preview unavailable; no device action was started."
+                                    )
+                                    updateVoiceStatus("A device plan was received, but speech preview is unavailable. No action was run.")
+                                    return@post
                                 }
+
+                                val preview = AgentPlanRunner.describe(plan)
+                                val categories = AgentPlanRunner.actionKinds(plan)
+                                pendingPlan = plan
+                                LocalActivityLog.record(this@VoiceControlService, "Plan ready", categories)
+
+                                val timeout = Runnable {
+                                    if (pendingPlan === plan) {
+                                        pendingPlan = null
+                                        pendingPlanTimeout = null
+                                        LocalActivityLog.record(
+                                            this@VoiceControlService,
+                                            "Plan expired",
+                                            "No approval received within one minute; no actions were run."
+                                        )
+                                        if (running) speak("The plan expired without approval. Nothing was executed.")
+                                    }
+                                }
+                                pendingPlanTimeout = timeout
+                                mainHandler.postDelayed(timeout, PLAN_APPROVAL_TIMEOUT_MS)
+                                speak(
+                                    "Plan ready for review. " + preview +
+                                        ". Say approve plan to execute these steps, or cancel plan to discard them. " +
+                                        "Nothing will happen until you approve."
+                                )
+                            } catch (_: Exception) {
+                                LocalActivityLog.record(
+                                    this@VoiceControlService,
+                                    "Plan blocked",
+                                    "On-device plan validation failed; no actions were run."
+                                )
+                                speak("I received a plan that failed the on-device safety check. No action was run.")
                             }
                         }
                     }
@@ -347,11 +414,47 @@ class VoiceControlService : Service() {
         }
     }
 
+    /** 1 = approve, -1 = cancel, 0 = no explicit decision. */
+    private fun approvalDecision(transcript: String): Int {
+        val normalized = transcript.lowercase(Locale.ROOT)
+            .replace(Regex("[^\\p{L}\\p{N} ]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        val approve = setOf(
+            "approve plan", "approve", "run plan", "yes approve", "haan approve",
+            "plan chalao", "haan plan chalao", "haan chalao", "manzoor", "manzoor hai",
+            "अप्रूव प्लान", "प्लान अप्रूव करो", "प्लान चलाओ", "हाँ प्लान चलाओ",
+            "हां प्लान चलाओ", "हाँ चलाओ", "हां चलाओ", "मंजूर है", "मंज़ूर है"
+        )
+        val cancel = setOf(
+            "cancel plan", "reject plan", "cancel", "do not run", "dont run",
+            "mat chalao", "nahi chalao", "plan cancel karo", "rehne do",
+            "कैंसल प्लान", "प्लान कैंसल करो", "प्लान रद्द करो", "रद्द करो",
+            "मत चलाओ", "नहीं चलाओ", "नही चलाओ", "रहने दो", "नहीं", "नही"
+        )
+        return when (normalized) {
+            in approve -> 1
+            in cancel -> -1
+            else -> 0
+        }
+    }
+
+    private fun cancelPendingPlan(reason: String?) {
+        pendingPlanTimeout?.let(mainHandler::removeCallbacks)
+        pendingPlanTimeout = null
+        val hadPendingPlan = pendingPlan != null
+        pendingPlan = null
+        if (hadPendingPlan && reason != null) {
+            LocalActivityLog.record(this, "Plan cancelled", reason)
+        }
+    }
+
     /** Invalidate network responses and queued device actions from the previous voice turn. */
     private fun invalidatePendingWork() {
         requestGeneration += 1
         cancelActivePlan?.invoke()
         cancelActivePlan = null
+        cancelPendingPlan("Pending plan cleared when voice work was interrupted or stopped.")
     }
 
     private fun speak(text: String) {
@@ -425,5 +528,6 @@ class VoiceControlService : Service() {
         private const val NOTIFICATION_ID = 7251
         private const val STOP_REQUEST_CODE = 7252
         private const val INTERRUPT_REQUEST_CODE = 7253
+        private const val PLAN_APPROVAL_TIMEOUT_MS = 60_000L
     }
 }
