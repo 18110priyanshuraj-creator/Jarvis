@@ -1913,7 +1913,10 @@ app.use("/api/devices", createDevicesRouter({ getStore: () => store, saveStore, 
 
 app.use("/api", (_req, res) => res.status(404).json({ error: "API route not found." }));
 app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"] }));
-app.get("*", (_req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+app.use((req, res, next) => {
+  if (req.method !== "GET") return next();
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
 
 app.use((error, _req, res, _next) => {
   console.error("Unhandled request error:", error?.message || "unknown");
