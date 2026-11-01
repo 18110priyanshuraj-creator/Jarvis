@@ -315,6 +315,18 @@ JARVIS_PAGE_READ_MAX_CHARS=30000
 
 The read controls appear only on live search source cards after page reading is enabled. Tokens expire after 15 minutes and are bound to the login session.
 
+## Source-Based Answer System (Phase 16)
+
+- The Research screen lets you select two to five recent search sources and request a source-based answer.
+- The backend accepts only short-lived, session-bound Phase 15 page-read tokens; it never accepts arbitrary URLs from the browser.
+- Selected pages are retrieved with the Phase 15 safe reader. At least two pages must be read successfully before synthesis can run.
+- The provider-independent AI adapter receives bounded excerpts and returns structured findings, agreements, differences and uncertainties with source numbers.
+- The server discards unknown source numbers and maps every accepted citation to the exact HTTPS page that was read.
+- If the configured AI provider is missing or unavailable, JARVIS shows the extracted source excerpts and clearly states that no combined AI answer was generated.
+- Weak or missing evidence is surfaced as uncertainty. If no validated findings remain, JARVIS does not invent an answer.
+- Nothing is automatically saved to Memory or Knowledge, and no model weights are trained.
+- Full implementation and verification details: `docs/PHASE16_SOURCE_BASED_ANSWERS.md`.
+
 ## Built-in offline mode
 
 The offline brain is not a general-purpose language model. It contains a safe arithmetic parser, deterministic rules and a curated knowledge pack for selected topics such as Newton's laws, units and dimensions, mole concept, sets, circular motion and Ohm's law. It cannot answer arbitrary questions. Live web retrieval requires a trusted SearXNG endpoint configured on the server.

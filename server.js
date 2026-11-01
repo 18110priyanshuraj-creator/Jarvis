@@ -12,8 +12,9 @@ import { createDevicesRouter } from "./routes/devices.js";
 import { createRuntimeStore } from "./services/runtime-store.js";
 import { createAgentPlan } from "./services/agent-planner.js";
 import { createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
-import { createWebResearch, getWebResearchStatus, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
+import { createWebResearch, getWebResearchStatus, isRestrictedResearchQuery, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
 import { createPageReadToken, createWebPageRead, getWebPageReadStatus, verifyPageReadToken } from "./services/web-page-reader.js";
+import { createSourceBasedAnswer, SOURCE_ANSWER_LIMITS } from "./services/source-answer.js";
 import { getAIProviderStatus } from "./services/ai-provider.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, searchMemories } from "./services/memory.js";
@@ -90,6 +91,13 @@ const pageReadLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Full-page reading rate limit reached. Please try again later." }
+});
+const sourceAnswerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 6,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Source-based answer limit reached. Please try again later." }
 });
 const integrationTestLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -578,13 +586,14 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
 app.get("/api/health", (_req, res) => {
   const aiRuntime = getAIProviderStatus();
   const searchRuntime = getWebResearchStatus();
+  const pageReaderRuntime = getWebPageReadStatus();
   const conversationAIEnabled = aiRuntime.conversationEnabled;
   const plannerAIEnabled = aiRuntime.plannerEnabled;
   const webResearchEnabled = searchRuntime.enabled;
   res.json({
     ok: true,
     service: "jarvis",
-    version: "1.8.0-independent-web-search",
+    version: "1.9.0-source-based-answers",
     brain: conversationAIEnabled ? "online-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
@@ -606,6 +615,20 @@ app.get("/api/health", (_req, res) => {
       maxResults: searchRuntime.maxResults,
       timeoutMs: searchRuntime.timeoutMs,
       retryAttempts: searchRuntime.retryAttempts
+    },
+    pageReader: {
+      enabled: pageReaderRuntime.enabled,
+      timeoutMs: pageReaderRuntime.timeoutMs,
+      maxBytes: pageReaderRuntime.maxBytes,
+      maxChars: pageReaderRuntime.maxChars,
+      allowedContentTypes: pageReaderRuntime.allowedContentTypes
+    },
+    sourceAnswer: {
+      enabled: pageReaderRuntime.enabled && searchRuntime.enabled,
+      minimumSources: SOURCE_ANSWER_LIMITS.minimumSources,
+      maximumSources: SOURCE_ANSWER_LIMITS.maximumSources,
+      requiresSessionBoundPageTokens: true,
+      requiresLiveSearch: true
     },
     runtimeStorage: runtimeStore.mode()
   });
@@ -1543,6 +1566,32 @@ app.post("/api/research/read", requireAuth, pageReadLimiter, async (req, res) =>
       : clientErrors.includes(code) ? 400 : 502;
     console.error("Full-page read failed:", code);
     res.status(status).json({ error: error?.message || "The source webpage could not be read safely." });
+  }
+});
+
+app.post("/api/research/answer", requireAuth, sourceAnswerLimiter, async (req, res) => {
+  if (!getWebPageReadStatus().enabled) {
+    return res.status(503).json({ error: "Full-page reading is disabled. Configure Phase 15 page-reading settings on the server." });
+  }
+  const question = cleanText(req.body?.question, 800);
+  const readTokens = Array.isArray(req.body?.readTokens) ? req.body.readTokens.slice(0, 6) : [];
+  if (!question) return res.status(400).json({ error: "Enter a research question first." });
+  if (isRestrictedResearchQuery(question)) {
+    return res.status(400).json({ error: "I can't provide source-based research for this restricted request." });
+  }
+  try {
+    const result = await createSourceBasedAnswer(readTokens, {
+      question,
+      sessionToken: req.sessionToken,
+      secret: PASSWORD
+    });
+    res.json(result);
+  } catch (error) {
+    const code = error?.code || "SOURCE_ANSWER_FAILED";
+    const status = code === "SOURCE_ANSWER_INSUFFICIENT_PAGES" ? 422
+      : code.startsWith("SOURCE_ANSWER_") ? 400 : 502;
+    console.error("Source-based answer failed:", code);
+    res.status(status).json({ error: error?.message || "JARVIS could not build a source-based answer." });
   }
 });
 
