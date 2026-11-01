@@ -14,7 +14,7 @@ import { createAgentPlan } from "./services/agent-planner.js";
 import { createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
 import { createWebResearch, getWebResearchStatus, isRestrictedResearchQuery, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
 import { createPageReadToken, createWebPageRead, getWebPageReadStatus, verifyPageReadToken } from "./services/web-page-reader.js";
-import { createSourceBasedAnswer } from "./services/source-answer.js";
+import { createSourceBasedAnswer, SOURCE_ANSWER_LIMITS } from "./services/source-answer.js";
 import { getAIProviderStatus } from "./services/ai-provider.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, searchMemories } from "./services/memory.js";
@@ -586,13 +586,14 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
 app.get("/api/health", (_req, res) => {
   const aiRuntime = getAIProviderStatus();
   const searchRuntime = getWebResearchStatus();
+  const pageReaderRuntime = getWebPageReadStatus();
   const conversationAIEnabled = aiRuntime.conversationEnabled;
   const plannerAIEnabled = aiRuntime.plannerEnabled;
   const webResearchEnabled = searchRuntime.enabled;
   res.json({
     ok: true,
     service: "jarvis",
-    version: "1.8.0-independent-web-search",
+    version: "1.9.0-source-based-answers",
     brain: conversationAIEnabled ? "online-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
@@ -614,6 +615,19 @@ app.get("/api/health", (_req, res) => {
       maxResults: searchRuntime.maxResults,
       timeoutMs: searchRuntime.timeoutMs,
       retryAttempts: searchRuntime.retryAttempts
+    },
+    pageReader: {
+      enabled: pageReaderRuntime.enabled,
+      timeoutMs: pageReaderRuntime.timeoutMs,
+      maxBytes: pageReaderRuntime.maxBytes,
+      maxChars: pageReaderRuntime.maxChars,
+      allowedContentTypes: pageReaderRuntime.allowedContentTypes
+    },
+    sourceAnswer: {
+      enabled: pageReaderRuntime.enabled,
+      minimumSources: SOURCE_ANSWER_LIMITS.minimumSources,
+      maximumSources: SOURCE_ANSWER_LIMITS.maximumSources,
+      requiresSessionBoundPageTokens: true
     },
     runtimeStorage: runtimeStore.mode()
   });
