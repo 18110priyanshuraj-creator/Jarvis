@@ -153,10 +153,10 @@ export function normalizeKnowledgeItem(input = {}) {
   };
 }
 
-export function searchKnowledgeItems(items, query = "", limit = 100) {
+export function searchKnowledgeItems(items, query = "", limit = KNOWLEDGE_LIMITS.items) {
   const records = Array.isArray(items) ? items : [];
   const cleanQuery = cleanText(query, 300).normalize("NFKC").toLocaleLowerCase();
-  const boundedLimit = Number.isInteger(limit) ? Math.min(100, Math.max(1, limit)) : 20;
+  const boundedLimit = Number.isInteger(limit) ? Math.min(KNOWLEDGE_LIMITS.items, Math.max(1, limit)) : 20;
   if (!cleanQuery) {
     return records.slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, boundedLimit);
   }
