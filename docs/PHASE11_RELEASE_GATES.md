@@ -4,6 +4,12 @@
 
 Make JARVIS changes easier to verify before they reach the production branch. This phase is deliberately additive: it does not deploy, change production environment variables, or modify the live database.
 
+## Phase 10 dependency — merged
+
+Phase 10 has been merged into `main` in commit `60363f1fe7088424a5c62b80aaad9803f7e36d89`. Phase 11 now targets `main` directly; this is a stacked change no longer dependent on an open Phase 10 branch.
+
+The Phase 10 runtime table/index migration and `jarvis_app_state.revision` migration were successfully exercised on the isolated Neon branch `phase10-preview-validation`. The source-based preview build completed and is READY. Its HTTP health route and multi-instance/OAuth runtime checks remain unverified because the Vercel preview access helper could not retrieve that deployment. Production Neon and production Vercel were not changed.
+
 ## Automated checks
 
 The consolidated `.github/workflows/check.yml` workflow runs for pushes to `main` and `feat/**`, pull requests targeting `main` or a feature branch, and manual workflow dispatch.
@@ -34,13 +40,12 @@ Dependabot checks npm dependencies, Android Gradle dependencies, and GitHub Acti
 
 ## Required release sequence
 
-1. Review and verify the Phase 10 shared-runtime change on a non-production preview environment, including Neon schema creation and session/OAuth behavior across separate server instances.
-2. Merge Phase 10 only after its review and preview checks are complete.
-3. Retarget the Phase 11 pull request to `main` after Phase 10 is merged.
-4. Enable branch protection/repository ruleset required checks, then require the Node.js tests, production dependency audit, and Android build/APK verification to pass.
-5. Verify the resulting Vercel preview, authentication, database connectivity, Google OAuth callback, and Android Companion pairing before any production promotion.
-6. Promote to production only as a deliberate, separately reviewed action.
+1. Phase 10 is merged to `main` (completed).
+2. Run the final Phase 11 Node.js, dependency audit and Android build/APK checks against `main`.
+3. Enable branch protection/repository ruleset required checks, then require the Node.js tests, production dependency audit, and Android build/APK verification to pass.
+4. Verify the resulting Vercel preview, authentication, database connectivity, Google OAuth callback, and Android Companion pairing before any production promotion.
+5. Promote to production only as a deliberate, separately reviewed action.
 
 ## Manual checks still required
 
-CI can build the Android APK, but it cannot establish that the microphone, speech recognition, notification controls, and pairing work on a physical device. Those checks must be performed on a real Android device before release.
+CI can build the Android APK, but it cannot establish that the microphone, speech recognition, notification controls, and pairing work on a physical device. Those checks must be performed on a real Android device. Google OAuth must also be tested once its OAuth client credentials and token-encryption key are available in the preview environment.
