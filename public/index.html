@@ -44,6 +44,7 @@
         <button class="nav-item" data-view="experience"><span class="nav-icon">✧</span> Experience</button>
         <button class="nav-item" data-view="workflows"><span class="nav-icon">↻</span> Workflows</button>
         <button class="nav-item" data-view="integrations"><span class="nav-icon">⛓</span> Connections</button>
+        <button class="nav-item" data-view="actions"><span class="nav-icon">✓</span> Action Center</button>
       </nav>
       <div class="sidebar-foot">
         <div class="connection"><span class="status-dot"></span><span><strong>Private workspace</strong><small>Session protected</small></span></div>
@@ -301,6 +302,52 @@
         <div id="workflow-list" class="item-list"></div>
         <div class="list-heading"><h2>Execution history</h2><span class="muted small">Step results and review checkpoints</span></div>
         <div id="workflow-runs" class="item-list"></div>
+      </section>
+
+      <section id="view-actions" class="view content-view hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">CONTROLLED EXTERNAL ACTIONS</p>
+            <h1>Action Center</h1>
+            <p class="muted">Prepare an external action, review its exact destination and content, then confirm it separately.</p>
+          </div>
+        </div>
+        <div class="workflow-safety action-safety">
+          <strong>Preview first. Confirm only what you intend.</strong>
+          <p>Every preview expires after 15 minutes. Sending a Telegram message requires an exact confirmation phrase and a server allow-listed numeric chat ID. Creating a Google Doc requires a separate drive.file permission and an exact confirmation phrase. Actions are never triggered just by creating a preview or running a workflow.</p>
+          <p>Do not include passwords, API keys, private information or other secrets in messages or documents. A failed network request may have reached the provider; check the provider before attempting the same action again.</p>
+        </div>
+        <div id="action-capability-summary" class="action-capability-summary"></div>
+        <form id="external-action-form" class="form-card">
+          <h2>Create an action preview</h2>
+          <label for="external-action-type">Action</label>
+          <select id="external-action-type">
+            <option value="telegram_send_message">Prepare Telegram message</option>
+            <option value="google_drive_create_doc">Prepare Google Doc</option>
+          </select>
+          <div id="action-telegram-fields">
+            <label for="action-telegram-chat">Allowed Telegram destination</label>
+            <select id="action-telegram-chat" required></select>
+            <label for="action-telegram-text">Message text</label>
+            <textarea id="action-telegram-text" rows="4" maxlength="3000" placeholder="Write the exact text to preview. Nothing will be sent yet."></textarea>
+          </div>
+          <div id="action-google-fields" class="hidden">
+            <label for="action-google-title">Google Doc title</label>
+            <input id="action-google-title" maxlength="100" placeholder="Example: JEE Physics revision notes">
+            <label for="action-google-content">Document content</label>
+            <textarea id="action-google-content" rows="7" maxlength="12000" placeholder="Write the content to save in a new Google Doc. Nothing will be created yet."></textarea>
+            <button type="button" class="item-action" id="action-google-permission">Enable Google Docs creation permission</button>
+          </div>
+          <p class="small muted">A preview is saved in JARVIS only. No external request happens until you type the confirmation phrase on that preview.</p>
+          <div class="form-row">
+            <button type="submit" class="primary" id="external-action-submit">Create message preview</button>
+          </div>
+        </form>
+        <div class="list-heading">
+          <h2>Action history</h2>
+          <span class="muted small">Pending · completed · failed · cancelled</span>
+        </div>
+        <div id="external-action-list" class="item-list"></div>
       </section>
 
       <section id="view-integrations" class="view content-view hidden">
