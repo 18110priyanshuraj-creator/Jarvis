@@ -872,7 +872,7 @@ function renderIntegrations() {
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.className = "item-action";
-    toggle.textContent = !provider.configured ? "Add credential first" : provider.enabled ? "Disconnect" : "Enable";
+    toggle.textContent = !provider.configured ? "Add credential first" : provider.enabled ? "Disable in JARVIS" : "Enable in JARVIS";
     toggle.disabled = !provider.configured;
     toggle.addEventListener("click", async () => {
       toggle.disabled = true;
