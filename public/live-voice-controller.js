@@ -96,7 +96,8 @@ function errorCode(error) {
   if (error?.name === "NotAllowedError" || error?.name === "PermissionDeniedError") return "microphone-denied";
   if (error?.name === "NotFoundError" || error?.name === "DevicesNotFoundError") return "microphone-missing";
   if (error?.name === "NotReadableError") return "microphone-busy";
-  if (error?.code === "LIVE_VOICE_NOT_CONFIGURED") return "not-configured";
+  if (error?.code === "LIVE_VOICE_NOT_CONFIGURED" || /live voice is disabled or not configured/i.test(String(error?.message || ""))) return "not-configured";
+  if (/start limit reached/i.test(String(error?.message || ""))) return "rate-limited";
   return "connection-failed";
 }
 
@@ -285,14 +286,17 @@ export function createLiveVoiceController(options = {}) {
       if (serverContent.outputTranscription?.text) {
         onTranscript({ role: "assistant", text: serverContent.outputTranscription.text, interim: false });
       }
-      if (serverContent.interrupted) {
+      const wasInterrupted = Boolean(serverContent.interrupted);
+      if (wasInterrupted) {
         stopPlayback();
         setState("listening");
       }
       const parts = Array.isArray(serverContent.modelTurn?.parts) ? serverContent.modelTurn.parts : [];
-      for (const part of parts) {
-        const audio = part?.inlineData?.data || part?.inline_data?.data;
-        if (typeof audio === "string") queuePlayback(audio, token);
+      if (!wasInterrupted) {
+        for (const part of parts) {
+          const audio = part?.inlineData?.data || part?.inline_data?.data;
+          if (typeof audio === "string") queuePlayback(audio, token);
+        }
       }
       if (serverContent.turnComplete && playbackSources.size === 0 && ready) {
         setState("listening");
@@ -336,6 +340,12 @@ export function createLiveVoiceController(options = {}) {
           noiseSuppression: true,
           autoGainControl: true
         }
+      }).then((acquiredStream) => {
+        if (token !== generation) {
+          stopTracks(acquiredStream);
+          return null;
+        }
+        return acquiredStream;
       });
 
       const [, credentials, acquiredStream] = await Promise.all([
@@ -347,6 +357,7 @@ export function createLiveVoiceController(options = {}) {
         stopTracks(acquiredStream);
         return false;
       }
+      if (!acquiredStream) return false;
       if (!credentials || typeof credentials.token !== "string" || !credentials.token ||
           typeof credentials.model !== "string" || !credentials.model) {
         stopTracks(acquiredStream);
