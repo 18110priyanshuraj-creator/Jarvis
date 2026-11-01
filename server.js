@@ -945,7 +945,7 @@ app.post("/api/integrations/:provider/disable", requireAuth, async (req, res) =>
     store.disabledIntegrations.push(provider);
     await saveStore();
   }
-  res.json({ ok: true, providers: getIntegrationCatalog(process.env, store.disabledIntegrations) });
+  res.json({ ok: true, ...integrationCatalogResponse() });
 });
 
 app.post("/api/integrations/:provider/enable", requireAuth, async (req, res) => {
@@ -953,7 +953,7 @@ app.post("/api/integrations/:provider/enable", requireAuth, async (req, res) => 
   if (!INTEGRATION_PROVIDER_IDS.includes(provider)) return res.status(404).json({ error: "Integration provider not found." });
   store.disabledIntegrations = store.disabledIntegrations.filter((item) => item !== provider);
   await saveStore();
-  res.json({ ok: true, providers: getIntegrationCatalog(process.env, store.disabledIntegrations) });
+  res.json({ ok: true, ...integrationCatalogResponse() });
 });
 
 app.get("/api/workflows", requireAuth, (_req, res) => {
