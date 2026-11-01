@@ -902,6 +902,15 @@ function renderIntegrations() {
       }
     });
     actions.append(test, toggle);
+    const connect = document.createElement("button");
+    connect.type = "button";
+    connect.textContent = "Connect Google Drive";
+    connect.disabled = !provider.enabled;
+    connect.addEventListener("click", async () => {
+      const data = await api("/api/integrations/google_drive/oauth/start", { method: "POST", body: JSON.stringify({}) });
+      window.location.href = data.authorizationUrl;
+    });
+    if (provider.id === "google_drive" && state.googleDriveOAuth?.canConnect) actions.append(connect);
     row.append(main, actions);
     target.append(row);
 
