@@ -16,7 +16,7 @@ import { createWebResearch, getWebResearchStatus, isRestrictedResearchQuery, isW
 import { createPageReadToken, createWebPageRead, getWebPageReadStatus, verifyPageReadToken } from "./services/web-page-reader.js";
 import { createSourceBasedAnswer, SOURCE_ANSWER_LIMITS } from "./services/source-answer.js";
 import { getAIProviderStatus } from "./services/ai-provider.js";
-import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
+import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, mergeDuplicateKnowledge, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, searchMemories } from "./services/memory.js";
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeSkill, pauseSkill, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
@@ -593,7 +593,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     service: "jarvis",
-    version: "1.9.0-source-based-answers",
+    version: "1.10.0-persistent-knowledge",
     brain: conversationAIEnabled ? "online-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
@@ -629,6 +629,15 @@ app.get("/api/health", (_req, res) => {
       maximumSources: SOURCE_ANSWER_LIMITS.maximumSources,
       requiresSessionBoundPageTokens: true,
       requiresLiveSearch: true
+    },
+    knowledgePolicy: {
+      persistent: true,
+      storage: process.env.DATABASE_URL ? "neon-app-state" : "local-json-file",
+      webResearchRequiresUserReview: true,
+      unreviewedResearchInAssistantContext: false,
+      rejectedResearchInAssistantContext: false,
+      automaticSaving: false,
+      maxItems: KNOWLEDGE_LIMITS.items
     },
     runtimeStorage: runtimeStore.mode()
   });
@@ -737,8 +746,8 @@ app.post("/api/chat", requireAuth, async (req, res) => {
 app.get("/api/memories", requireAuth, (req, res) => {
   const query = cleanText(req.query.q, 300);
   const category = cleanText(req.query.category, 30);
-  const requestedLimit = Number.parseInt(String(req.query.limit || "100"), 10);
-  const limit = Number.isFinite(requestedLimit) ? Math.min(100, Math.max(1, requestedLimit)) : 100;
+  const requestedLimit = Number.parseInt(String(req.query.limit || String(KNOWLEDGE_LIMITS.items)), 10);
+  const limit = Number.isFinite(requestedLimit) ? Math.min(KNOWLEDGE_LIMITS.items, Math.max(1, requestedLimit)) : KNOWLEDGE_LIMITS.items;
   const items = searchMemories(store.memories, query, category, limit);
   res.json({ query, category, total: store.memories.length, count: items.length, items });
 });
@@ -1465,10 +1474,30 @@ app.get("/api/search", requireAuth, (req, res) => {
 
 app.get("/api/knowledge", requireAuth, (req, res) => {
   const query = cleanText(req.query.q, 300);
+  const review = cleanText(req.query.review, 20) || "all";
+  const allowedReviews = new Set(["all", "trusted", "unreviewed", "rejected"]);
+  if (!allowedReviews.has(review)) return res.status(400).json({ error: "Choose a valid knowledge review filter." });
+
   const requestedLimit = Number.parseInt(String(req.query.limit || "100"), 10);
   const limit = Number.isFinite(requestedLimit) ? Math.min(100, Math.max(1, requestedLimit)) : 100;
-  const items = searchKnowledgeItems(store.knowledge, query, limit);
-  res.json({ query, total: store.knowledge.length, count: items.length, items });
+  const counts = store.knowledge.reduce((summary, item) => {
+    summary.total += 1;
+    if (item.reviewStatus === "user-authored" || item.reviewStatus === "user-reviewed") summary.trusted += 1;
+    if (item.reviewStatus === "unreviewed") summary.unreviewed += 1;
+    if (item.reviewStatus === "rejected") summary.rejected += 1;
+    return summary;
+  }, { total: 0, trusted: 0, unreviewed: 0, rejected: 0 });
+
+  const filtered = review === "trusted"
+    ? store.knowledge.filter((item) => item.reviewStatus === "user-authored" || item.reviewStatus === "user-reviewed")
+    : review === "unreviewed"
+      ? store.knowledge.filter((item) => item.reviewStatus === "unreviewed")
+      : review === "rejected"
+        ? store.knowledge.filter((item) => item.reviewStatus === "rejected")
+        : store.knowledge;
+
+  const items = searchKnowledgeItems(filtered, query, limit);
+  res.json({ query, review, total: counts.total, count: items.length, reviewSummary: counts, items });
 });
 
 app.post("/api/knowledge", requireAuth, async (req, res) => {
@@ -1479,8 +1508,22 @@ app.post("/api/knowledge", requireAuth, async (req, res) => {
     return res.status(400).json({ error: error.message || "Knowledge entry is invalid." });
   }
 
-  const duplicate = store.knowledge.find((existing) => isDuplicateKnowledge([existing], item));
-  if (duplicate) return res.status(200).json({ item: duplicate, duplicate: true });
+  const duplicateIndex = store.knowledge.findIndex((existing) => isDuplicateKnowledge([existing], item));
+  if (duplicateIndex >= 0) {
+    const duplicate = store.knowledge[duplicateIndex];
+    let merged;
+    try {
+      merged = mergeDuplicateKnowledge(duplicate, item);
+    } catch {
+      return res.status(409).json({ error: "The duplicate knowledge entry could not be safely merged." });
+    }
+    const changed = JSON.stringify(merged) !== JSON.stringify(duplicate);
+    if (changed) {
+      store.knowledge[duplicateIndex] = merged;
+      await saveStore();
+    }
+    return res.status(200).json({ item: merged, duplicate: true, merged: changed });
+  }
 
   if (store.knowledge.length >= KNOWLEDGE_LIMITS.items) {
     return res.status(409).json({ error: "Knowledge library is full. Delete an old entry before adding another." });
@@ -1494,14 +1537,23 @@ app.post("/api/knowledge", requireAuth, async (req, res) => {
 app.patch("/api/knowledge/:id", requireAuth, async (req, res) => {
   const item = store.knowledge.find((entry) => entry.id === req.params.id);
   if (!item) return res.status(404).json({ error: "Knowledge entry not found." });
-  if (item.sourceKind !== "web-research" || req.body?.reviewStatus !== "user-reviewed") {
-    return res.status(400).json({ error: "Only saved web research can be marked as reviewed after you check its sources." });
+  if (item.sourceKind !== "web-research") {
+    return res.status(400).json({ error: "Only saved web research has a review workflow. Your own notes remain user-authored." });
   }
 
+  const requestedStatus = cleanText(req.body?.reviewStatus, 30);
+  if (!["user-reviewed", "unreviewed", "rejected"].includes(requestedStatus)) {
+    return res.status(400).json({ error: "Choose reviewed, needs review, or rejected." });
+  }
+
+  const now = new Date().toISOString();
   const updated = normalizeKnowledgeItem({
     ...item,
-    reviewStatus: "user-reviewed",
-    updatedAt: new Date().toISOString()
+    reviewStatus: requestedStatus,
+    reviewNote: requestedStatus === "rejected" ? cleanText(req.body?.reviewNote, KNOWLEDGE_LIMITS.reviewNote) : "",
+    reviewedAt: requestedStatus === "user-reviewed" ? now : null,
+    rejectedAt: requestedStatus === "rejected" ? now : null,
+    updatedAt: now
   });
   store.knowledge = store.knowledge.map((entry) => entry.id === item.id ? updated : entry);
   await saveStore();

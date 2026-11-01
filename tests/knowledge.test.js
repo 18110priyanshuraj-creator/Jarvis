@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildKnowledgeContext,
   isDuplicateKnowledge,
+  mergeDuplicateKnowledge,
   normalizeKnowledgeItem,
   searchKnowledgeItems
 } from "../services/knowledge.js";
@@ -72,21 +73,130 @@ test("knowledge search ranks title and tags above body-only matches", () => {
   assert.equal(results.length, 2);
 });
 
-test("knowledge context includes source and review metadata for relevant records only", () => {
-  const solar = normalizeKnowledgeItem({
-    title: "Solar energy",
+test("knowledge context only includes user-authored notes and web research the user reviewed", () => {
+  const unreviewed = normalizeKnowledgeItem({
+    title: "Solar energy unreviewed",
     content: "Photovoltaic cells produce electricity from light.",
     sourceKind: "web-research",
     sources: [{ title: "Energy guide", url: "https://energy.example/solar" }]
   });
-  const unrelated = normalizeKnowledgeItem({
+  const reviewed = normalizeKnowledgeItem({
+    title: "Solar energy reviewed",
+    content: "Photovoltaic cells convert light into electricity.",
+    sourceKind: "web-research",
+    reviewStatus: "user-reviewed",
+    reviewedAt: "2026-10-30T10:00:00.000Z",
+    capturedAt: "2026-10-29T10:00:00.000Z",
+    sources: [{
+      title: "Energy guide",
+      url: "https://energy.example/solar-reviewed",
+      publishedAt: "2026-10-20",
+      retrievedAt: "2026-10-29T09:00:00.000Z"
+    }]
+  });
+  const rejected = normalizeKnowledgeItem({
+    title: "Solar misinformation",
+    content: "This untrusted note should never enter assistant context.",
+    sourceKind: "web-research",
+    reviewStatus: "rejected",
+    reviewNote: "The source does not support the claim."
+  });
+  const manual = normalizeKnowledgeItem({
     title: "Mole concept",
     content: "Amount in moles equals mass divided by molar mass."
   });
-  const context = buildKnowledgeContext([solar, unrelated], "photovoltaic solar", 2);
+
+  const context = buildKnowledgeContext([unreviewed, reviewed, rejected, manual], "photovoltaic solar", 5);
   assert.equal(context.length, 1);
-  assert.equal(context[0].reviewStatus, "unreviewed");
-  assert.equal(context[0].sources[0].url, "https://energy.example/solar");
+  assert.equal(context[0].reviewStatus, "user-reviewed");
+  assert.equal(context[0].sources[0].url, "https://energy.example/solar-reviewed");
+  assert.equal(context[0].capturedAt, "2026-10-29T10:00:00.000Z");
+  assert.equal(context[0].sources[0].publishedAt, "2026-10-20T00:00:00.000Z");
+  assert.equal(context[0].sources[0].retrievedAt, "2026-10-29T09:00:00.000Z");
+});
+
+test("knowledge never persists credential-bearing source snippets or URLs", () => {
+  const item = normalizeKnowledgeItem({
+    title: "Safe source metadata",
+    content: "A source-backed note.",
+    sourceKind: "web-research",
+    sources: [
+      { title: "Snippet with key", url: "https://example.org/page", snippet: "api_key: pasted-secret-value" },
+      { title: "URL with token", url: "https://example.org/page?access_token=private-token" },
+      { title: "Safe source", url: "https://example.org/clean", snippet: "Public summary of the page." }
+    ]
+  });
+  assert.equal(item.sources.length, 2);
+  assert.equal(item.sources[0].url, "https://example.org/page");
+  assert.equal(Object.hasOwn(item.sources[0], "snippet"), false);
+  assert.equal(item.sources[1].url, "https://example.org/clean");
+  assert.equal(item.sources[1].snippet, "Public summary of the page.");
+});
+
+test("knowledge preserves source publication, retrieval, capture and snippet metadata", () => {
+  const item = normalizeKnowledgeItem({
+    title: "Source metadata",
+    content: "This is a source-backed note.",
+    sourceKind: "web-research",
+    capturedAt: "2026-10-31T11:00:00.000Z",
+    sources: [{
+      title: "Official page",
+      url: "https://example.org/article#section",
+      snippet: "Original search-result context.",
+      publishedAt: "2026-10-20",
+      retrievedAt: "2026-10-31T10:55:00.000Z"
+    }]
+  });
+  assert.equal(item.capturedAt, "2026-10-31T11:00:00.000Z");
+  assert.equal(item.sources[0].url, "https://example.org/article");
+  assert.equal(item.sources[0].snippet, "Original search-result context.");
+  assert.equal(item.sources[0].publishedAt, "2026-10-20T00:00:00.000Z");
+  assert.equal(item.sources[0].retrievedAt, "2026-10-31T10:55:00.000Z");
+});
+
+test("duplicate knowledge merges provenance without changing a previous review decision", () => {
+  const original = normalizeKnowledgeItem({
+    title: "Solar Energy",
+    content: "Solar panels convert sunlight to power.",
+    sourceKind: "web-research",
+    reviewStatus: "user-reviewed",
+    sources: [{ title: "First source", url: "https://first.example/solar" }]
+  });
+  const duplicate = normalizeKnowledgeItem({
+    title: " solar   energy ",
+    content: "SOLAR PANELS convert sunlight to power. ",
+    sourceKind: "web-research",
+    sources: [
+      { title: "First source duplicate", url: "https://first.example/solar#overview" },
+      { title: "Second source", url: "https://second.example/solar", publishedAt: "2026-10-15" }
+    ],
+    citations: [{ claim: "Solar panels convert sunlight to power.", sourceUrls: ["https://second.example/solar"] }]
+  });
+  const merged = mergeDuplicateKnowledge(original, duplicate, "2026-11-01T00:00:00.000Z");
+  assert.equal(merged.id, original.id);
+  assert.equal(merged.reviewStatus, "user-reviewed");
+  assert.equal(merged.sources.length, 2);
+  assert.equal(merged.citations.length, 1);
+  assert.equal(merged.sources[1].url, "https://second.example/solar");
+  assert.equal(merged.updatedAt, "2026-11-01T00:00:00.000Z");
+  assert.throws(() => mergeDuplicateKnowledge(original, normalizeKnowledgeItem({
+    title: "Other note", content: "Different material."
+  })), /matching normalized content/i);
+});
+
+test("rejected and unreviewed web research remain excluded from assistant context", () => {
+  const unreviewed = normalizeKnowledgeItem({
+    title: "Unreviewed note",
+    content: "A source result awaiting user review.",
+    sourceKind: "web-research"
+  });
+  const rejected = normalizeKnowledgeItem({
+    title: "Rejected note",
+    content: "A source result rejected by the user.",
+    sourceKind: "web-research",
+    reviewStatus: "rejected"
+  });
+  assert.equal(buildKnowledgeContext([unreviewed, rejected], "source", 5).length, 0);
 });
 
 test("duplicate detection uses normalized title and content", () => {

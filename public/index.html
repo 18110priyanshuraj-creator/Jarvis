@@ -200,8 +200,17 @@
         <form id="knowledge-search-form" class="search-form">
           <span aria-hidden="true">⌕</span>
           <input id="knowledge-search-input" maxlength="300" placeholder="Search saved knowledge by topic or keyword…">
+          <select id="knowledge-review-filter" aria-label="Filter knowledge by review status">
+            <option value="all">All entries</option>
+            <option value="trusted">Reviewed + my notes</option>
+            <option value="unreviewed">Needs review</option>
+            <option value="rejected">Rejected</option>
+          </select>
           <button class="primary" type="submit">Search library</button>
         </form>
+        <div id="knowledge-review-summary" class="research-hint knowledge-review-summary" aria-live="polite">
+          Your notes are user-authored. Web research enters assistant context only after you mark it reviewed.
+        </div>
         <form id="knowledge-form" class="form-card">
           <h2>Add your own knowledge note</h2>
           <label for="knowledge-title">Title</label>

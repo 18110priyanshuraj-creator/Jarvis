@@ -1,7 +1,7 @@
 import { createVoiceController } from "./voice-controller.js";
 import { createOrbitalVisual } from "./orbital-visual.js";
 const $ = (selector) => document.querySelector(selector);
-const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
+const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", knowledgeFilter: "all", knowledgeSummary: { total: 0, trusted: 0, unreviewed: 0, rejected: 0 }, activeView: "chat" };
 let toastTimer;
 
 function toast(message, isError = false) {
@@ -2286,6 +2286,62 @@ function renderSourceBasedAnswer(target, data) {
     sourceList.append(row);
   }
   panel.append(sourceHeading, sourceList);
+  if (data.answerStatus === "source-supported" &&
+      data.aiSynthesized === true &&
+      Array.isArray(data.findings) && data.findings.length > 0) {
+    const saveAnswer = document.createElement("button");
+    saveAnswer.type = "button";
+    saveAnswer.className = "item-action";
+    saveAnswer.textContent = "Save answer to Knowledge · needs review";
+    saveAnswer.addEventListener("click", async () => {
+      saveAnswer.disabled = true;
+      try {
+        const sections = [
+          data.answer || "",
+          Array.isArray(data.agreements) && data.agreements.length
+            ? "Where sources agree:\n" + data.agreements.map(item => "• " + item.claim).join("\n") : "",
+          Array.isArray(data.differences) && data.differences.length
+            ? "Differences between sources:\n" + data.differences.map(item => "• " + item.claim).join("\n") : "",
+          Array.isArray(data.uncertainties) && data.uncertainties.length
+            ? "Uncertainty and missing evidence:\n" + data.uncertainties.map(item => "• " + item.claim).join("\n") : ""
+        ].filter(Boolean);
+        const readableSources = (Array.isArray(data.sources) ? data.sources : [])
+          .filter(source => source.status === "read" && safeResearchUrl(source.url))
+          .map(source => ({
+            title: source.title || source.domain || "Research source",
+            url: source.url,
+            snippet: source.excerpt || "",
+            retrievedAt: source.retrievedAt || null
+          }));
+        const payload = await api("/api/knowledge", {
+          method: "POST",
+          body: JSON.stringify({
+            title: (data.query || "Source-based research").slice(0, 180),
+            content: sections.join("\n\n").slice(0, 8000),
+            category: "general",
+            tags: ["research", "source-based"],
+            sourceKind: "web-research",
+            sourceQuery: data.query || "",
+            capturedAt: data.generatedAt || new Date().toISOString(),
+            sources: readableSources,
+            citations: Array.isArray(data.citations) ? data.citations : []
+          })
+        });
+        await refreshKnowledge(state.knowledgeQuery, state.knowledgeFilter);
+        saveAnswer.textContent = payload.duplicate
+          ? "Saved source history updated"
+          : "Saved · awaiting your review";
+        toast(payload.duplicate
+          ? "Existing knowledge updated with the new source history; its review decision was preserved."
+          : "Saved to Knowledge. Review the original sources before approving it for assistant context.");
+      } catch (error) {
+        saveAnswer.disabled = false;
+        toast(error.message, true);
+      }
+    });
+    panel.append(saveAnswer);
+  }
+
   const note = document.createElement("p");
   note.className = "research-citations";
   note.textContent = "Citations link to the exact selected pages. Evidence strength is an AI assessment, not an independent fact-check.";
@@ -2570,6 +2626,31 @@ function renderGroundedResearch(item, canSave = true) {
   target.append(card);
 }
 
+async function updateKnowledgeReview(item, reviewStatus) {
+  let reviewNote = "";
+  if (reviewStatus === "rejected") {
+    const response = window.prompt("Why are you rejecting this saved research? (Optional, 500 characters max)", item.reviewNote || "");
+    if (response === null) return;
+    reviewNote = response.slice(0, 500);
+  }
+
+  try {
+    await api("/api/knowledge/" + encodeURIComponent(item.id), {
+      method: "PATCH",
+      body: JSON.stringify({ reviewStatus, reviewNote })
+    });
+    await refreshKnowledge(state.knowledgeQuery, state.knowledgeFilter);
+    const message = reviewStatus === "user-reviewed"
+      ? "Research approved for assistant context. This records your review, not an independent fact-check."
+      : reviewStatus === "rejected"
+        ? "Research rejected and excluded from assistant context."
+        : "Research returned to the review queue and excluded from assistant context.";
+    toast(message);
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
 function renderKnowledge() {
   const target = $("#knowledge-list");
   if (!target) return;
@@ -2577,8 +2658,25 @@ function renderKnowledge() {
   const count = $("#knowledge-count");
   if (count) count.textContent = state.knowledgeTotal + " saved";
 
+  const summary = $("#knowledge-review-summary");
+  if (summary) {
+    const counts = state.knowledgeSummary || { trusted: 0, unreviewed: 0, rejected: 0 };
+    summary.textContent = counts.trusted + " trusted for assistant context · " +
+      counts.unreviewed + " awaiting your review · " +
+      counts.rejected + " rejected and excluded. Your notes are user-authored.";
+  }
+
   if (!state.knowledge.length) {
-    target.append(makeEmpty("No saved knowledge yet. Add a note or use “Save to Knowledge” on a research result."));
+    const emptyMessage = state.knowledgeQuery
+      ? "No knowledge entries matched this search and review filter."
+      : state.knowledgeFilter === "unreviewed"
+        ? "No saved research is waiting for review."
+        : state.knowledgeFilter === "rejected"
+          ? "No knowledge entries have been rejected."
+          : state.knowledgeFilter === "trusted"
+            ? "No reviewed research or user-authored notes are in this view yet."
+            : "No saved knowledge yet. Add a note or use “Save to Knowledge” on a research result.";
+    target.append(makeEmpty(emptyMessage));
     return;
   }
 
@@ -2595,13 +2693,15 @@ function renderKnowledge() {
     meta.className = "list-item-meta";
     const sourceLabel = item.sourceKind === "web-research" ? "Saved web research" : "Your note";
     const reviewLabel = item.reviewStatus === "user-reviewed"
-      ? "Sources reviewed by you"
-      : item.reviewStatus === "unreviewed" ? "Not yet reviewed" : "User-authored";
+      ? "Reviewed by you"
+      : item.reviewStatus === "unreviewed" ? "Needs review"
+        : item.reviewStatus === "rejected" ? "Rejected by you" : "User-authored";
     meta.textContent = [
       item.category || "general",
       sourceLabel,
       reviewLabel,
-      item.createdAt ? new Date(item.createdAt).toLocaleString() : ""
+      item.capturedAt ? "Captured " + new Date(item.capturedAt).toLocaleString() : "",
+      item.updatedAt && item.updatedAt !== item.createdAt ? "Updated " + new Date(item.updatedAt).toLocaleString() : ""
     ].filter(Boolean).join(" · ");
     main.append(title, description, meta);
 
@@ -2612,44 +2712,63 @@ function renderKnowledge() {
       main.append(tags);
     }
 
+    if (item.reviewStatus === "rejected" && item.reviewNote) {
+      const reason = document.createElement("div");
+      reason.className = "list-item-meta";
+      reason.textContent = "Review note: " + item.reviewNote;
+      main.append(reason);
+    }
+
     if (Array.isArray(item.sources) && item.sources.length) {
       const sourceList = document.createElement("div");
       sourceList.className = "research-sources";
       for (const source of item.sources.slice(0, 6)) {
+        const sourceRow = document.createElement("div");
+        sourceRow.className = "knowledge-source";
         const url = safeResearchUrl(source.url);
-        if (!url) continue;
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.target = "_blank";
-        anchor.rel = "noopener noreferrer";
-        anchor.textContent = source.title || source.domain || new URL(url).hostname;
-        sourceList.append(anchor);
+        if (url) {
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.target = "_blank";
+          anchor.rel = "noopener noreferrer";
+          anchor.textContent = source.title || source.domain || new URL(url).hostname;
+          sourceRow.append(anchor);
+        }
+        const dates = [
+          source.publishedAt ? "Published: " + source.publishedAt : "",
+          source.retrievedAt ? "Retrieved: " + new Date(source.retrievedAt).toLocaleString() : ""
+        ].filter(Boolean);
+        if (dates.length) {
+          const dateLabel = document.createElement("span");
+          dateLabel.textContent = dates.join(" · ");
+          sourceRow.append(dateLabel);
+        }
+        sourceList.append(sourceRow);
       }
       main.append(sourceList);
     }
 
     const actions = document.createElement("div");
     actions.className = "device-actions";
-    if (item.sourceKind === "web-research" && item.reviewStatus !== "user-reviewed") {
+    if (item.sourceKind === "web-research" && item.reviewStatus === "unreviewed") {
       const review = document.createElement("button");
       review.type = "button";
       review.className = "item-action";
       review.textContent = "Mark reviewed";
-      review.addEventListener("click", async () => {
-        review.disabled = true;
-        try {
-          await api("/api/knowledge/" + encodeURIComponent(item.id), {
-            method: "PATCH",
-            body: JSON.stringify({ reviewStatus: "user-reviewed" })
-          });
-          await refreshKnowledge(state.knowledgeQuery);
-          toast("Marked as reviewed by you. This does not mean JARVIS independently verified every claim.");
-        } catch (error) {
-          review.disabled = false;
-          toast(error.message, true);
-        }
-      });
-      actions.append(review);
+      review.addEventListener("click", () => updateKnowledgeReview(item, "user-reviewed"));
+      const reject = document.createElement("button");
+      reject.type = "button";
+      reject.className = "item-action";
+      reject.textContent = "Reject";
+      reject.addEventListener("click", () => updateKnowledgeReview(item, "rejected"));
+      actions.append(review, reject);
+    } else if (item.sourceKind === "web-research") {
+      const reopen = document.createElement("button");
+      reopen.type = "button";
+      reopen.className = "item-action";
+      reopen.textContent = item.reviewStatus === "rejected" ? "Reopen review" : "Reset review";
+      reopen.addEventListener("click", () => updateKnowledgeReview(item, "unreviewed"));
+      actions.append(reopen);
     }
 
     const remove = document.createElement("button");
@@ -2660,7 +2779,7 @@ function renderKnowledge() {
       remove.disabled = true;
       try {
         await api("/api/knowledge/" + encodeURIComponent(item.id), { method: "DELETE" });
-        await refreshKnowledge(state.knowledgeQuery);
+        await refreshKnowledge(state.knowledgeQuery, state.knowledgeFilter);
         toast("Knowledge entry deleted.");
       } catch (error) {
         remove.disabled = false;
@@ -2673,12 +2792,20 @@ function renderKnowledge() {
   }
 }
 
-async function refreshKnowledge(query = state.knowledgeQuery) {
+async function refreshKnowledge(query = state.knowledgeQuery, reviewFilter = state.knowledgeFilter) {
   state.knowledgeQuery = String(query || "").trim();
-  const suffix = state.knowledgeQuery ? "?q=" + encodeURIComponent(state.knowledgeQuery) : "";
+  state.knowledgeFilter = ["all", "trusted", "unreviewed", "rejected"].includes(reviewFilter) ? reviewFilter : "all";
+  const params = new URLSearchParams();
+  if (state.knowledgeQuery) params.set("q", state.knowledgeQuery);
+  if (state.knowledgeFilter !== "all") params.set("review", state.knowledgeFilter);
+  const queryString = params.toString();
+  const suffix = queryString ? "?" + queryString : "";
   const data = await api("/api/knowledge" + suffix);
   state.knowledge = Array.isArray(data.items) ? data.items : [];
   state.knowledgeTotal = Number(data.total) || 0;
+  state.knowledgeSummary = data.reviewSummary || { total: state.knowledgeTotal, trusted: 0, unreviewed: 0, rejected: 0 };
+  const filter = $("#knowledge-review-filter");
+  if (filter && filter.value !== state.knowledgeFilter) filter.value = state.knowledgeFilter;
   renderKnowledge();
   renderStorageOverview();
 }
@@ -2805,12 +2932,20 @@ $("#knowledge-search-form").addEventListener("submit", async (event) => {
   const button = event.currentTarget.querySelector("button[type=submit]");
   button.disabled = true;
   try {
-    await refreshKnowledge($("#knowledge-search-input").value);
+    await refreshKnowledge($("#knowledge-search-input").value, state.knowledgeFilter);
     if (state.knowledgeQuery && !state.knowledge.length) toast("No saved knowledge matched that search.");
   } catch (error) {
     toast(error.message, true);
   } finally {
     button.disabled = false;
+  }
+});
+
+$("#knowledge-review-filter").addEventListener("change", async (event) => {
+  try {
+    await refreshKnowledge(state.knowledgeQuery, event.currentTarget.value);
+  } catch (error) {
+    toast(error.message, true);
   }
 });
 
