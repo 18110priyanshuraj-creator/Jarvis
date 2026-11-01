@@ -315,6 +315,7 @@
           <strong>Credential privacy</strong>
           <p>GitHub, Telegram and ElevenLabs credentials are read only from server environment variables. Google Drive refresh tokens are encrypted with AES-256-GCM before being saved; access tokens stay in server memory. Secrets are never entered in the browser or included in workflow logs and data exports.</p>
           <p>Connect Google Drive with the button below. JARVIS requests only read-only Drive metadata permission and refreshes access tokens on the server. Keep the encryption key and OAuth client secret in your hosting provider's private environment settings.</p>
+          <p>Revoking Google access can affect other OAuth permissions granted to clients in the same Google Cloud project. Review the confirmation carefully before revoking.</p>
         </div>
         <div class="integration-help">
           <strong>Supported server variables</strong>
