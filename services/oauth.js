@@ -170,7 +170,7 @@ function prunePendingStates() {
   }
 }
 
-export function beginGoogleOAuth({ sessionToken, capability = "read", env = process.env }) {
+export function beginGoogleOAuth({ sessionToken, capability = "read", env = process.env, runtimeStore = null }) {
   if (!cleanString(sessionToken, 200)) throw new Error("Sign in to JARVIS before connecting Google Drive.");
   if (!["read", "create_docs"].includes(capability)) throw new TypeError("Unsupported Google Drive permission capability.");
   getEncryptionKey(env);
@@ -184,15 +184,9 @@ export function beginGoogleOAuth({ sessionToken, capability = "read", env = proc
   const browserBinding = crypto.randomBytes(32).toString("base64url");
   const verifier = crypto.randomBytes(48).toString("base64url");
   const challenge = hash(verifier).toString("base64url");
-  pendingStates.set(state, {
-    sessionToken,
-    requestedScopes,
-    capability,
-    browserBindingHash: hash(browserBinding).toString("base64url"),
-    verifier,
-    createdAt: Date.now(),
-    expiresAt: Date.now() + OAUTH_STATE_TTL_MS
-  });
+  const createdAt = Date.now();
+  const expiresAt = createdAt + OAUTH_STATE_TTL_MS;
+  const browserBindingHash = hash(browserBinding).toString("base64url");
 
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   url.searchParams.set("client_id", config.clientId);
@@ -206,7 +200,32 @@ export function beginGoogleOAuth({ sessionToken, capability = "read", env = proc
   url.searchParams.set("code_challenge", challenge);
   url.searchParams.set("code_challenge_method", "S256");
 
-  return { authorizationUrl: url.toString(), browserBinding };
+  const result = { authorizationUrl: url.toString(), browserBinding };
+  if (runtimeStore && typeof runtimeStore.savePendingOAuthState === "function") {
+    const sessionHash = hash(sessionToken).toString("base64url");
+    const pending = {
+      sessionHash,
+      requestedScopes,
+      capability,
+      browserBindingHash,
+      encryptedVerifier: encryptSecret(verifier, { env, purpose: "google-oauth-pkce-verifier" }),
+      createdAt,
+      expiresAt
+    };
+    const saved = runtimeStore.savePendingOAuthState(hash(state).toString("base64url"), pending);
+    return saved && typeof saved.then === "function" ? saved.then(() => result) : result;
+  }
+
+  pendingStates.set(state, {
+    sessionToken,
+    requestedScopes,
+    capability,
+    browserBindingHash,
+    verifier,
+    createdAt,
+    expiresAt
+  });
+  return result;
 }
 
 async function readTokenResponse(response) {
@@ -254,9 +273,24 @@ function cacheAccessToken(token, expiresIn) {
 
 export async function finishGoogleOAuth(options = {}) {
   const state = cleanString(options.state, 200);
-  const pending = pendingStates.get(state);
+  let pending = null;
+  if (options.runtimeStore && typeof options.runtimeStore.consumePendingOAuthState === "function") {
+    pending = await options.runtimeStore.consumePendingOAuthState(hash(state).toString("base64url"));
+    if (pending?.encryptedVerifier) {
+      try {
+        pending.verifier = decryptSecret(pending.encryptedVerifier, {
+          env: options.env || process.env,
+          purpose: "google-oauth-pkce-verifier"
+        });
+      } catch {
+        throw new Error("Google OAuth state could not be recovered. Start the connection again.");
+      }
+    }
+  } else {
+    pending = pendingStates.get(state);
+    pendingStates.delete(state);
+  }
   if (!pending) throw new Error("Google OAuth state is invalid, expired, or already used.");
-  pendingStates.delete(state);
   if (pending.expiresAt <= Date.now()) {
     throw new Error("Google OAuth state expired. Start the connection again.");
   }
@@ -265,7 +299,8 @@ export async function finishGoogleOAuth(options = {}) {
   if (!timingSafeStringEqual(browserHash, pending.browserBindingHash)) {
     throw new Error("Google OAuth browser verification failed. Start the connection again.");
   }
-  if (typeof options.isSessionValid !== "function" || !options.isSessionValid(pending.sessionToken)) {
+  const sessionReference = pending.sessionToken || pending.sessionHash;
+  if (typeof options.isSessionValid !== "function" || !await options.isSessionValid(sessionReference)) {
     throw new Error("Your JARVIS session expired. Sign in and start the Google connection again.");
   }
   if (options.oauthError) throw new Error("Google Drive authorization was cancelled or denied.");
