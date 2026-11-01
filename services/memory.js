@@ -212,15 +212,28 @@ export function previewMemoryContext(memories, query, limit = MAX_CONTEXT_ITEMS)
     (Array.isArray(memories) ? memories : []).filter((item) => item?.enabled === false),
     query,
     "",
-    100,
+    MAX_MEMORIES,
     true
   );
-  return {
-    items: activeMatches.map(({ id, content, category, matchedTerms, score, relevance }) => ({
-      id, content, category, matchedTerms, score, relevance
-    })),
-    pausedCount: pausedMatches.length
-  };
+  const items = [];
+  let remainingChars = MAX_CONTEXT_CHARS;
+
+  for (const item of activeMatches) {
+    if (remainingChars < 3) break;
+    const content = String(item.content || "").slice(0, remainingChars);
+    if (content.length < 3) continue;
+    items.push({
+      id: item.id,
+      content,
+      category: item.category,
+      matchedTerms: item.matchedTerms,
+      score: item.score,
+      relevance: item.relevance
+    });
+    remainingChars -= content.length;
+  }
+
+  return { items, pausedCount: pausedMatches.length };
 }
 
 export const MEMORY_LIMITS = Object.freeze({
