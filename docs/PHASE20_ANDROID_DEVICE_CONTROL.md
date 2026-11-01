@@ -4,9 +4,9 @@
 
 Make a small, useful set of Android voice-control workflows available even when the optional server AI planner is not configured. Keep actions explicit, bounded, visible to the user and executed on the paired Android device.
 
-## Offline request planning
+## Built-in request planning without external AI
 
-The server's device-plan endpoint now uses a deterministic rules parser before reporting that the remote AI planner is unavailable. It only builds a plan for clear app-search phrases:
+The server's device-plan endpoint now uses a deterministic rules parser before reporting that the remote AI planner is unavailable. This avoids an external AI provider for the supported patterns; it is not fully offline phone control. It only builds a plan for clear app-search phrases:
 
 - `Open YouTube and search for JEE Physics`
 - `YouTube kholo aur JEE Physics search karo`
@@ -40,8 +40,8 @@ The direct commands already recognized by the Android Companion can work without
 
 ## API behavior
 
-- `POST /api/devices/plan` returns `externalAI: false` and `engine: offline-local-rules` for a supported deterministic app-search request.
-- A request outside the offline patterns returns the existing `AI_NOT_CONFIGURED` response when the server AI planner is disabled.
+- `POST /api/devices/plan` returns `externalAI: false` and `engine: built-in-device-rules` for a supported deterministic app-search request.
+- A request outside the built-in patterns returns the existing `AI_NOT_CONFIGURED` response when the server AI planner is disabled.
 - When remote AI planning is enabled, the existing validated AI-plan path remains available and responses are marked `externalAI: true`.
 
 ## Verification
