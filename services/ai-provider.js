@@ -14,6 +14,8 @@ function readConfiguration() {
   const rawBaseUrl = String(process.env.JARVIS_AI_BASE_URL || "").trim();
   const apiKey = String(process.env.JARVIS_AI_API_KEY || "").trim();
   const model = String(process.env.JARVIS_AI_MODEL || "").trim();
+  const runtime = String(process.env.JARVIS_AI_RUNTIME || "external").trim().toLowerCase() === "self-hosted"
+    ? "self-hosted" : "external";
   const nodeEnv = String(process.env.NODE_ENV || "development").trim();
   let baseUrl = null;
   let baseUrlValid = false;
@@ -41,7 +43,7 @@ function readConfiguration() {
   const requestTimeoutMs = boundedInteger(process.env.JARVIS_AI_REQUEST_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, 5000, 60000);
   const retryAttempts = boundedInteger(process.env.JARVIS_AI_RETRY_ATTEMPTS, DEFAULT_RETRY_ATTEMPTS, 1, 3);
   return {
-    baseUrl, apiKey, model, modelValid, baseUrlValid, configured, enabled, requestTimeoutMs, retryAttempts,
+    baseUrl, apiKey, model, runtime, modelValid, baseUrlValid, configured, enabled, requestTimeoutMs, retryAttempts,
     conversationEnabled: configured && enabled && process.env.JARVIS_AI_CHAT_ENABLED === "true",
     plannerEnabled: configured && enabled && process.env.JARVIS_AI_PLANNER_ENABLED === "true"
   };
@@ -50,7 +52,8 @@ function readConfiguration() {
 export function getAIProviderStatus() {
   const config = readConfiguration();
   return {
-    provider: "openai-compatible",
+    provider: config.runtime === "self-hosted" ? "jarvis-self-hosted" : "openai-compatible",
+    runtime: config.runtime,
     configured: config.configured,
     baseUrlConfigured: config.baseUrlValid,
     modelValid: config.modelValid,
@@ -153,7 +156,11 @@ export async function createChatCompletion(messages, options = {}, fetchImpl = g
         catch { throw providerError("The AI provider returned an unreadable response.", "AI_PROVIDER_INVALID_RESPONSE"); }
         const content = extractMessageText(payload?.choices?.[0]?.message?.content);
         if (!content) throw providerError("The AI provider returned an empty or unsupported response.", "AI_PROVIDER_EMPTY_RESPONSE");
-        return { content: content.slice(0, 12000), provider: "openai-compatible", model: config.model };
+        return {
+          content: content.slice(0, 12000),
+          provider: config.runtime === "self-hosted" ? "jarvis-self-hosted" : "openai-compatible",
+          model: config.model
+        };
       }
     }
     if (attempt < config.retryAttempts) await sleep(200 * attempt);

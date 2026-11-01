@@ -59,6 +59,11 @@ function readSearchConfiguration() {
   const maxResults = boundedInteger(process.env.JARVIS_SEARCH_MAX_RESULTS, 8, 3, MAX_SOURCES);
   const requestedLanguage = String(process.env.JARVIS_SEARCH_LANGUAGE || "all");
   const language = /^[a-z]{2,3}(?:-[A-Z]{2})?$/.test(requestedLanguage) ? requestedLanguage : "all";
+  const requestedEngines = String(process.env.JARVIS_SEARCH_ENGINES || "google,duckduckgo,bing");
+  const engines = [...new Set(requestedEngines.split(",")
+    .map(value => value.trim().toLowerCase())
+    .filter(value => /^[a-z][a-z0-9_-]{0,30}$/.test(value)))].slice(0, 5);
+  const safeEngines = engines.length ? engines : ["google", "duckduckgo", "bing"];
 
   return {
     baseUrl,
@@ -69,7 +74,8 @@ function readSearchConfiguration() {
     timeoutMs,
     retryAttempts,
     maxResults,
-    language
+    language,
+    engines: safeEngines
   };
 }
 
@@ -77,6 +83,7 @@ export function getWebResearchStatus() {
   const config = readSearchConfiguration();
   return {
     provider: "searxng",
+    engines: config.engines,
     configured: config.configured,
     enabled: config.enabled,
     maxResults: config.maxResults,
@@ -101,7 +108,7 @@ export function isRestrictedResearchQuery(query) {
 export function shouldUseLiveWebResearch(message) {
   const query = cleanText(message, MAX_QUERY_LENGTH);
   if (!query) return false;
-  const explicitWebRequest = /\b(?:search|look up|check|verify|research|find|learn|get information)\b.{0,50}\b(?:web|internet|online|google)\b|\b(?:internet pe|web pe|online check|google par|live web|internet se seekh)\b/i.test(query);
+  const explicitWebRequest = /\b(?:search|look up|check|verify|research|find|learn|get information|browse)\b.{0,60}\b(?:web|internet|online|google)\b|\b(?:internet pe|web pe|online check|google par|live web|internet se seekh)\b|\b(?:google|internet|web)\s*(?:se|par|pe|through)?\s*(?:search|check|dekho|dhoondo|dhundo|research|batao|nikalo)|\b(?:google|internet|web)\s*(?:kar|karke|use karke)\b/i.test(query);
   const timeSensitiveRequest = /\b(?:latest|current|today|tonight|yesterday|this week|this month|this year|recent|right now|as of now|breaking|news|weather|forecast|price today|current price|exchange rate|schedule|opening hours|release date|new version|latest version|election result|live score|updated rules)\b/i.test(query);
   return explicitWebRequest || timeSensitiveRequest;
 }
@@ -179,6 +186,7 @@ async function requestSearch(query, config, fetchImpl) {
   endpoint.searchParams.set("safesearch", "2");
   endpoint.searchParams.set("categories", "general");
   endpoint.searchParams.set("language", config.language);
+  if (config.engines.length) endpoint.searchParams.set("engines", config.engines.join(","));
 
   let lastError;
   for (let attempt = 1; attempt <= config.retryAttempts; attempt++) {

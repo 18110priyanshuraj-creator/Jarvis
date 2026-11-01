@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createChatCompletion, getAIProviderStatus } from "../services/ai-provider.js";
 
 const ENV_KEYS = [
-  "NODE_ENV", "JARVIS_AI_BASE_URL", "JARVIS_AI_API_KEY", "JARVIS_AI_MODEL",
+  "NODE_ENV", "JARVIS_AI_BASE_URL", "JARVIS_AI_API_KEY", "JARVIS_AI_MODEL", "JARVIS_AI_RUNTIME",
   "JARVIS_AI_ENABLED", "JARVIS_AI_CHAT_ENABLED", "JARVIS_AI_PLANNER_ENABLED",
   "JARVIS_AI_REQUEST_TIMEOUT_MS", "JARVIS_AI_RETRY_ATTEMPTS"
 ];
@@ -38,6 +38,7 @@ test("AI provider stays disabled when endpoint or model configuration is missing
     assert.equal(status.conversationEnabled, false);
     assert.equal(status.plannerEnabled, false);
     assert.equal(status.provider, "openai-compatible");
+    assert.equal(status.runtime, "external");
     assert.equal(Object.hasOwn(status, "apiKey"), false);
   });
 });
@@ -54,6 +55,18 @@ test("remote production endpoints require HTTPS and a private API key", async ()
     assert.equal(status.configured, true);
     assert.equal(status.conversationEnabled, true);
     assert.equal(JSON.stringify(status).includes("server-secret"), false);
+  });
+});
+
+test("self-hosted JARVIS runtime is clearly identified without exposing endpoint credentials", async () => {
+  await withEnv({ ...localConfig, JARVIS_AI_RUNTIME: "self-hosted" }, async () => {
+    const status = getAIProviderStatus();
+    assert.equal(status.runtime, "self-hosted");
+    assert.equal(status.provider, "jarvis-self-hosted");
+    const result = await createChatCompletion([{ role: "user", content: "Hello" }], {}, async () => ({
+      ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "Ready." } }] })
+    }));
+    assert.equal(result.provider, "jarvis-self-hosted");
   });
 });
 
