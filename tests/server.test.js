@@ -144,7 +144,7 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   cookie = cookieHeader.split(";")[0];
   assert.match(cookie, /^jarvis_session=/);
 
-  const blockedActionHistory = await request("/api/actions", { headers: {} });
+  const blockedActionHistory = await fetch(baseUrl + "/api/actions");
   assert.equal(blockedActionHistory.status, 401);
   const actionCapabilitiesResponse = await request("/api/actions/capabilities");
   assert.equal(actionCapabilitiesResponse.status, 200);
