@@ -624,10 +624,11 @@ app.get("/api/health", (_req, res) => {
       allowedContentTypes: pageReaderRuntime.allowedContentTypes
     },
     sourceAnswer: {
-      enabled: pageReaderRuntime.enabled,
+      enabled: pageReaderRuntime.enabled && searchRuntime.enabled,
       minimumSources: SOURCE_ANSWER_LIMITS.minimumSources,
       maximumSources: SOURCE_ANSWER_LIMITS.maximumSources,
-      requiresSessionBoundPageTokens: true
+      requiresSessionBoundPageTokens: true,
+      requiresLiveSearch: true
     },
     runtimeStorage: runtimeStore.mode()
   });
