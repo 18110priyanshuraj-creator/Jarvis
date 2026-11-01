@@ -593,7 +593,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     service: "jarvis",
-    version: "1.9.0-source-based-answers",
+    version: "1.10.0-persistent-knowledge",
     brain: conversationAIEnabled ? "online-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
@@ -629,6 +629,15 @@ app.get("/api/health", (_req, res) => {
       maximumSources: SOURCE_ANSWER_LIMITS.maximumSources,
       requiresSessionBoundPageTokens: true,
       requiresLiveSearch: true
+    },
+    knowledgePolicy: {
+      persistent: true,
+      storage: process.env.DATABASE_URL ? "neon-app-state" : "local-json-file",
+      webResearchRequiresUserReview: true,
+      unreviewedResearchInAssistantContext: false,
+      rejectedResearchInAssistantContext: false,
+      automaticSaving: false,
+      maxItems: KNOWLEDGE_LIMITS.items
     },
     runtimeStorage: runtimeStore.mode()
   });
