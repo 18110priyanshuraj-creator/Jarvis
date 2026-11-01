@@ -12,9 +12,8 @@ import { createDevicesRouter } from "./routes/devices.js";
 import { createRuntimeStore } from "./services/runtime-store.js";
 import { createAgentPlan } from "./services/agent-planner.js";
 import { createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
-import { createGroundedResearch, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
+import { createWebResearch, getWebResearchStatus, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
 import { getAIProviderStatus } from "./services/ai-provider.js";
-import { getGeminiRuntimeStatus } from "./services/gemini-client.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, searchMemories } from "./services/memory.js";
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeSkill, pauseSkill, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
@@ -519,8 +518,8 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
   if (useLiveWeb) {
     if (isWebResearchEnabled()) {
       try {
-        const research = await createGroundedResearch(message);
-        return { ...research, engine: "online-web-research", externalAI: true };
+        const research = await createWebResearch(message);
+        return { ...research, externalAI: Boolean(research.aiSynthesized) };
       } catch (error) {
         if (error?.code === "RESTRICTED_RESEARCH_QUERY") {
           return { answer: error.message, engine: "safety-filter", externalAI: false };
@@ -570,19 +569,19 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
 
 app.get("/api/health", (_req, res) => {
   const aiRuntime = getAIProviderStatus();
-  const researchRuntime = getGeminiRuntimeStatus();
+  const searchRuntime = getWebResearchStatus();
   const conversationAIEnabled = aiRuntime.conversationEnabled;
   const plannerAIEnabled = aiRuntime.plannerEnabled;
-  const webResearchEnabled = researchRuntime.webResearchEnabled;
+  const webResearchEnabled = searchRuntime.enabled;
   res.json({
     ok: true,
     service: "jarvis",
-    version: "1.7.0-independent-ai-brain",
+    version: "1.8.0-independent-web-search",
     brain: conversationAIEnabled ? "online-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
     webResearchEnabled,
-    externalAI: plannerAIEnabled || conversationAIEnabled || webResearchEnabled,
+    externalAI: plannerAIEnabled || conversationAIEnabled,
     aiProvider: {
       provider: aiRuntime.provider,
       configured: aiRuntime.configured,
@@ -591,6 +590,14 @@ app.get("/api/health", (_req, res) => {
       modelValid: aiRuntime.modelValid,
       requestTimeoutMs: aiRuntime.requestTimeoutMs,
       retryAttempts: aiRuntime.retryAttempts
+    },
+    searchProvider: {
+      provider: searchRuntime.provider,
+      configured: searchRuntime.configured,
+      enabled: searchRuntime.enabled,
+      maxResults: searchRuntime.maxResults,
+      timeoutMs: searchRuntime.timeoutMs,
+      retryAttempts: searchRuntime.retryAttempts
     },
     runtimeStorage: runtimeStore.mode()
   });
@@ -1483,18 +1490,18 @@ app.post("/api/research", requireAuth, webResearchLimiter, async (req, res) => {
   if (!query) return res.status(400).json({ error: "Enter a research question first." });
   if (!isWebResearchEnabled()) {
     return res.status(503).json({
-      error: "Live web research is disabled. Configure GEMINI_API_KEY and GEMINI_WEB_RESEARCH_ENABLED=true on the server."
+      error: "Live web search is disabled. Configure JARVIS_SEARCH_BASE_URL and JARVIS_SEARCH_ENABLED=true on the server."
     });
   }
 
   try {
-    const result = await createGroundedResearch(query);
+    const result = await createWebResearch(query);
     res.json(result);
   } catch (error) {
     if (error?.code === "RESTRICTED_RESEARCH_QUERY") {
       return res.status(400).json({ error: error.message });
     }
-    console.error("Grounded web research failed:", safeErrorMetadata(error));
+    console.error("Web search failed:", safeErrorMetadata(error));
     res.status(502).json({ error: "Live web research could not complete this request. Please try again later." });
   }
 });

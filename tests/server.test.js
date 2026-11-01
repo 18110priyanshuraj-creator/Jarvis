@@ -53,8 +53,9 @@ before(async () => {
       JARVIS_AI_ENABLED: "false",
       JARVIS_AI_CHAT_ENABLED: "false",
       JARVIS_AI_PLANNER_ENABLED: "false",
-      GEMINI_API_KEY: "",
-      GEMINI_WEB_RESEARCH_ENABLED: "false",
+      JARVIS_SEARCH_BASE_URL: "",
+      JARVIS_SEARCH_API_KEY: "",
+      JARVIS_SEARCH_ENABLED: "false",
       JARVIS_GITHUB_TOKEN: "",
       JARVIS_GOOGLE_DRIVE_ACCESS_TOKEN: "",
       JARVIS_TELEGRAM_BOT_TOKEN: "123456789:" + "A".repeat(32),
@@ -100,6 +101,8 @@ test("health endpoint is public without disclosing configuration", async () => {
   assert.equal(payload.plannerAIEnabled, false);
   assert.equal(payload.conversationAIEnabled, false);
   assert.equal(payload.webResearchEnabled, false);
+  assert.equal(payload.searchProvider.provider, "searxng");
+  assert.equal(payload.searchProvider.configured, false);
   assert.equal(payload.externalAI, false);
   assert.equal(payload.aiProvider.provider, "openai-compatible");
   assert.equal(payload.aiProvider.configured, false);

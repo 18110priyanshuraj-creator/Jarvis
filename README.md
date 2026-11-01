@@ -209,7 +209,7 @@ Set values in the private server environment settings (not in the Git repository
 
 - The visual interface and browser speech loop do not depend on a live audio-model stream.
 - Phase 13 moves general chat and the Android request planner to a provider-independent OpenAI-compatible chat-completions adapter. It requires `JARVIS_AI_BASE_URL`, `JARVIS_AI_MODEL`, `JARVIS_AI_API_KEY` for remote endpoints, `JARVIS_AI_ENABLED=true`, and the relevant chat/planner opt-in. These server values must be configured privately; the current production deployment has not been given a provider endpoint or credential, so general online answers and AI planning remain unavailable until configured.
-- Live web research is still handled by the temporary legacy grounded-search adapter and remains unavailable without its separate server configuration. Phase 14 replaces that search path. Do not claim that JARVIS searched the internet when the health endpoint reports web research is unavailable.
+- Phase 14 replaces the legacy grounded-search adapter with a server-configured SearXNG JSON search connector. It requires `JARVIS_SEARCH_BASE_URL` and `JARVIS_SEARCH_ENABLED=true`; an optional `JARVIS_SEARCH_API_KEY` can protect a private instance. The current production deployment has not been given a search endpoint, so live internet search remains unavailable until configured.
 - Knowledge entries and memories are saved only through explicit user actions; retrieved web pages are untrusted reference material, not instructions or model training.
 
 ## Knowledge Library (Phase 2)
@@ -254,7 +254,7 @@ Neon PostgreSQL is used when `DATABASE_URL` is configured. Otherwise, local deve
 - Android planning requests JSON-mode output and still passes every candidate through the existing local allow-list and protected-action validator. The model cannot execute device actions itself.
 - Configure privately: `JARVIS_AI_BASE_URL` (base URL ending before `/chat/completions`), `JARVIS_AI_MODEL`, `JARVIS_AI_API_KEY` for remote endpoints, `JARVIS_AI_ENABLED=true`, and `JARVIS_AI_CHAT_ENABLED=true` and/or `JARVIS_AI_PLANNER_ENABLED=true`. Timeout/retry bounds use `JARVIS_AI_REQUEST_TIMEOUT_MS` and `JARVIS_AI_RETRY_ATTEMPTS`.
 - The production endpoint and credential are not configured by this code change. Until a compatible service is configured, JARVIS safely uses its limited offline fallback.
-- Web search is not part of Phase 13. The temporary grounded-search adapter remains separate until Phase 14. Saved memories and Knowledge Library entries are user-controlled context; they do not train model weights.
+- Phase 14 supplies provider-independent live search results. Search snippets are untrusted evidence; they are not full webpage reads or model training. Saved memories and Knowledge Library entries remain user-controlled context.
 
 ### Example configuration (server environment only)
 
@@ -271,9 +271,33 @@ JARVIS_AI_RETRY_ATTEMPTS=2
 
 Do not put real credentials in the repository, browser settings, chat messages, or screenshots.
 
+## Provider-Independent Web Search (Phase 14)
+
+- Live research uses a server-configured SearXNG JSON endpoint. The browser sends only a question; it cannot supply a URL, choose a search engine, change SafeSearch level or control outbound headers.
+- The endpoint is configured with `JARVIS_SEARCH_BASE_URL`. Remote production endpoints must use HTTPS; loopback HTTP is permitted only in non-production development/test. Redirects are rejected.
+- Search requests use general results, SafeSearch level 2, bounded timeouts and a limited number of retries. Response size, result count, snippet length, and source count are capped. Search credentials, if needed for a private instance, remain in the server environment.
+- Search results are normalized to unique HTTPS URLs only. Titles/snippets/published dates are treated as untrusted data. AI synthesis is optional and uses the separately configured Phase 13 provider; when no AI endpoint is ready, JARVIS returns clearly labelled search-result snippets rather than inventing a synthesized answer.
+- When AI synthesis is available, it is instructed to cite only supplied source numbers. Claim-level citations are retained only when the answer contains a valid reference marker that maps to one of the supplied HTTPS sources.
+- This phase searches result indexes and snippets. It does not download or parse full webpages, crawl links, train model weights, or save results automatically. Full-page reading is a separate later capability.
+- Unsafe requests are filtered before an outbound search. Retrieved text is untrusted and cannot authorize device actions or override JARVIS instructions.
+
+### Configure live search (server environment only)
+
+```dotenv
+JARVIS_SEARCH_BASE_URL=https://your-trusted-searxng-instance.example
+JARVIS_SEARCH_API_KEY=
+JARVIS_SEARCH_ENABLED=true
+JARVIS_SEARCH_TIMEOUT_MS=12000
+JARVIS_SEARCH_RETRY_ATTEMPTS=2
+JARVIS_SEARCH_MAX_RESULTS=8
+JARVIS_SEARCH_LANGUAGE=all
+```
+
+Use a SearXNG instance that you operate or trust. Do not point this setting at a URL supplied by a chat message or search result. Production is not live-search-enabled until this endpoint is configured and `/api/health` reports `searchProvider.enabled=true`.
+
 ## Built-in offline mode
 
-The offline brain is not a general-purpose language model. It contains a safe arithmetic parser, deterministic rules and a curated knowledge pack for selected topics such as Newton's laws, units and dimensions, mole concept, sets, circular motion and Ohm's law. It cannot answer arbitrary questions. Live web retrieval is a separate Phase 14 capability and is unavailable until that phase is implemented and configured.
+The offline brain is not a general-purpose language model. It contains a safe arithmetic parser, deterministic rules and a curated knowledge pack for selected topics such as Newton's laws, units and dimensions, mole concept, sets, circular motion and Ohm's law. It cannot answer arbitrary questions. Live web retrieval requires a trusted SearXNG endpoint configured on the server.
 
 ## Run locally
 
@@ -289,6 +313,6 @@ Requirements: Node.js 22 or later.
 ## Security notes
 
 - This is a single-owner dashboard protected by a shared password and cookie session, not a multi-user identity system.
-- Keep `JARVIS_PASSWORD`, `DATABASE_URL`, `JARVIS_AI_API_KEY` and the temporary legacy `GEMINI_API_KEY` private.
+- Keep `JARVIS_PASSWORD`, `DATABASE_URL`, `JARVIS_AI_API_KEY` and any private `JARVIS_SEARCH_API_KEY` confidential.
 - Review Android permissions yourself and enable only what you understand and need.
 - Treat model outputs as fallible. Verify important claims against the linked sources or trusted people.
