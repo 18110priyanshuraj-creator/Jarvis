@@ -33,5 +33,7 @@ services:
         sync: false
       - key: JARVIS_TELEGRAM_BOT_TOKEN
         sync: false
+      - key: JARVIS_TELEGRAM_ALLOWED_CHAT_IDS
+        sync: false
       - key: JARVIS_ELEVENLABS_API_KEY
         sync: false
