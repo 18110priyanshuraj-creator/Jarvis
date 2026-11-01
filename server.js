@@ -176,6 +176,12 @@ function normalizeStore(parsed = {}) {
           try { return [normalizeGoogleOAuthConnection(item)]; } catch { return []; }
         })
       : [],
+    externalActions: Array.isArray(parsed.externalActions)
+      ? parsed.externalActions.slice(-MAX_ACTION_HISTORY).flatMap((item) => {
+          const normalized = normalizeExternalAction(item);
+          return normalized ? [normalized] : [];
+        })
+      : [],
     devices: Array.isArray(parsed.devices) ? parsed.devices.slice(-50) : [],
     research: Array.isArray(parsed.research) ? parsed.research.slice(-50) : [],
     knowledge: Array.isArray(parsed.knowledge)
