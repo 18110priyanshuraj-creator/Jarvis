@@ -72,7 +72,7 @@ test("Google OAuth start uses state, PKCE S256, offline access and a single meta
   assert.equal(url.searchParams.get("response_type"), "code");
   assert.equal(url.searchParams.get("scope"), GOOGLE_DRIVE_METADATA_SCOPE);
   assert.equal(url.searchParams.get("access_type"), "offline");
-  assert.equal(url.searchParams.get("include_granted_scopes"), "true");
+  assert.equal(url.searchParams.get("include_granted_scopes"), "false");
   assert.equal(url.searchParams.get("code_challenge_method"), "S256");
   assert.ok(url.searchParams.get("code_challenge").length > 20);
   assert.ok(url.searchParams.get("state").length > 20);
@@ -149,7 +149,22 @@ test("OAuth callback refuses broader or missing Drive permissions", async () => 
       refresh_token: "persistent-refresh-value",
       scope: "https://www.googleapis.com/auth/drive"
     })
-  }), /required read-only Drive metadata permission/i);
+  }), /only the required read-only Drive metadata permission/i);
+
+  const extraScopeFlow = startFlow();
+  const extraScopeState = new URL(extraScopeFlow.authorizationUrl).searchParams.get("state");
+  await assert.rejects(() => finishGoogleOAuth({
+    state: extraScopeState,
+    browserBinding: extraScopeFlow.browserBinding,
+    code: "test-code",
+    isSessionValid: () => true,
+    env,
+    fetchImpl: async () => response({
+      access_token: "temporary-access-value",
+      refresh_token: "persistent-refresh-value",
+      scope: GOOGLE_DRIVE_METADATA_SCOPE + " https://www.googleapis.com/auth/drive"
+    })
+  }), /only the required read-only Drive metadata permission/i);
 });
 
 test("Google Drive access tokens refresh on demand and cache until near expiry", async () => {
