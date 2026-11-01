@@ -46,6 +46,12 @@ before(async () => {
       JARVIS_PASSWORD: "test-only-password-2026",
       JARVIS_DATA_DIR: tempDir,
       DATABASE_URL: "",
+      JARVIS_AI_BASE_URL: "",
+      JARVIS_AI_API_KEY: "",
+      JARVIS_AI_MODEL: "",
+      JARVIS_AI_ENABLED: "false",
+      JARVIS_AI_CHAT_ENABLED: "false",
+      JARVIS_AI_PLANNER_ENABLED: "false",
       GEMINI_API_KEY: "",
       GEMINI_CHAT_ENABLED: "false",
       GEMINI_WEB_RESEARCH_ENABLED: "false"
@@ -136,13 +142,28 @@ test("paired Android devices can authenticate, use voice chat, and be revoked", 
   assert.equal(heartbeat.status, 200);
   assert.equal((await heartbeat.json()).device.accessibilityEnabled, true);
 
-  const noGeminiPlan = await request("/api/devices/plan", {
+  const offlinePlanResponse = await request("/api/devices/plan", {
     method: "POST",
     headers: { Authorization: "Bearer " + paired.deviceToken },
     body: JSON.stringify({ message: "Open YouTube and search JEE Physics" })
   });
-  assert.equal(noGeminiPlan.status, 503);
-  assert.equal((await noGeminiPlan.json()).code, "AI_NOT_CONFIGURED");
+  assert.equal(offlinePlanResponse.status, 200);
+  const offlinePlan = await offlinePlanResponse.json();
+  assert.equal(offlinePlan.mode, "device_action");
+  assert.equal(offlinePlan.externalAI, false);
+  assert.equal(offlinePlan.engine, "built-in-device-rules");
+  assert.deepEqual(offlinePlan.actions.map((item) => item.type), [
+    "open_app", "tap_label", "type_text", "ask_user"
+  ]);
+  assert.equal(offlinePlan.actions[2].value, "JEE Physics");
+
+  const unsupportedPlan = await request("/api/devices/plan", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + paired.deviceToken },
+    body: JSON.stringify({ message: "Open YouTube and do something complex" })
+  });
+  assert.equal(unsupportedPlan.status, 503);
+  assert.equal((await unsupportedPlan.json()).code, "AI_NOT_CONFIGURED");
 
   const voice = await request("/api/devices/voice-command", {
     method: "POST",

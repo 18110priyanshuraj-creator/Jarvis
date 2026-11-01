@@ -152,7 +152,7 @@ export function createDevicesRouter({ getStore, saveStore, requireAuth, runDevic
     }
     try {
       const plan = await createAgentPlan(message);
-      res.json({ ...plan, externalAI: true });
+      res.json({ ...plan, externalAI: plan.externalAI === true });
     } catch (error) {
       if (error?.code === "AI_NOT_CONFIGURED") {
         return res.status(503).json({ error: error.message, code: error.code });

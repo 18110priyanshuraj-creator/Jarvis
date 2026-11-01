@@ -68,8 +68,8 @@ object PermissionSetup {
             Item(
                 "JARVIS server pairing",
                 if (paired) "Paired" else "Not paired",
-                if (paired) "Remote AI planning can be used when the server has Gemini configured."
-                else "Required for remote Gemini planning. Local app-launch commands can work without pairing.",
+                if (paired) "Paired voice requests can use the configured server AI planner; supported app-search commands also have a built-in local fallback."
+                else "Required for server-planned multi-step app search. Basic app launch and screen controls can work locally after the relevant Android permission is enabled.",
                 false
             ),
             Item(

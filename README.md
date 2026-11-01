@@ -360,6 +360,17 @@ The read controls appear only on live search source cards after page reading is 
 - The existing Neon-backed `jarvis_app_state` store remains the source of durable data. No new database or model training is introduced.
 - Full behavior and verification: `docs/PHASE19_INTELLIGENT_MEMORY.md`.
 
+## Android Device Control (Phase 20)
+
+- The Android Companion supports locally executed app launch, explicit on-device screen summaries, scrolling, Back, Home, exact visible-label taps, and ordinary text entry into a field the user has already focused.
+- When the server AI planner is not configured, a built-in deterministic rules planner (without an external AI provider) can still handle clear app-search requests such as `Open YouTube and search for JEE Physics`, `YouTube kholo aur JEE Physics search karo`, or `Search for circular motion on YouTube`.
+- That offline workflow is deliberately short: open the named app, tap its visible **Search** control, type the requested search phrase, then stop and ask the user to select the result. JARVIS does not choose a result automatically.
+- The fixed-pattern planner does not need an external AI key, but the multi-step request still needs an active network connection to the authenticated JARVIS server and a paired device. Direct commands already recognized by the Android Companion can run locally without pairing.
+- Screen summaries are read locally on the tablet and are not sent to the server. Accessibility must be enabled manually by the user in Android Settings; microphone use remains within an explicitly started session.
+- Password, PIN, OTP, verification, send/submit, delete, payment/purchase, transfer, account-security and permission controls remain blocked. A conservative search-term filter also declines selected high-risk searches; it is not a guarantee that every unsafe request can be detected.
+- Unsupported or ambiguous requests are not guessed. Broader AI planning remains optional and requires a separately configured server-side AI provider. A paired device, an enabled microphone and Accessibility permission do not by themselves guarantee general-purpose AI or unrestricted device control.
+- Full behavior and limitations: `docs/PHASE20_ANDROID_DEVICE_CONTROL.md`.
+
 ## Built-in offline mode
 
 The offline brain is not a general-purpose language model. It contains a safe arithmetic parser, deterministic rules and a curated knowledge pack for selected topics such as Newton's laws, units and dimensions, mole concept, sets, circular motion and Ohm's law. It cannot answer arbitrary questions. Live web retrieval requires a trusted SearXNG endpoint configured on the server.
