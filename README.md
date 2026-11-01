@@ -196,38 +196,21 @@ Set values in the private server environment settings (not in the Git repository
 - POST /api/actions/:id/execute — perform one action only after the exact typed confirmation phrase.
 - POST /api/actions/:id/cancel — cancel a pending preview.
 
-## Voice and Android companion
+## Orbital voice interface and Android companion
 
-- The dashboard includes Hindi push-to-talk where supported by the browser and optional spoken replies.
-- The Android Companion offers Speak once and user-started hands-free listening with a persistent notification and a Stop control.
-- Hindi speech/text-to-speech is preferred, with an English (India) fallback when Hindi language data or recognition is unavailable.
-- The Gemini planner separates ordinary conversation from a limited allow-list of Android actions. The Android app validates actions locally before running them.
-- Supported everyday actions include opening an app, reading visible labels, safe navigation, scrolling and entering ordinary text in a field the user has already focused. Screen text remains on the device and is not sent as chat history.
-- JARVIS does not bypass the lock screen, grant permissions, install apps, access secrets, send messages, place calls, make purchases, or change account/security settings.
+- The main JARVIS screen is a minimal black interface with one animated orange orbital core, a small status line, a recent conversation area, and a compact text input.
+- Tap the orbital core to start browser speech recognition. JARVIS sends the recognized text through the normal chat route, speaks the reply with browser speech synthesis, and listens again while the voice session remains active.
+- Tap the orb again, sign out, navigate away from Assistant, or close the page to stop microphone use. There is no wake word and no always-on microphone.
+- Browser speech recognition availability and language quality depend on the browser/device. The browser's speech service may process recognition audio; JARVIS does not send raw microphone audio to its server in this mode.
+- Hindi/Hinglish is the default input language; English (India) can be selected in the voice controller configuration. The Android Companion remains a separate app with its own pairing, permission and Stop controls.
+- Existing Android actions remain restricted to their allow-list and user-confirmed flows. The orbital UI does not grant new device permissions or unrestricted phone control.
 
-The microphone is active only after the user starts the voice session. Use the Android notification's Stop action or the app's Stop control to end it.
+## Online AI and web research provider status
 
-## Gemini and live web configuration
-
-All API credentials stay on the server. Never put an API key in the browser bundle, Android APK, GitHub repository or a chat message.
-
-Set these server environment variables:
-
-```dotenv
-GEMINI_API_KEY=your-server-side-key
-GEMINI_MODEL=gemini-3.8-flash
-GEMINI_REQUEST_TIMEOUT_MS=25000
-GEMINI_RETRY_ATTEMPTS=2
-GEMINI_CHAT_ENABLED=true
-GEMINI_WEB_RESEARCH_ENABLED=true
-```
-
-- `GEMINI_CHAT_ENABLED=true` enables open-ended conversational replies.
-- `GEMINI_WEB_RESEARCH_ENABLED=true` enables grounded live web research for prompts that need current information or explicitly ask to search online.
-- Both features also require a valid `GEMINI_API_KEY`. If Gemini is unavailable, JARVIS falls back to its limited offline brain and must not claim that an internet search occurred.
-- Chat, planning and research share one server-side Gemini client with a bounded request timeout and a small retry budget for temporary HTTP errors (including rate limiting). Retries improve resilience; they do not increase project quota or rotate keys.
-- The public `/api/health` endpoint reports only safe provider readiness metadata (configured state, model identifier and retry settings); it never returns the API key.
-- Google Search grounding may have usage limits or costs under the provider's current billing terms. Review the current terms before enabling paid billing.
+- The visual interface and browser speech loop do not depend on a live audio-model stream.
+- The existing server-side chat and grounded web-research modules still use the legacy Google model adapter. They require a valid server-only `GEMINI_API_KEY` and their opt-in flags. The production key is currently empty, so open-ended AI answers and live web research are not currently available there; JARVIS falls back to its limited offline rules.
+- A separate, age-appropriate provider replacement is required before those online capabilities can be genuinely Gemini-free. Do not claim that JARVIS searched the internet when the server reports that web research is unavailable.
+- Knowledge entries and memories are saved only through explicit user actions; retrieved web pages are untrusted reference material, not instructions or model training.
 
 ## Knowledge Library (Phase 2)
 
