@@ -97,7 +97,7 @@ export function buildConversationSystemInstruction(memories = [], knowledge = []
 
 export async function createConversationReply(message, history = [], memories = [], knowledge = [], skills = [], experiencePreferences = []) {
   if (!isConversationAIEnabled()) {
-    const error = new Error("Gemini conversation mode is disabled or not configured.");
+    const error = new Error("Online AI mode is disabled or not configured.");
     error.code = "AI_NOT_CONFIGURED";
     throw error;
   }
@@ -105,7 +105,7 @@ export async function createConversationReply(message, history = [], memories = 
   const model = getGeminiModel();
   const client = getGeminiClient();
   if (!client) {
-    const error = new Error("Gemini conversation mode is disabled or not configured.");
+    const error = new Error("Online AI mode is disabled or not configured.");
     error.code = "AI_NOT_CONFIGURED";
     throw error;
   }
@@ -120,6 +120,6 @@ export async function createConversationReply(message, history = [], memories = 
   });
 
   const answer = cleanText(response.text, 5000);
-  if (!answer) throw new Error("Gemini returned an empty conversation reply.");
+  if (!answer) throw new Error("The online AI service returned an empty reply.");
   return answer;
 }
