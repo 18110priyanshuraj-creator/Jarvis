@@ -349,6 +349,17 @@ The read controls appear only on live search source cards after page reading is 
 - No always-on microphone, wake-word, background hidden listening, full-duplex streaming or VAD is introduced.
 - Full implementation and limitations: `docs/PHASE18_NATURAL_VOICE.md`.
 
+## Intelligent Conversation Memory & Context (Phase 19)
+
+- Long-term memory remains explicit: JARVIS saves a note only after a direct Remember / Yaad rakhna request or an intentional save in the Memory screen. Ordinary chat is temporary and is never silently promoted to memory.
+- Each saved note can be edited, deleted, or paused/resumed for assistant context. Pausing keeps the note in the Memory list but excludes it from online AI prompts.
+- The Memory screen includes a temporary context preview. Enter a prompt to inspect which enabled notes match, their relevance ranking, and how many matching paused notes were excluded. Preview text is not saved.
+- Retrieval filters common English and Hinglish/Hindi filler words, matches meaningful terms and safe word variations, and requires a minimum relevance overlap. Up to 5 enabled notes and 1,800 total characters are included with an online AI request; unrelated and paused notes are excluded.
+- A chat forget request must include the exact saved note, for example: `Forget: I prefer concise Hinglish explanations` or `Bhool jao: I prefer concise Hinglish explanations`. Only an exact normalized match deletes one note. Vague, partial, and bulk requests delete nothing; the user can still edit/delete notes in the Memory screen.
+- Memory screening rejects likely credentials, contact details, medical/health details and other sensitive personal categories. This screening is a safeguard, not a guarantee; do not save secrets or sensitive personal information.
+- The existing Neon-backed `jarvis_app_state` store remains the source of durable data. No new database or model training is introduced.
+- Full behavior and verification: `docs/PHASE19_INTELLIGENT_MEMORY.md`.
+
 ## Built-in offline mode
 
 The offline brain is not a general-purpose language model. It contains a safe arithmetic parser, deterministic rules and a curated knowledge pack for selected topics such as Newton's laws, units and dimensions, mole concept, sets, circular motion and Ohm's law. It cannot answer arbitrary questions. Live web retrieval requires a trusted SearXNG endpoint configured on the server.
