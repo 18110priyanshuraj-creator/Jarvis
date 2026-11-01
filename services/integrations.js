@@ -79,8 +79,10 @@ async function githubRequest(path, env, fetchImpl) {
   }, fetchImpl);
 }
 
-async function driveRequest(env, fetchImpl) {
-  const token = requireCredential("google_drive", env);
+async function driveRequest(env, fetchImpl, getGoogleDriveAccessToken) {
+  const token = typeof getGoogleDriveAccessToken === "function"
+    ? await getGoogleDriveAccessToken()
+    : requireCredential("google_drive", env);
   const url = "https://www.googleapis.com/drive/v3/files?pageSize=8&orderBy=modifiedTime%20desc&fields=files(id,name,mimeType,modifiedTime,webViewLink)";
   return requestJson(url, { Authorization: "Bearer " + token }, fetchImpl);
 }
@@ -151,10 +153,13 @@ function sanitizeElevenLabsAccount(data) {
 
 export const INTEGRATION_PROVIDER_IDS = Object.freeze(Object.keys(PROVIDERS));
 
-export function getIntegrationCatalog(env = process.env, disabledProviders = []) {
+export function getIntegrationCatalog(env = process.env, disabledProviders = [], oauthConnections = []) {
   const disabled = new Set(Array.isArray(disabledProviders) ? disabledProviders : []);
+  const googleOAuthConnected = Array.isArray(oauthConnections) && oauthConnections.some((item) =>
+    item?.provider === "google_drive" && item?.encryptedRefreshToken?.algorithm === "aes-256-gcm"
+  );
   return Object.entries(PROVIDERS).map(([id, provider]) => {
-    const configured = Boolean(credential(id, env));
+    const configured = Boolean(credential(id, env)) || (id === "google_drive" && googleOAuthConnected);
     return {
       id,
       name: provider.name,
@@ -163,7 +168,12 @@ export function getIntegrationCatalog(env = process.env, disabledProviders = [])
       capabilities: [...provider.capabilities],
       configured,
       enabled: configured && !disabled.has(id),
-      disabled: disabled.has(id)
+      disabled: disabled.has(id),
+      authMethod: id === "google_drive"
+        ? googleOAuthConnected ? "Google OAuth (encrypted refresh token)" : "Google OAuth or server access token"
+        : id === "github" ? "Fine-grained token or GitHub App"
+        : id === "telegram" ? "Bot token"
+        : "Restricted API key"
     };
   });
 }
@@ -180,7 +190,7 @@ export async function probeIntegration(provider, options = {}) {
       latestRepository: repositories[0]?.fullName || ""
     };
   } else if (provider === "google_drive") {
-    details = { recentFiles: sanitizeDriveFiles(await driveRequest(env, fetchImpl)).length };
+    details = { recentFiles: sanitizeDriveFiles(await driveRequest(env, fetchImpl, options.getGoogleDriveAccessToken)).length };
   } else if (provider === "telegram") {
     details = sanitizeTelegramProfile(await telegramRequest(env, fetchImpl));
   } else {
@@ -204,7 +214,7 @@ export async function runIntegrationAction(action, options = {}) {
     return { repositories, summary: "Retrieved " + repositories.length + " GitHub repository/repositories." };
   }
   if (action === "google_drive_list_files") {
-    const files = sanitizeDriveFiles(await driveRequest(env, fetchImpl));
+    const files = sanitizeDriveFiles(await driveRequest(env, fetchImpl, options.getGoogleDriveAccessToken));
     return { files, summary: "Retrieved " + files.length + " recent Google Drive file(s)." };
   }
   if (action === "telegram_get_bot_profile") {
