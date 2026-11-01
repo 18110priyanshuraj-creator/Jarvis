@@ -54,6 +54,7 @@ before(async () => {
       JARVIS_GOOGLE_DRIVE_ACCESS_TOKEN: "",
       JARVIS_TELEGRAM_BOT_TOKEN: "",
       JARVIS_ELEVENLABS_API_KEY: "",
+      JARVIS_TELEGRAM_ALLOWED_CHAT_IDS: "123456789",
       JARVIS_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 11).toString("base64"),
       JARVIS_GOOGLE_OAUTH_CLIENT_ID: "local-test-client.apps.exampleusercontent.com",
       JARVIS_GOOGLE_OAUTH_CLIENT_SECRET: "local-test-client-secret",
@@ -142,6 +143,40 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.match(cookieHeader, /SameSite=Strict/i);
   cookie = cookieHeader.split(";")[0];
   assert.match(cookie, /^jarvis_session=/);
+
+  const blockedActionHistory = await request("/api/actions", { headers: {} });
+  assert.equal(blockedActionHistory.status, 401);
+  const actionCapabilitiesResponse = await request("/api/actions/capabilities");
+  assert.equal(actionCapabilitiesResponse.status, 200);
+  const actionCapabilities = await actionCapabilitiesResponse.json();
+  assert.equal(actionCapabilities.telegram.enabled, false);
+  assert.deepEqual(actionCapabilities.telegram.allowedChatIds, ["123456789"]);
+  assert.equal(actionCapabilities.googleDrive.canCreateDocs, false);
+
+  const blockedTelegramPreview = await request("/api/actions", {
+    method: "POST",
+    body: JSON.stringify({
+      type: "telegram_send_message",
+      chatId: "123456789",
+      text: "This should not be sent without a bot token."
+    })
+  });
+  assert.equal(blockedTelegramPreview.status, 409);
+  assert.match((await blockedTelegramPreview.json()).error, /not enabled/i);
+
+  const blockedGoogleDocPreview = await request("/api/actions", {
+    method: "POST",
+    body: JSON.stringify({
+      type: "google_drive_create_doc",
+      title: "Test document",
+      content: "This should not be created without Drive Docs consent."
+    })
+  });
+  assert.equal(blockedGoogleDocPreview.status, 409);
+  assert.match((await blockedGoogleDocPreview.json()).error, /drive.file permission/i);
+  const emptyActionHistory = await request("/api/actions");
+  assert.equal(emptyActionHistory.status, 200);
+  assert.deepEqual((await emptyActionHistory.json()).actions, []);
 
   const integrationCatalogueResponse = await request("/api/integrations");
   assert.equal(integrationCatalogueResponse.status, 200);
@@ -704,6 +739,7 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.ok(Array.isArray(exportPayload.data.workflows));
   assert.ok(Array.isArray(exportPayload.data.workflowRuns));
   assert.ok(Array.isArray(exportPayload.data.disabledIntegrations));
+  assert.ok(Array.isArray(exportPayload.data.externalActions));
   assert.equal(Object.hasOwn(exportPayload.data, "oauthConnections"), false);
   assert.equal(JSON.stringify(exportPayload).includes("encryptedRefreshToken"), false);
   assert.equal(Object.hasOwn(exportPayload.data, "integrations"), false);
