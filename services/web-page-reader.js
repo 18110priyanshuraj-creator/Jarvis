@@ -51,6 +51,7 @@ export function normalizePublicPageUrl(value) {
       !hostname ||
       url.username ||
       url.password ||
+      isIP(hostname) !== 0 ||
       (url.port && url.port !== "443") ||
       hostname === "localhost" ||
       hostname.endsWith(".localhost") ||
@@ -131,7 +132,7 @@ export function verifyPageReadToken(token, sessionToken, secret, now = Date.now(
     !url ||
     url.href !== payload.url ||
     !Number.isFinite(issuedAt) ||
-    issuedAt > now + 30_000 ||
+    issuedAt > now ||
     now - issuedAt > READ_TOKEN_TTL_MS
   ) return null;
   const expected = Buffer.from(createTokenSignature(parts[0], sessionToken, secret));
@@ -248,7 +249,7 @@ export function extractPageContent(input, { url, contentType = "text/html", maxC
   const description = readMetaContent(raw, "description") || readMetaContent(raw, "og:description");
   const body = raw
     .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<(script|style|noscript|svg|canvas|iframe|template|form)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ")
+    .replace(/<(script|style|noscript|svg|canvas|iframe|template|form|nav|footer|header|aside)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ")
     .replace(/<(br|hr)\b[^>]*>/gi, "\n")
     .replace(/<\/(p|div|article|section|main|li|h[1-6]|tr|blockquote)\s*>/gi, "\n")
     .replace(/<[^>]*>/g, " ");
