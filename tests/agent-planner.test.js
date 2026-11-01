@@ -78,7 +78,7 @@ test("agent planner rejects arbitrary action names and oversized plans", () => {
 });
 
 
-test("offline device planner builds a bounded English app-search workflow", () => {
+test("built-in device planner builds a bounded English app-search workflow", () => {
   const plan = createLocalAgentPlan("Open YouTube and search for JEE Physics");
   assert.ok(plan);
   assert.equal(plan.mode, "device_action");
@@ -91,7 +91,7 @@ test("offline device planner builds a bounded English app-search workflow", () =
   assert.match(plan.actions[3].value, /choose the result/i);
 });
 
-test("offline device planner supports Hindi and Hinglish search phrasing", () => {
+test("built-in device planner supports Hindi and Hinglish search phrasing", () => {
   const hindi = createLocalAgentPlan("YouTube kholo aur JEE Physics search karo");
   assert.ok(hindi);
   assert.equal(hindi.actions[0].value, "YouTube");
@@ -107,7 +107,7 @@ test("offline device planner supports Hindi and Hinglish search phrasing", () =>
   assert.equal(hinglish.actions[2].value, "mole concept");
 });
 
-test("offline planner declines ambiguous, secret-like, and restricted searches", () => {
+test("built-in planner declines ambiguous, secret-like, and restricted searches", () => {
   assert.equal(createLocalAgentPlan("Open YouTube and do something"), null);
   assert.equal(createLocalAgentPlan("Open YouTube and search for 123456"), null);
   assert.equal(createLocalAgentPlan("Open YouTube and search for how to make a bomb"), null);
