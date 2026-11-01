@@ -13,6 +13,7 @@ import { createRuntimeStore } from "./services/runtime-store.js";
 import { createAgentPlan } from "./services/agent-planner.js";
 import { createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
 import { createGroundedResearch, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
+import { getAIProviderStatus } from "./services/ai-provider.js";
 import { getGeminiRuntimeStatus } from "./services/gemini-client.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, searchMemories } from "./services/memory.js";
@@ -568,26 +569,28 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
 }
 
 app.get("/api/health", (_req, res) => {
-  const modelRuntime = getGeminiRuntimeStatus();
-  const conversationAIEnabled = modelRuntime.conversationEnabled;
-  const plannerAIEnabled = modelRuntime.plannerEnabled;
-  const webResearchEnabled = modelRuntime.webResearchEnabled;
+  const aiRuntime = getAIProviderStatus();
+  const researchRuntime = getGeminiRuntimeStatus();
+  const conversationAIEnabled = aiRuntime.conversationEnabled;
+  const plannerAIEnabled = aiRuntime.plannerEnabled;
+  const webResearchEnabled = researchRuntime.webResearchEnabled;
   res.json({
     ok: true,
     service: "jarvis",
-    version: "1.6.0-controlled-actions",
+    version: "1.7.0-independent-ai-brain",
     brain: conversationAIEnabled ? "online-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
     webResearchEnabled,
     externalAI: plannerAIEnabled || conversationAIEnabled || webResearchEnabled,
     aiProvider: {
-      provider: "external-llm",
-      configured: modelRuntime.configured,
-      model: modelRuntime.configured ? "configured-model" : "not-configured",
-      modelValid: modelRuntime.modelValid,
-      requestTimeoutMs: modelRuntime.requestTimeoutMs,
-      retryAttempts: modelRuntime.retryAttempts
+      provider: aiRuntime.provider,
+      configured: aiRuntime.configured,
+      baseUrlConfigured: aiRuntime.baseUrlConfigured,
+      model: aiRuntime.model,
+      modelValid: aiRuntime.modelValid,
+      requestTimeoutMs: aiRuntime.requestTimeoutMs,
+      retryAttempts: aiRuntime.retryAttempts
     },
     runtimeStorage: runtimeStore.mode()
   });

@@ -1,6 +1,6 @@
 # JARVIS — voice assistant with selective memory
 
-JARVIS is a private, single-owner assistant with a web dashboard and an Android Companion. It combines server-side Gemini conversation, Google Search grounding for relevant current questions, temporary chat context, explicitly requested long-term memories, and consent-based Android controls. A built-in offline brain remains available as a limited fallback.
+JARVIS is a private, single-owner assistant with a web dashboard and an Android Companion. It combines a provider-independent AI chat/planning adapter, a temporary legacy web-research adapter scheduled for replacement in Phase 14, temporary chat context, explicitly requested long-term memories, and consent-based Android controls. A built-in offline brain remains available as a limited fallback.
 
 ## How JARVIS handles information
 
@@ -16,7 +16,7 @@ JARVIS is a private, single-owner assistant with a web dashboard and an Android 
 - Durable memories are saved only through an explicit “Remember / Yaad rakhna” instruction or the Memory form. Ordinary chat is never automatically promoted to long-term memory.
 - Memory entries support preference, goal, and fact categories; the Memory screen supports keyword/category search, edit, and delete.
 - Duplicate detection normalizes Unicode, casing, and repeated whitespace. The server also rejects likely credentials and sensitive personal records.
-- Only a small number of relevant saved memories are supplied to the Gemini conversation context. Unrelated memories are not sent with every prompt.
+- Only a small number of relevant saved memories are supplied to the configured AI conversation context. Unrelated memories are not sent with every prompt.
 - The persistent data collections remain separated: memories, Knowledge Library entries, explicitly saved research, tasks, and custom skills.
 - **Export my data** downloads a JSON file containing these durable user data collections. It deliberately excludes temporary conversations, paired-device credentials, server environment variables/API keys, and anonymous feedback metadata.
 - Signing out clears the active temporary session transcript. It does not delete durable memories, notes, tasks, or research; those remain reviewable and individually deletable.
@@ -36,7 +36,7 @@ JARVIS is a private, single-owner assistant with a web dashboard and an Android 
 - A draft can be **approved and activated** only after its current version passes validation and the user explicitly approves it.
 - Editing an approved skill creates a new draft version. The previous approved version remains active until the new version passes validation and is approved.
 - Skills can be paused or deleted. Paused skills are not added to conversation context.
-- Only approved, safe, trigger-matching skills are supplied as optional guidance to Gemini chat. They cannot override system/safety instructions or authorize external actions.
+- Only approved, safe, trigger-matching skills are supplied as optional guidance to configured AI chat. They cannot override system/safety instructions or authorize external actions.
 - Legacy saved skills are migrated to version 1 to preserve their existing content. Skills with no trigger phrases are not automatically applied.
 - The offline rule-based brain cannot interpret arbitrary skill instructions; without a configured conversational AI model, skills are stored and validated but are not executed as open-ended reasoning.
 
@@ -57,9 +57,9 @@ JARVIS is a private, single-owner assistant with a web dashboard and an Android 
 - Feedback records contain only the rating, category, optional suggestion, engine label and timestamp. The submitted chat prompt and assistant reply are not copied into the feedback record; legacy `prompt` and `note` fields from older clients are ignored.
 - The Experience dashboard shows aggregate feedback counts, issue categories, pending suggestions, and approved response preferences.
 - A suggestion becomes a response preference only after the user explicitly presses **Approve as preference**. Preferences can be paused or deleted at any time.
-- Only user-approved active preferences are included as optional guidance in Gemini conversation context. They cannot override system/safety rules, act as factual evidence, or authorize external actions.
+- Only user-approved active preferences are included as optional guidance in configured AI conversation context. They cannot override system/safety rules, act as factual evidence, or authorize external actions.
 - Response preferences do not train model weights. There is no automatic fine-tuning or hidden prompt rewriting from ratings.
-- The offline rule-based brain does not interpret open-ended response preferences. They are applied only when the Gemini conversational model is configured and enabled.
+- The offline rule-based brain does not interpret open-ended response preferences. They are applied only when the independent AI provider is configured and enabled.
 - Text screening rejects common credential/contact patterns, but it is not a complete privacy detector. Do not submit passwords, API keys, contact details or other sensitive information in feedback.
 
 ### Experience API
@@ -208,8 +208,8 @@ Set values in the private server environment settings (not in the Git repository
 ## Online AI and web research provider status
 
 - The visual interface and browser speech loop do not depend on a live audio-model stream.
-- The existing server-side chat and grounded web-research modules still use the legacy Google model adapter. They require a valid server-only `GEMINI_API_KEY` and their opt-in flags. The production key is currently empty, so open-ended AI answers and live web research are not currently available there; JARVIS falls back to its limited offline rules.
-- A separate, age-appropriate provider replacement is required before those online capabilities can be genuinely Gemini-free. Do not claim that JARVIS searched the internet when the server reports that web research is unavailable.
+- Phase 13 moves general chat and the Android request planner to a provider-independent OpenAI-compatible chat-completions adapter. It requires `JARVIS_AI_BASE_URL`, `JARVIS_AI_MODEL`, `JARVIS_AI_API_KEY` for remote endpoints, `JARVIS_AI_ENABLED=true`, and the relevant chat/planner opt-in. These server values must be configured privately; the current production deployment has not been given a provider endpoint or credential, so general online answers and AI planning remain unavailable until configured.
+- Live web research is still handled by the temporary legacy grounded-search adapter and remains unavailable without its separate server configuration. Phase 14 replaces that search path. Do not claim that JARVIS searched the internet when the health endpoint reports web research is unavailable.
 - Knowledge entries and memories are saved only through explicit user actions; retrieved web pages are untrusted reference material, not instructions or model training.
 
 ## Knowledge Library (Phase 2)
@@ -218,7 +218,7 @@ Set values in the private server environment settings (not in the Git repository
 - Add a note manually or choose **Save to Knowledge** on a web research result. Internet results are never stored automatically.
 - Each saved item keeps its title, content, category, tags, source links, available claim-level citations, and review status.
 - Web-research entries start as **unreviewed**. You can mark them as reviewed after checking the source links; this records your action and does not mean JARVIS independently verified every claim.
-- JARVIS detects exact normalized title/content duplicates, supports local keyword search, and retrieves a small number of relevant entries as reference context for Gemini or the offline fallback.
+- JARVIS detects exact normalized title/content duplicates, supports local keyword search, and retrieves a small number of relevant entries as reference context for the configured AI provider or the offline fallback.
 - Saved web content is treated as untrusted reference material. It must not override system instructions or be treated as proof by itself.
 - This is retrieval-augmented context, not model training, automatic web crawling, or permanent learning of model weights.
 
@@ -245,9 +245,35 @@ Neon PostgreSQL is used when `DATABASE_URL` is configured. Otherwise, local deve
 - `jarvis_app_state` now has a revision counter. Saves use an atomic revision check; when another server instance wins a concurrent update, JARVIS loads the latest snapshot, merges collection changes by record ID/provider, and retries rather than silently replacing the latest data.
 - Without `DATABASE_URL`, the runtime store falls back to process memory for local development. Production deployments that need sessions and conversations to survive across server instances must configure a persistent shared database.
 
+## Independent AI Brain (Phase 13)
+
+- General chat and Android request planning use a provider-neutral OpenAI-compatible `/chat/completions` adapter built on Node's native `fetch`; chat and planner no longer import the Google model SDK.
+- The adapter is configured only through server environment variables. Browser requests cannot select the provider URL, model, API key, headers, or tools.
+- Remote endpoints must use HTTPS and an API key. HTTP is accepted only for loopback localhost in non-production environments. Redirects are rejected, requests are bounded by a timeout, retries are limited to transient failures, and provider response bodies are never copied into user-facing errors.
+- Conversation context uses standard `system`, `user`, and `assistant` roles with bounded history. Existing approved memories, Knowledge Library excerpts, approved skills, and approved response preferences remain bounded context.
+- Android planning requests JSON-mode output and still passes every candidate through the existing local allow-list and protected-action validator. The model cannot execute device actions itself.
+- Configure privately: `JARVIS_AI_BASE_URL` (base URL ending before `/chat/completions`), `JARVIS_AI_MODEL`, `JARVIS_AI_API_KEY` for remote endpoints, `JARVIS_AI_ENABLED=true`, and `JARVIS_AI_CHAT_ENABLED=true` and/or `JARVIS_AI_PLANNER_ENABLED=true`. Timeout/retry bounds use `JARVIS_AI_REQUEST_TIMEOUT_MS` and `JARVIS_AI_RETRY_ATTEMPTS`.
+- The production endpoint and credential are not configured by this code change. Until a compatible service is configured, JARVIS safely uses its limited offline fallback.
+- Web search is not part of Phase 13. The temporary grounded-search adapter remains separate until Phase 14. Saved memories and Knowledge Library entries are user-controlled context; they do not train model weights.
+
+### Example configuration (server environment only)
+
+```dotenv
+JARVIS_AI_BASE_URL=https://your-compatible-service.example/v1
+JARVIS_AI_API_KEY=your-private-key
+JARVIS_AI_MODEL=your-model-id
+JARVIS_AI_ENABLED=true
+JARVIS_AI_CHAT_ENABLED=true
+JARVIS_AI_PLANNER_ENABLED=true
+JARVIS_AI_REQUEST_TIMEOUT_MS=25000
+JARVIS_AI_RETRY_ATTEMPTS=2
+```
+
+Do not put real credentials in the repository, browser settings, chat messages, or screenshots.
+
 ## Built-in offline mode
 
-The offline brain is not a general-purpose language model. It contains a safe arithmetic parser, deterministic rules and a curated knowledge pack for selected topics such as Newton's laws, units and dimensions, mole concept, sets, circular motion and Ohm's law. It cannot answer arbitrary questions or fetch live web information without Gemini.
+The offline brain is not a general-purpose language model. It contains a safe arithmetic parser, deterministic rules and a curated knowledge pack for selected topics such as Newton's laws, units and dimensions, mole concept, sets, circular motion and Ohm's law. It cannot answer arbitrary questions. Live web retrieval is a separate Phase 14 capability and is unavailable until that phase is implemented and configured.
 
 ## Run locally
 
@@ -263,6 +289,6 @@ Requirements: Node.js 22 or later.
 ## Security notes
 
 - This is a single-owner dashboard protected by a shared password and cookie session, not a multi-user identity system.
-- Keep `JARVIS_PASSWORD`, `DATABASE_URL` and `GEMINI_API_KEY` private.
+- Keep `JARVIS_PASSWORD`, `DATABASE_URL`, `JARVIS_AI_API_KEY` and the temporary legacy `GEMINI_API_KEY` private.
 - Review Android permissions yourself and enable only what you understand and need.
 - Treat model outputs as fallible. Verify important claims against the linked sources or trusted people.
