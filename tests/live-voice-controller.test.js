@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { buildLiveVoiceSetup as buildServerLiveVoiceSetup } from "../services/live-voice.js";
 import {
   buildLiveVoiceSetup,
   decodePcm16Base64,
@@ -41,4 +42,11 @@ test("PCM decoder rejects missing and malformed payloads", () => {
   assert.throws(() => decodePcm16Base64(""), TypeError);
   const oddLength = typeof btoa === "function" ? btoa("\u0001") : Buffer.from([1]).toString("base64");
   assert.throws(() => decodePcm16Base64(oddLength), TypeError);
+});
+
+test("browser WebSocket setup matches the server-constrained ephemeral token setup", () => {
+  assert.deepEqual(
+    buildLiveVoiceSetup("gemini-3.8-live"),
+    buildServerLiveVoiceSetup("gemini-3.8-live")
+  );
 });
