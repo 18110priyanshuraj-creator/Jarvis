@@ -156,6 +156,8 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
     "https://www.googleapis.com/auth/drive.metadata.readonly"
   ]);
   assert.equal(integrationCatalogue.providers.find((item) => item.id === "google_drive").oauthReady, true);
+  assert.equal(integrationCatalogue.providers.find((item) => item.id === "google_drive").configured, true);
+  assert.equal(integrationCatalogue.providers.find((item) => item.id === "google_drive").enabled, true);
   assert.equal(JSON.stringify(integrationCatalogue).includes("local-test-client-secret"), false);
   assert.equal(JSON.stringify(integrationCatalogue).includes("JARVIS_PASSWORD"), false);
 
