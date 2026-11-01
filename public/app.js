@@ -893,6 +893,8 @@ function renderIntegrations() {
           body: JSON.stringify({})
         });
         state.integrations = data.providers || [];
+        state.googleDriveOAuth = data.googleDriveOAuth || null;
+        state.integrationPermissions = data.permissions || [];
         delete state.integrationResults[provider.id];
         renderIntegrations();
         toast(provider.enabled ? provider.name + " disabled in JARVIS." : provider.name + " enabled in JARVIS.");
@@ -951,7 +953,37 @@ function renderIntegrations() {
   }
 }
 
-function workflowStepLabel(type) {
+function renderIntegrationPermissions() {
+  const target = $("#integration-permission-summary");
+  if (!target) return;
+  target.replaceChildren();
+  const heading = document.createElement("h2");
+  heading.textContent = "Permission & access policies";
+  target.append(heading);
+  for (const permission of state.integrationPermissions) {
+    const card = document.createElement("article");
+    card.className = "list-item integration-permission";
+    const title = document.createElement("strong");
+    title.textContent = permission.provider.replaceAll("_", " ");
+    const model = document.createElement("div");
+    model.className = "list-item-meta";
+    model.textContent = permission.authModel;
+    const boundary = document.createElement("p");
+    boundary.textContent = permission.accessBoundary;
+    card.append(title, model, boundary);
+    const scopes = permission.grantedScopes?.length ? permission.grantedScopes : permission.requestedScopes || [];
+    for (const scope of scopes) {
+      const scopeLine = document.createElement("p");
+      scopeLine.className = "list-item-meta";
+      scopeLine.textContent = (permission.grantedScopes?.includes(scope) ? "Granted: " : "Required: ") + scope;
+      card.append(scopeLine);
+    }
+    target.append(card);
+  }
+  renderIntegrationPermissions();
+}
+
+function renderIntegrationPermissions() {
   return ({
     create_task: "Create local task",
     save_memory: "Save personal memory",
