@@ -1,5 +1,5 @@
 import { createVoiceController } from "./voice-controller.js";
-import { createLiveVoiceController } from "./live-voice-controller.js";
+import { createOrbitalVisual } from "./orbital-visual.js";
 const $ = (selector) => document.querySelector(selector);
 const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
 let toastTimer;
@@ -109,7 +109,10 @@ function setView(name) {
   };
   $("#page-kicker").textContent = titles[name][0];
   $("#page-title").textContent = titles[name][1];
+  if (name !== "chat" && voiceModeActive) stopHandsFreeMode();
   if (name === "chat") setTimeout(() => $("#chat-input").focus(), 0);
+  $("#app-shell").classList.remove("menu-open");
+  $("#menu-toggle")?.setAttribute("aria-expanded", "false");
   if (name === "devices") refreshDevices().catch((error) => toast(error.message, true));
   if (name === "memory") refreshMemories().catch((error) => toast(error.message, true));
   if (name === "workflows") refreshWorkflows().catch((error) => toast(error.message, true));
@@ -127,14 +130,14 @@ function makeEmpty(message) {
 function renderChats() {
   const target = $("#chat-messages");
   target.replaceChildren();
-  const messages = state.chats.slice(-28);
+  const messages = state.chats.slice(-6);
   if (!messages.length) {
     $("#chat-messages").classList.add("hidden");
-    $(".chat-intro").classList.remove("hidden");
+    
     return;
   }
   $("#chat-messages").classList.remove("hidden");
-  $(".chat-intro").classList.add("hidden");
+  
   for (let index = 0; index < messages.length; index++) {
     const item = messages[index];
     if (item.role !== "user" && item.role !== "assistant") continue;
@@ -153,13 +156,8 @@ function renderChats() {
     const time = document.createElement("div");
     time.className = "message-time";
     time.textContent = item.createdAt ? new Date(item.createdAt).toLocaleString() : "";
-    if (item.role === "assistant" && item.engine === "gemini-conversation") {
-      time.textContent += " · Gemini";
-    } else if (item.role === "assistant" && item.engine === "built-in-offline-fallback") {
-      time.textContent += " · Offline fallback";
-    } else if (item.role === "assistant" && item.engine === "built-in-offline") {
-      time.textContent += " · Offline brain";
-    }
+    if (item.role === "assistant" && item.externalSearch) time.textContent += " · Web sources";
+    else if (item.role === "assistant" && item.externalAI) time.textContent += " · Online answer";
     wrap.append(time);
     if (item.role === "assistant" && Array.isArray(item.sources) && item.sources.length) {
       const sourceList = document.createElement("div");
@@ -557,7 +555,7 @@ function renderSkills() {
     approve.textContent = "Approve & activate";
     approve.disabled = !latest?.validation?.passed || latest.validation.version !== skill.currentVersion;
     approve.addEventListener("click", async () => {
-      if (!confirm("Approve this skill version and let it guide matching Gemini requests?")) return;
+      if (!confirm("Approve this skill version and let it guide matching online AI requests?")) return;
       approve.disabled = true;
       try {
         const data = await api("/api/skills/" + encodeURIComponent(skill.id) + "/approve", {
@@ -585,7 +583,7 @@ function renderSkills() {
         });
         state.skills = state.skills.map((item) => item.id === skill.id ? data.skill : item);
         renderSkills();
-        toast("Skill paused. It will no longer be added to matching Gemini requests.");
+        toast("Skill paused. It will no longer be added to matching online AI requests.");
       } catch (error) {
         toast(error.message, true);
         pause.disabled = false;
@@ -681,7 +679,7 @@ function renderExperience(summary = null) {
       text.textContent = preference.content;
       const meta = document.createElement("div");
       meta.className = "list-item-meta";
-      meta.textContent = (preference.active ? "Active in Gemini context" : "Paused") +
+      meta.textContent = (preference.active ? "Active in online AI context" : "Paused") +
         " · Approved " + new Date(preference.approvedAt || preference.createdAt).toLocaleDateString();
       main.append(title, text, meta);
       const actions = document.createElement("div");
@@ -772,7 +770,7 @@ function renderExperience(summary = null) {
         approve.textContent = "Approve as preference";
         approve.disabled = state.experiencePreferences.length >= 30;
         approve.addEventListener("click", async () => {
-          if (!confirm("Approve this suggestion as a response preference for future matching Gemini conversations?")) return;
+          if (!confirm("Approve this suggestion as a response preference for future matching online AI conversations?")) return;
           approve.disabled = true;
           try {
             const data = await api("/api/feedback/" + encodeURIComponent(item.id) + "/approve", {
@@ -1675,7 +1673,6 @@ $("#login-form").addEventListener("submit", async (event) => {
 });
 
 $("#logout-button").addEventListener("click", async () => {
-  liveVoiceController.stop();
   try { await api("/api/logout", { method: "POST", body: JSON.stringify({}) }); } catch { /* always return to sign-in */ }
   state.chats = [];
   state.memories = [];
@@ -1718,150 +1715,145 @@ document.querySelectorAll(".prompt-card").forEach((button) => {
   });
 });
 
-const voiceStatusLabels = {
-  idle: "Voice ready",
-  listening: "Listening…",
-  speaking: "Speaking…"
-};
+let voiceModeActive = false;
+let awaitingAssistantReply = false;
+let voiceRestartTimer = null;
+const orbitalVisual = createOrbitalVisual($("#orbital-canvas"));
+
+function setOrbitalStatus(mode, message) {
+  const status = $("#orbital-status");
+  const headerState = $("#orbital-header-state");
+  const dot = $("#orbital-state-dot");
+  if (status) status.textContent = message;
+  if (headerState) {
+    const labels = { idle: "READY", listening: "LISTENING", thinking: "THINKING", speaking: "SPEAKING" };
+    const label = labels[mode] || "READY";
+    headerState.innerHTML = "<i></i> " + label;
+  }
+  if (dot) dot.dataset.state = mode;
+  orbitalVisual?.setMode(mode);
+}
+
+function scheduleVoiceRestart(delay = 700) {
+  clearTimeout(voiceRestartTimer);
+  voiceRestartTimer = setTimeout(() => {
+    if (!voiceModeActive || awaitingAssistantReply) return;
+    if (voiceController.getState() === "idle") {
+      setOrbitalStatus("listening", "Listening… speak naturally");
+      voiceController.startListening();
+    }
+  }, delay);
+}
+
+function stopHandsFreeMode() {
+  voiceModeActive = false;
+  awaitingAssistantReply = false;
+  clearTimeout(voiceRestartTimer);
+  voiceController.stop();
+  setOrbitalStatus("idle", "Tap the orb to speak");
+  $("#voice-button")?.setAttribute("aria-pressed", "false");
+  $("#voice-button")?.setAttribute("aria-label", "Start voice conversation");
+  const footer = $(".orbital-footer span:first-child");
+  if (footer) footer.textContent = "MICROPHONE OFF";
+}
 
 const voiceController = createVoiceController({
   SpeechRecognitionCtor: window.SpeechRecognition || window.webkitSpeechRecognition,
   speechSynthesis: window.speechSynthesis,
   createUtterance: (text) => new SpeechSynthesisUtterance(text),
   onStateChange: (voiceState) => {
-    const button = $("#voice-button");
     const status = $("#voice-status");
-    const stopButton = $("#stop-speech-button");
-    if (status) status.textContent = voiceStatusLabels[voiceState] || "Voice ready";
+    const button = $("#voice-button");
+    if (status) status.textContent = voiceState === "listening"
+      ? "Listening…"
+      : voiceState === "speaking" ? "Speaking…" : "Voice ready";
     if (button) {
-      const isListening = voiceState === "listening";
-      const isSpeaking = voiceState === "speaking";
-      button.innerHTML = isListening
-        ? "⏹ <span>Stop listening</span>"
-        : isSpeaking
-          ? "🎙 <span>Interrupt</span>"
-          : "🎙 <span>Speak</span>";
-      button.title = isListening ? "Stop listening" : isSpeaking ? "Stop speaking and listen" : "Start voice input";
-      button.setAttribute("aria-label", button.title);
-      button.setAttribute("aria-pressed", String(isListening));
+      button.dataset.state = voiceState;
+      button.setAttribute("aria-pressed", String(voiceModeActive));
+      button.setAttribute("aria-label", voiceModeActive ? "Stop voice conversation" : "Start voice conversation");
     }
-    if (stopButton) {
-      stopButton.classList.toggle("hidden", voiceState !== "speaking");
-      stopButton.disabled = voiceState !== "speaking";
+    if (voiceState === "listening") {
+      setOrbitalStatus("listening", "Listening…");
+      const footer = $(".orbital-footer span:first-child");
+      if (footer) footer.textContent = "MICROPHONE ACTIVE";
+    } else if (voiceState === "speaking") {
+      setOrbitalStatus("speaking", "JARVIS is speaking");
+      const footer = $(".orbital-footer span:first-child");
+      if (footer) footer.textContent = "JARVIS SPEAKING";
+    } else if (voiceState === "idle") {
+      const footer = $(".orbital-footer span:first-child");
+      if (footer && !voiceModeActive) footer.textContent = "MICROPHONE OFF";
+      if (awaitingAssistantReply) setOrbitalStatus("thinking", "Thinking…");
+      else if (voiceModeActive) scheduleVoiceRestart(650);
+      else setOrbitalStatus("idle", "Tap the orb to speak");
     }
   },
   onTranscript: (transcript) => {
     const input = $("#chat-input");
     if (!input) return;
+    awaitingAssistantReply = true;
+    voiceController.stopListening();
     input.value = [input.value.trim(), transcript].filter(Boolean).join(" ");
+    setOrbitalStatus("thinking", "Thinking…");
     $("#chat-form")?.requestSubmit();
   },
   onError: (code) => {
     const messages = {
-      unsupported: "This browser does not support voice input. Use JARVIS Companion's Speak once or hands-free control.",
-      "not-allowed": "Microphone permission was denied. Allow it in your browser settings.",
+      unsupported: "Voice recognition is not supported in this browser. You can still type below.",
+      "not-allowed": "Microphone permission was denied. Allow microphone access in browser settings.",
       "service-not-allowed": "This browser blocked microphone access.",
-      "no-speech": "No speech was detected. Try speaking closer to the microphone.",
-      network: "Speech recognition needs a working internet connection.",
+      "no-speech": "I didn't catch that. Listening again…",
+      network: "The browser speech service needs an internet connection.",
       "recognition-start-failed": "Could not start voice input. Check microphone permission.",
       "speech-unavailable": "Spoken replies are not supported in this browser.",
       "speech-failed": "JARVIS could not start spoken playback."
     };
-    toast(messages[code] || "Voice interaction failed: " + String(code || "unknown error"), true);
+    if (code === "no-speech" && voiceModeActive) {
+      setOrbitalStatus("listening", "Didn't catch that. Try again…");
+      return;
+    }
+    if (voiceModeActive && ["not-allowed", "service-not-allowed", "unsupported", "network"].includes(code)) {
+      voiceModeActive = false;
+      awaitingAssistantReply = false;
+      clearTimeout(voiceRestartTimer);
+    }
+    setOrbitalStatus("idle", messages[code] || "Voice interaction stopped");
+    toast(messages[code] || "Voice interaction failed.", true);
   }
 });
 
-
-let liveInterimTranscript = null;
-const liveVoiceStatusLabels = {
-  idle: "Live voice off",
-  connecting: "Connecting to Gemini Live…",
-  listening: "Listening — speak naturally",
-  speaking: "JARVIS is speaking…"
-};
-
-function renderLiveTranscript(update) {
-  const target = $("#live-voice-transcript");
-  if (!target || !update || typeof update.text !== "string" || !update.text.trim()) return;
-  if (update.role === "user" && update.interim) {
-    if (!liveInterimTranscript) {
-      liveInterimTranscript = document.createElement("p");
-      liveInterimTranscript.className = "live-transcript-line interim";
-      target.append(liveInterimTranscript);
-    }
-    liveInterimTranscript.textContent = "You: " + update.text.trim();
-    return;
-  }
-  if (update.role === "user" && liveInterimTranscript) {
-    liveInterimTranscript.remove();
-    liveInterimTranscript = null;
-  }
-  const line = document.createElement("p");
-  line.className = "live-transcript-line " + (update.role === "assistant" ? "assistant" : "user");
-  line.textContent = (update.role === "assistant" ? "JARVIS: " : "You: ") + update.text.trim();
-  target.append(line);
-  while (target.children.length > 24) target.firstElementChild.remove();
-}
-
-const liveVoiceController = createLiveVoiceController({
-  fetchToken: () => api("/api/live-voice/token", {
-    method: "POST",
-    body: JSON.stringify({})
-  }),
-  onStateChange: (voiceState) => {
-    const button = $("#live-voice-button");
-    const status = $("#live-voice-status");
-    if (status) status.textContent = liveVoiceStatusLabels[voiceState] || "Live voice off";
-    if (button) {
-      const active = voiceState !== "idle";
-      button.textContent = active ? "Stop live voice" : "Start live voice";
-      button.setAttribute("aria-pressed", String(active));
-      button.disabled = false;
-    }
-  },
-  onTranscript: renderLiveTranscript,
-  onError: (code) => {
-    const messages = {
-      unsupported: "This browser does not support real-time audio. Phase 12 Speak remains available.",
-      "microphone-denied": "Microphone permission was denied. Allow microphone access in browser settings.",
-      "microphone-missing": "No microphone was found on this device.",
-      "microphone-busy": "The microphone is being used by another app.",
-      "not-configured": "Live voice is disabled. Enable it in the server environment settings.",
-      "rate-limited": "Too many Live voice starts. Wait before trying again.",
-      "connection-failed": "Could not connect to Gemini Live. Check the network and Live API settings.",
-      "connection-closed": "The Live voice connection closed.",
-      "setup-timeout": "Gemini Live did not finish setting up. Try again.",
-      "session-time-limit": "This Live voice session reached its 10-minute limit.",
-      "session-expiring": "Gemini Live is about to end this session. Start a new call to continue.",
-      "provider-error": "Gemini Live returned an error. Check model access and quota.",
-      "unexpected-tool-request": "This voice session cannot run external tools or device actions.",
-      "invalid-audio": "An invalid audio chunk was received.",
-      "audio-capture-failed": "Microphone audio could not be encoded.",
-      "audio-playback-failed": "JARVIS could not play the incoming audio."
-    };
-    toast(messages[code] || "Live voice stopped because of an unexpected error.", true);
-  }
+$("#menu-toggle").addEventListener("click", () => {
+  const open = $("#app-shell").classList.toggle("menu-open");
+  $("#menu-toggle").setAttribute("aria-expanded", String(open));
+  $("#menu-toggle").setAttribute("aria-label", open ? "Close JARVIS menu" : "Open JARVIS menu");
 });
-
-$("#live-voice-button").addEventListener("click", () => {
-  if (liveVoiceController.getState() !== "idle") {
-    liveVoiceController.stop();
+$("#menu-backdrop").addEventListener("click", () => {
+  $("#app-shell").classList.remove("menu-open");
+  $("#menu-toggle").setAttribute("aria-expanded", "false");
+});
+$("#voice-button").addEventListener("click", () => {
+  if (voiceModeActive) {
+    stopHandsFreeMode();
     return;
   }
-  liveVoiceController.start();
+  voiceModeActive = true;
+  awaitingAssistantReply = false;
+  $("#voice-button").setAttribute("aria-pressed", "true");
+  setOrbitalStatus("listening", "Starting microphone…");
+  if (!voiceController.startListening()) {
+    voiceModeActive = false;
+    setOrbitalStatus("idle", "Tap the orb to speak");
+    $("#voice-button").setAttribute("aria-pressed", "false");
+    return;
+  }
+  toast("Voice conversation started. Tap the orb again to stop.");
 });
 
 window.addEventListener("pagehide", () => {
-  liveVoiceController.stop();
-});
-
-
-$("#voice-button").addEventListener("click", () => {
-  if (voiceController.getState() === "speaking") {
-    voiceController.startListening();
-    return;
-  }
-  voiceController.toggleListening();
+  voiceModeActive = false;
+  clearTimeout(voiceRestartTimer);
+  voiceController.stop();
+  orbitalVisual?.destroy();
 });
 
 $("#stop-speech-button").addEventListener("click", () => {
@@ -1872,9 +1864,6 @@ $("#voice-language").addEventListener("change", (event) => {
   voiceController.setLanguage(event.target.value);
 });
 
-$("#speak-toggle").addEventListener("change", (event) => {
-  if (!event.target.checked) voiceController.stopSpeaking();
-});
 
 $("#clear-chat-button").addEventListener("click", async () => {
   if (!confirm("Clear this temporary conversation? Saved memories, tasks and research will stay.")) return;
@@ -1895,6 +1884,7 @@ $("#chat-form").addEventListener("submit", async (event) => {
   const message = input.value.trim();
   if (!message || button.disabled) return;
   liveVoiceController.stop();
+  if (voiceModeActive) awaitingAssistantReply = true;
   voiceController.stopListening();
   voiceController.stopSpeaking();
   input.value = "";
@@ -1917,14 +1907,16 @@ $("#chat-form").addEventListener("submit", async (event) => {
   $("#chat-messages").append(waiting);
   try {
     const data = await api("/api/chat", { method: "POST", body: JSON.stringify({ message }) });
-    if ($("#speak-toggle").checked) {
+    if ($("#speak-toggle").checked || voiceModeActive) {
       const replyLanguage = /[\u0900-\u097F]/.test(data.answer)
         ? "hi-IN"
         : ($("#voice-language").value || "hi-IN");
+      awaitingAssistantReply = false;
       voiceController.speak(data.answer, replyLanguage);
     }
     await refreshState();
   } catch (error) {
+    awaitingAssistantReply = false;
     waiting.remove();
     const err = document.createElement("article");
     err.className = "message assistant";
@@ -1940,9 +1932,11 @@ $("#chat-form").addEventListener("submit", async (event) => {
     err.append(errorMark, errorWrap);
     $("#chat-messages").append(err);
     toast(error.message, true);
+    setOrbitalStatus("idle", "I couldn't complete that request. Try again.");
+    if (voiceModeActive) scheduleVoiceRestart(900);
   } finally {
     button.disabled = false;
-    input.focus();
+    if (!voiceModeActive) input.blur();
   }
 });
 
