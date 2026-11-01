@@ -405,7 +405,10 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
       content: "PHOTOVOLTAIC cells convert sunlight into electricity. ",
       category: "science",
       sourceKind: "web-research",
-      sources: [{ url: "https://energy.example/solar" }]
+      sources: [
+        { url: "https://energy.example/solar#overview" },
+        { title: "University solar study", url: "https://university.example/solar", publishedAt: "2026-10-22" }
+      ]
     })
   });
   assert.equal(duplicateKnowledge.status, 200);
@@ -414,6 +417,8 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(duplicatePayload.merged, true);
   assert.equal(duplicatePayload.item.id, knowledgePayload.item.id);
   assert.equal(duplicatePayload.item.reviewStatus, "unreviewed");
+  assert.equal(duplicatePayload.item.sources.length, 2);
+  assert.equal(duplicatePayload.item.sources[1].url, "https://university.example/solar");
 
   const knowledgeSearch = await request("/api/knowledge?q=photovoltaic");
   assert.equal(knowledgeSearch.status, 200);
@@ -445,10 +450,9 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   });
   assert.equal(markKnowledgeReviewed.status, 200);
   assert.equal((await markKnowledgeReviewed.json()).item.reviewStatus, "user-reviewed");
-  assert.ok((await request("/api/knowledge?q=photovoltaic")).then(async response => {
-    const data = await response.json();
-    return data.items[0].reviewedAt;
-  }));
+  const reviewedSearch = await request("/api/knowledge?q=photovoltaic");
+  const reviewedSearchPayload = await reviewedSearch.json();
+  assert.ok(reviewedSearchPayload.items[0].reviewedAt);
 
   const trustedAfterReview = await request("/api/knowledge?review=trusted");
   const trustedAfterReviewPayload = await trustedAfterReview.json();
