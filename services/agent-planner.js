@@ -16,6 +16,70 @@ const ALLOWED_ACTIONS = new Set([
 const BLOCKED_LABEL = /\b(send|submit|delete|remove|pay|payment|purchase|buy|transfer|confirm|otp|one.?time|password|passcode|pin|verification|checkout|order|uninstall|grant|allow|deny|revoke)\b/i;
 const NUMERIC_SECRET = /^\d{4,10}$/;
 
+const BLOCKED_SEARCH_QUERY = /\b(porn|xxx|adult content|vape|cigarette|weed|marijuana|cocaine|methamphetamine|steroids|how to make a bomb|explosive|weapon|gun|suicide|self.?harm)\b/i;
+
+function cleanLocalIntent(value, maxLength) {
+  return String(value || "")
+    .trim()
+    .replace(/^[\s"'“”‘’]+|[\s"'“”‘’]+$/gu, "")
+    .replace(/[.!?。！？]+$/u, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+/**
+ * Deterministic fallback for small, clearly expressed Android tasks.
+ * It never reads the screen, chooses a search result, or performs a sensitive action.
+ */
+export function createLocalAgentPlan(message) {
+  const input = String(message || "").normalize("NFKC").trim().slice(0, 2000);
+  if (!input) return null;
+
+  let app = "";
+  let query = "";
+  let match = input.match(/^(?:please\s+)?(?:open|launch|start)\s+(.+?)\s+(?:and|then|&)\s+(?:search(?:\s+for)?|look\s+for|find)\s+(.+)$/i);
+
+  if (match) {
+    app = match[1];
+    query = match[2];
+  } else {
+    match = input.match(/^(.+?)\s+(?:kholo|khol do)\s+(?:aur|phir)\s+(.+?)\s+(?:search|dhundo|dhoondo)\s+(?:karo|kar do)$/i);
+    if (match) {
+      app = match[1];
+      query = match[2];
+    } else {
+      match = input.match(/^(.+?)\s+(?:par|pe|mein|me)\s+(.+?)\s+(?:search|dhundo|dhoondo)\s+(?:karo|kar do)$/i);
+      if (match) {
+        app = match[1];
+        query = match[2];
+      } else {
+        match = input.match(/^(?:please\s+)?(?:search|find)\s+(?:for\s+)?(.+?)\s+(?:on|in)\s+(.+)$/i);
+        if (match) {
+          query = match[1];
+          app = match[2];
+        }
+      }
+    }
+  }
+
+  const appLabel = cleanLocalIntent(app, 60).replace(/\s+app$/i, "");
+  const searchText = cleanLocalIntent(query, 120);
+  if (!appLabel || !searchText || searchText.length > 120) return null;
+  if (BLOCKED_SEARCH_QUERY.test(searchText) || NUMERIC_SECRET.test(searchText)) return null;
+
+  return validateAgentPlan({
+    mode: "device_action",
+    reply: "I will open " + appLabel + " and search for " + searchText + ".",
+    actions: [
+      { type: "open_app", value: appLabel, purpose: "Open the app requested by the user." },
+      { type: "tap_label", value: "Search", purpose: "Open the app's visible search control." },
+      { type: "type_text", value: searchText, purpose: "Enter the requested search phrase." },
+      { type: "ask_user", value: "Choose the result you want. I will not open a result automatically.", purpose: "Leave result selection to the user." }
+    ]
+  });
+}
+
 export function validateAgentPlan(candidate) {
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
     throw new TypeError("The AI planner returned an invalid plan object.");
@@ -113,7 +177,17 @@ export function isAgentPlannerConfigured() {
 export async function createAgentPlan(message) {
   const runtime = getAIProviderStatus();
   if (!runtime.plannerEnabled) {
-    const error = new Error("AI planning is disabled or not configured on the server.");
+    const localPlan = createLocalAgentPlan(message);
+    if (localPlan) {
+      return {
+        ...localPlan,
+        engine: "offline-local-rules",
+        model: "local-device-rules",
+        provider: "built-in",
+        externalAI: false
+      };
+    }
+    const error = new Error("AI planning is disabled or not configured on the server, and this request is outside the supported offline device commands.");
     error.code = "AI_NOT_CONFIGURED";
     throw error;
   }
@@ -139,7 +213,9 @@ export async function createAgentPlan(message) {
 
   return {
     ...validateAgentPlan(parsed),
+    engine: "remote-ai-planner",
     model: response.model,
-    provider: response.provider
+    provider: response.provider,
+    externalAI: true
   };
 }
