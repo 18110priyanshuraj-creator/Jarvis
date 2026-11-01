@@ -40,7 +40,9 @@ async function boot() {
     showApp();
     await refreshState();
     const params = new URLSearchParams(window.location.search);
-    if (params.get("integration") === "google_drive_connected") {
+    if (params.get("integration") === "google_drive_connected" && params.get("capability") === "create_docs") {
+      toast("Google Drive connected. New Google Docs can now be created after preview and confirmation.");
+    } else if (params.get("integration") === "google_drive_connected") {
       toast("Google Drive connected with read-only metadata access.");
     } else if (params.get("integration") === "google_drive_error") {
       toast("Google Drive was not connected. Check the OAuth setup and try again.", true);
