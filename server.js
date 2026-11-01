@@ -519,7 +519,7 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
     if (isWebResearchEnabled()) {
       try {
         const research = await createGroundedResearch(message);
-        return { ...research, engine: "gemini-google-search", externalAI: true };
+        return { ...research, engine: "online-web-research", externalAI: true };
       } catch (error) {
         if (error?.code === "RESTRICTED_RESEARCH_QUERY") {
           return { answer: error.message, engine: "safety-filter", externalAI: false };
@@ -542,12 +542,12 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
       const answer = await createConversationReply(message, history, approvedMemoryContext, knowledgeContext, activeSkillContext, approvedExperienceContext);
       return {
         answer: webNotice ? webNotice + "\n\n" + answer : answer,
-        engine: "gemini-conversation",
+        engine: "online-conversation",
         externalAI: true,
         liveWebChecked: false
       };
     } catch (error) {
-      console.error("Gemini conversation failed; using the offline brain:", safeErrorMetadata(error));
+      console.error("Online AI request failed; using the offline brain:", safeErrorMetadata(error));
     }
   }
 
