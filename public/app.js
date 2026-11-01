@@ -840,12 +840,15 @@ function renderIntegrations() {
     title.textContent = provider.name;
     const status = document.createElement("span");
     const lastResult = state.integrationResults[provider.id];
-    status.className = "integration-status " + (lastResult?.connected ? "connected" : lastResult?.error ? "connection-failed" : provider.disabled ? "connection-disabled" : provider.configured ? "configured" : "not-configured");
-    status.textContent = lastResult?.connected ? "Connected" : lastResult?.error ? "Test failed" : provider.disabled ? "Disabled in JARVIS" : provider.configured ? "Configured · not tested" : "Not configured";
+    const googleOAuthConnected = provider.id === "google_drive" && state.googleDriveOAuth?.connected;
+    status.className = "integration-status " + (googleOAuthConnected || lastResult?.connected ? "connected" : lastResult?.error ? "connection-failed" : provider.disabled ? "connection-disabled" : provider.configured ? "configured" : "not-configured");
+    status.textContent = googleOAuthConnected ? "Connected via Google OAuth" : lastResult?.connected ? "Connected" : lastResult?.error ? "Test failed" : provider.disabled ? "Disabled in JARVIS" : provider.configured ? "Configured · not tested" : "Not configured";
     const access = document.createElement("p");
     access.textContent = provider.access;
     const variable = document.createElement("code");
-    variable.textContent = provider.environmentVariable;
+    variable.textContent = provider.id === "google_drive"
+      ? provider.oauthConnected ? "Google OAuth · encrypted refresh token" : provider.authMethod
+      : provider.environmentVariable;
     const meta = document.createElement("div");
     meta.className = "list-item-meta";
     meta.textContent = provider.capabilities.map((item) => item.replaceAll("_", " ")).join(" · ");
@@ -857,7 +860,7 @@ function renderIntegrations() {
     test.type = "button";
     test.className = "item-action";
     test.textContent = "Test connection";
-    test.disabled = !provider.enabled;
+    test.disabled = !provider.enabled || (provider.id === "google_drive" && !provider.oauthConnected && !provider.environmentConfigured);
     test.addEventListener("click", async () => {
       test.disabled = true;
       test.textContent = "Testing…";
