@@ -53,7 +53,11 @@ before(async () => {
       JARVIS_GITHUB_TOKEN: "",
       JARVIS_GOOGLE_DRIVE_ACCESS_TOKEN: "",
       JARVIS_TELEGRAM_BOT_TOKEN: "",
-      JARVIS_ELEVENLABS_API_KEY: ""
+      JARVIS_ELEVENLABS_API_KEY: "",
+      JARVIS_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 11).toString("base64"),
+      JARVIS_GOOGLE_OAUTH_CLIENT_ID: "local-test-client.apps.exampleusercontent.com",
+      JARVIS_GOOGLE_OAUTH_CLIENT_SECRET: "local-test-client-secret",
+      JARVIS_GOOGLE_OAUTH_REDIRECT_URI: "https://jarvis.example.test/api/integrations/google_drive/oauth/callback"
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -142,11 +146,37 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   const integrationCatalogueResponse = await request("/api/integrations");
   assert.equal(integrationCatalogueResponse.status, 200);
   const integrationCatalogue = await integrationCatalogueResponse.json();
-  assert.equal(integrationCatalogue.credentialStorage, "server-environment-only");
+  assert.equal(integrationCatalogue.credentialStorage, "server-environment-or-encrypted-vault");
   assert.equal(integrationCatalogue.supportedOperations, "read-only");
   assert.equal(integrationCatalogue.providers.length, 4);
-  assert.equal(integrationCatalogue.providers.every((item) => item.configured === false), true);
+  assert.equal(integrationCatalogue.providers.filter((item) => item.id !== "google_drive").every((item) => item.configured === false), true);
+  assert.equal(integrationCatalogue.googleDriveOAuth.canConnect, true);
+  assert.equal(integrationCatalogue.googleDriveOAuth.connected, false);
+  assert.deepEqual(integrationCatalogue.googleDriveOAuth.requiredScopes, [
+    "https://www.googleapis.com/auth/drive.metadata.readonly"
+  ]);
+  assert.equal(integrationCatalogue.providers.find((item) => item.id === "google_drive").oauthReady, true);
+  assert.equal(JSON.stringify(integrationCatalogue).includes("local-test-client-secret"), false);
   assert.equal(JSON.stringify(integrationCatalogue).includes("JARVIS_PASSWORD"), false);
+
+  const startGoogleOAuth = await request("/api/integrations/google_drive/oauth/start", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(startGoogleOAuth.status, 200);
+  const startGoogleOAuthPayload = await startGoogleOAuth.json();
+  const googleAuthorizationUrl = new URL(startGoogleOAuthPayload.authorizationUrl);
+  assert.equal(googleAuthorizationUrl.origin, "https://accounts.google.com");
+  assert.equal(googleAuthorizationUrl.searchParams.get("scope"), "https://www.googleapis.com/auth/drive.metadata.readonly");
+  assert.equal(googleAuthorizationUrl.searchParams.get("code_challenge_method"), "S256");
+  assert.match(startGoogleOAuth.headers.get("set-cookie") || "", /jarvis_google_oauth=/);
+  assert.match(startGoogleOAuth.headers.get("set-cookie") || "", /HttpOnly/i);
+  assert.match(startGoogleOAuth.headers.get("set-cookie") || "", /SameSite=Lax/i);
+
+  const invalidGoogleCallback = await request("/api/integrations/google_drive/oauth/callback?state=not-a-real-state&code=not-a-real-code", {
+    headers: {}
+  });
+  assert.equal(invalidGoogleCallback.status, 303);
+  assert.match(invalidGoogleCallback.headers.get("location") || "", /integration=google_drive_error/);
 
   const disabledGithub = await request("/api/integrations/github/disable", {
     method: "POST", body: JSON.stringify({})
@@ -452,6 +482,19 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(blockedRunPayload.run.status, "failed");
   assert.match(blockedRunPayload.run.steps[0].result.error, /disabled in JARVIS/i);
 
+  const disableGoogleOAuth = await request("/api/integrations/google_drive/disable", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(disableGoogleOAuth.status, 200);
+  const blockedOAuthStart = await request("/api/integrations/google_drive/oauth/start", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(blockedOAuthStart.status, 409);
+  const enableGoogleOAuth = await request("/api/integrations/google_drive/enable", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(enableGoogleOAuth.status, 200);
+
   const enableBeforeRun = await request("/api/integrations/github/enable", {
     method: "POST", body: JSON.stringify({})
   });
@@ -658,6 +701,8 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.ok(Array.isArray(exportPayload.data.workflows));
   assert.ok(Array.isArray(exportPayload.data.workflowRuns));
   assert.ok(Array.isArray(exportPayload.data.disabledIntegrations));
+  assert.equal(Object.hasOwn(exportPayload.data, "oauthConnections"), false);
+  assert.equal(JSON.stringify(exportPayload).includes("encryptedRefreshToken"), false);
   assert.equal(Object.hasOwn(exportPayload.data, "integrations"), false);
   assert.equal(Object.hasOwn(exportPayload.data, "credentials"), false);
   assert.equal(Object.hasOwn(exportPayload.data, "chats"), false);
