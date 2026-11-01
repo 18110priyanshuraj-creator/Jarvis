@@ -143,18 +143,27 @@ Set values in the private server environment settings (not in the Git repository
 - Configure JARVIS_GOOGLE_OAUTH_CLIENT_ID, JARVIS_GOOGLE_OAUTH_CLIENT_SECRET, JARVIS_GOOGLE_OAUTH_REDIRECT_URI and JARVIS_TOKEN_ENCRYPTION_KEY in private server environment settings. The callback URI must exactly match the URI registered in the Google OAuth client and use HTTPS in production.
 - The encryption key must remain stable and backed up. Changing or losing it makes an existing stored refresh token undecryptable; reconnect Google Drive after replacing a lost key.
 - The Connections view shows OAuth readiness, connection state and requested/granted permission scopes. Revoke Google access explicitly from the dashboard; JARVIS calls Google's revocation endpoint and removes its encrypted local copy after a successful or already-invalid response.
-- Google token revocation may invalidate other OAuth scopes or clients associated with the same Google Cloud project. Use a dedicated project for JARVIS if you want to isolate its consent and review the dashboard confirmation before revoking.
+- Google token revocation removes OAuth scopes previously granted to the same Google Cloud project and invalidates issued tokens for all clients registered under that project. Use a dedicated Google Cloud project for JARVIS if you want to isolate it. Review the dashboard confirmation before revoking.
 - The original JARVIS session cookie remains SameSite=Strict. A separate short-lived, HttpOnly, SameSite=Lax callback-binding cookie is used for Google's top-level OAuth redirect.
 - GitHub OAuth Apps are not used because their scopes are not as granular as GitHub App permissions. Use a fine-grained token with Metadata: read or a GitHub App with the minimum required read permission.
 - Telegram's bot API uses a bot token, not OAuth. ElevenLabs uses restricted API keys, not OAuth. Their credentials remain server-side and only their existing read-only provider operations are enabled.
 - Encrypted OAuth token records are intentionally excluded from /api/state and personal data export. The export contains no refresh token, access token, client secret or encryption key.
+
+### Google Cloud and hosting setup
+
+1. In a dedicated Google Cloud project for JARVIS, enable the Google Drive API and create an OAuth client of type **Web application**.
+2. Add this exact authorized redirect URI to the OAuth client: `https://YOUR_PUBLIC_JARVIS_HOST/api/integrations/google_drive/oauth/callback`. The URI in the server environment must match it exactly.
+3. Add the OAuth client ID, client secret and redirect URI to the private server environment. Do not put them in browser settings or Git.
+4. Generate the token-vault key on your own machine with `openssl rand -base64 32`, then save the output privately as `JARVIS_TOKEN_ENCRYPTION_KEY`. Never send the generated value in chat or commit it.
+5. Keep the same encryption key and persistent database/storage across restarts. If the host has ephemeral local storage, configure `DATABASE_URL` or another persistent disk before connecting Google Drive. The current OAuth handshake state is held in the running server process, so complete the consent redirect without restarting or switching server instances.
+6. Redeploy/restart JARVIS, open Connections and select **Connect Google Drive**. Approve only the displayed read-only Drive metadata permission, then use **Test connection**.
 
 ### OAuth environment variables
 
 - JARVIS_GOOGLE_OAUTH_CLIENT_ID
 - JARVIS_GOOGLE_OAUTH_CLIENT_SECRET
 - JARVIS_GOOGLE_OAUTH_REDIRECT_URI
-- JARVIS_TOKEN_ENCRYPTION_KEY — exactly 32 bytes when decoded from base64, or 64 hexadecimal characters.
+- JARVIS_TOKEN_ENCRYPTION_KEY — exactly 32 bytes when decoded from base64 (recommended via `openssl rand -base64 32`), or 64 hexadecimal characters.
 
 ### OAuth API
 
