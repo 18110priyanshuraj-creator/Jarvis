@@ -385,7 +385,7 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
       tags: ["solar", "energy"],
       sourceKind: "web-research",
       sourceQuery: "How do solar panels work?",
-      sources: [{ title: "Official solar guide", url: "https://energy.example/solar" }],
+      sources: [{ title: "Official solar guide", url: "https://energy.example/solar", snippet: "Official search result snippet.", publishedAt: "2026-10-20", retrievedAt: "2026-10-31T10:00:00.000Z" }],
       citations: [{ claim: "Photovoltaic cells convert sunlight into electricity.", sourceUrls: ["https://energy.example/solar"] }]
     })
   });
@@ -393,6 +393,10 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   const knowledgePayload = await savedKnowledge.json();
   assert.equal(knowledgePayload.item.reviewStatus, "unreviewed");
   assert.equal(knowledgePayload.item.sources.length, 1);
+  assert.equal(knowledgePayload.item.sources[0].snippet, "Official search result snippet.");
+  assert.equal(knowledgePayload.item.sources[0].publishedAt, "2026-10-20T00:00:00.000Z");
+  assert.equal(knowledgePayload.item.sources[0].retrievedAt, "2026-10-31T10:00:00.000Z");
+  assert.ok(knowledgePayload.item.capturedAt);
 
   const duplicateKnowledge = await request("/api/knowledge", {
     method: "POST",
@@ -405,13 +409,29 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
     })
   });
   assert.equal(duplicateKnowledge.status, 200);
-  assert.equal((await duplicateKnowledge.json()).duplicate, true);
+  const duplicatePayload = await duplicateKnowledge.json();
+  assert.equal(duplicatePayload.duplicate, true);
+  assert.equal(duplicatePayload.merged, true);
+  assert.equal(duplicatePayload.item.id, knowledgePayload.item.id);
+  assert.equal(duplicatePayload.item.reviewStatus, "unreviewed");
 
   const knowledgeSearch = await request("/api/knowledge?q=photovoltaic");
   assert.equal(knowledgeSearch.status, 200);
   const knowledgeSearchPayload = await knowledgeSearch.json();
   assert.equal(knowledgeSearchPayload.total, 1);
   assert.equal(knowledgeSearchPayload.items[0].id, knowledgePayload.item.id);
+  assert.equal(knowledgeSearchPayload.reviewSummary.total, 1);
+  assert.equal(knowledgeSearchPayload.reviewSummary.unreviewed, 1);
+
+  const trustedKnowledgeSearch = await request("/api/knowledge?review=trusted");
+  assert.equal(trustedKnowledgeSearch.status, 200);
+  assert.equal((await trustedKnowledgeSearch.json()).count, 0);
+
+  const unreviewedKnowledgeSearch = await request("/api/knowledge?review=unreviewed");
+  assert.equal((await unreviewedKnowledgeSearch.json()).count, 1);
+
+  const invalidKnowledgeFilter = await request("/api/knowledge?review=unknown");
+  assert.equal(invalidKnowledgeFilter.status, 400);
 
   const combinedSearch = await request("/api/search?q=photovoltaic");
   assert.equal(combinedSearch.status, 200);
@@ -425,6 +445,40 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   });
   assert.equal(markKnowledgeReviewed.status, 200);
   assert.equal((await markKnowledgeReviewed.json()).item.reviewStatus, "user-reviewed");
+  assert.ok((await request("/api/knowledge?q=photovoltaic")).then(async response => {
+    const data = await response.json();
+    return data.items[0].reviewedAt;
+  }));
+
+  const trustedAfterReview = await request("/api/knowledge?review=trusted");
+  const trustedAfterReviewPayload = await trustedAfterReview.json();
+  assert.equal(trustedAfterReviewPayload.count, 1);
+  assert.equal(trustedAfterReviewPayload.reviewSummary.trusted, 1);
+
+  const rejectKnowledge = await request("/api/knowledge/" + knowledgePayload.item.id, {
+    method: "PATCH",
+    body: JSON.stringify({ reviewStatus: "rejected", reviewNote: "The source did not support the summary." })
+  });
+  assert.equal(rejectKnowledge.status, 200);
+  const rejectedPayload = await rejectKnowledge.json();
+  assert.equal(rejectedPayload.item.reviewStatus, "rejected");
+  assert.equal(rejectedPayload.item.reviewNote, "The source did not support the summary.");
+
+  const rejectedFilter = await request("/api/knowledge?review=rejected");
+  assert.equal((await rejectedFilter.json()).count, 1);
+
+  const reopenKnowledge = await request("/api/knowledge/" + knowledgePayload.item.id, {
+    method: "PATCH",
+    body: JSON.stringify({ reviewStatus: "unreviewed" })
+  });
+  assert.equal(reopenKnowledge.status, 200);
+  assert.equal((await reopenKnowledge.json()).item.reviewStatus, "unreviewed");
+
+  const invalidKnowledgeReview = await request("/api/knowledge/" + knowledgePayload.item.id, {
+    method: "PATCH",
+    body: JSON.stringify({ reviewStatus: "untrusted" })
+  });
+  assert.equal(invalidKnowledgeReview.status, 400);
 
   const currentState = await request("/api/state");
   assert.equal(currentState.status, 200);
