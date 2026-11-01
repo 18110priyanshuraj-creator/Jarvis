@@ -25,6 +25,7 @@ import com.priyanshuraj.jarviscompanion.device.DeviceConnector
 import com.priyanshuraj.jarviscompanion.device.DeviceTokenStore
 import com.priyanshuraj.jarviscompanion.voice.LocalCommandProcessor
 import com.priyanshuraj.jarviscompanion.voice.VoiceControlService
+import com.priyanshuraj.jarviscompanion.voice.VoiceOutput
 import java.util.Locale
 import java.util.concurrent.Executors
 
