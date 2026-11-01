@@ -39,7 +39,7 @@ object AgentPlanRunner {
             if (type !in allowed || value.length > 180) {
                 throw IllegalArgumentException("The plan contains an unsupported action.")
             }
-            if (type in setOf("open_app", "tap_label", "type_text", "ask_user") && value.isBlank()) {
+            if (type in setOf("open_app", "tap_label", "type_text", "ask_user", "finish") && value.isBlank()) {
                 throw IllegalArgumentException("A required action value is missing.")
             }
             if (type == "tap_label" && blockedLabel.containsMatchIn(value)) {
