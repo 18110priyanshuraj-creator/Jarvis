@@ -1504,6 +1504,10 @@ $("#logout-button").addEventListener("click", async () => {
   state.workflowSteps = [];
   state.integrations = [];
   state.integrationResults = {};
+  state.externalActions = [];
+  state.actionCapabilities = null;
+  state.googleDriveOAuth = null;
+  state.integrationPermissions = [];
   state.editingWorkflowId = null;
   state.tasks = [];
   renderStorageOverview();
