@@ -11,7 +11,8 @@ import {
   getIntegrationPermissionCatalog,
   isTokenVaultConfigured,
   revokeGoogleOAuthConnection,
-  GOOGLE_DRIVE_METADATA_SCOPE
+  GOOGLE_DRIVE_METADATA_SCOPE,
+  GOOGLE_DRIVE_FILE_SCOPE
 } from "../services/oauth.js";
 
 const env = {
@@ -166,6 +167,51 @@ test("OAuth callback refuses broader or missing Drive permissions", async () => 
       scope: GOOGLE_DRIVE_METADATA_SCOPE + " https://www.googleapis.com/auth/drive"
     })
   }), /only the required read-only Drive metadata permission/i);
+});
+
+test("Google Docs permission upgrade requests metadata plus drive.file and stores both grants", async () => {
+  const flow = beginGoogleOAuth({ sessionToken: "test-session-id", capability: "create_docs", env });
+  const url = new URL(flow.authorizationUrl);
+  assert.deepEqual(url.searchParams.get("scope").split(" ").sort(), [
+    GOOGLE_DRIVE_FILE_SCOPE,
+    GOOGLE_DRIVE_METADATA_SCOPE
+  ].sort());
+  const connection = await finishGoogleOAuth({
+    state: url.searchParams.get("state"),
+    browserBinding: flow.browserBinding,
+    code: "docs-upgrade-code",
+    isSessionValid: (id) => id === "test-session-id",
+    env,
+    fetchImpl: async (_url, options) => {
+      const body = new URLSearchParams(options.body);
+      assert.ok(body.get("code_verifier"));
+      return response({
+        access_token: "docs-upgrade-access",
+        refresh_token: "docs-upgrade-refresh",
+        expires_in: 3600,
+        scope: GOOGLE_DRIVE_METADATA_SCOPE + " " + GOOGLE_DRIVE_FILE_SCOPE
+      });
+    }
+  });
+  assert.deepEqual(connection.grantedScopes.slice().sort(), [GOOGLE_DRIVE_FILE_SCOPE, GOOGLE_DRIVE_METADATA_SCOPE].sort());
+  assert.equal(getGoogleOAuthStatus(connection, env).canCreateDocs, true);
+});
+
+test("Google OAuth refuses any unrequested extra scope during an upgrade", async () => {
+  const flow = beginGoogleOAuth({ sessionToken: "test-session-id", capability: "create_docs", env });
+  const url = new URL(flow.authorizationUrl);
+  await assert.rejects(() => finishGoogleOAuth({
+    state: url.searchParams.get("state"),
+    browserBinding: flow.browserBinding,
+    code: "docs-upgrade-code",
+    isSessionValid: () => true,
+    env,
+    fetchImpl: async () => response({
+      access_token: "docs-upgrade-access",
+      refresh_token: "docs-upgrade-refresh",
+      scope: GOOGLE_DRIVE_METADATA_SCOPE + " " + GOOGLE_DRIVE_FILE_SCOPE + " https://www.googleapis.com/auth/drive"
+    })
+  }), /exactly the permissions requested/i);
 });
 
 test("Google Drive access tokens refresh on demand and cache until near expiry", async () => {
