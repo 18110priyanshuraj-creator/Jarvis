@@ -19,6 +19,16 @@ import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillC
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
 import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, createWorkflowDraft, createWorkflowRun, normalizeWorkflow, pauseWorkflow, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
 import { getIntegrationCatalog, INTEGRATION_PROVIDER_IDS, probeIntegration, runIntegrationAction } from "./services/integrations.js";
+import {
+  beginGoogleOAuth,
+  clearGoogleDriveTokenCache,
+  finishGoogleOAuth,
+  getGoogleDriveAccessToken,
+  getGoogleOAuthStatus,
+  getIntegrationPermissionCatalog,
+  normalizeGoogleOAuthConnection,
+  revokeGoogleOAuthConnection
+} from "./services/oauth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -80,9 +90,22 @@ const integrationTestLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Integration test limit reached. Please try again later." }
 });
+const oauthStartLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "OAuth connection attempts are temporarily limited. Try again later." }
+});
+const oauthCallbackLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 12,
+  standardHeaders: "draft-7",
+  legacyHeaders: false
+});
 app.use("/api", apiLimiter);
 
-let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], disabledIntegrations: [], devices: [], research: [], knowledge: [] };
+let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], disabledIntegrations: [], oauthConnections: [], devices: [], research: [], knowledge: [] };
 const sessionChats = new Map();
 const MAX_EPHEMERAL_CHAT_MESSAGES = 32;
 const EPHEMERAL_CHAT_TTL_MS = 60 * 60 * 1000;
@@ -132,6 +155,11 @@ function normalizeStore(parsed = {}) {
       : [],
     disabledIntegrations: Array.isArray(parsed.disabledIntegrations)
       ? [...new Set(parsed.disabledIntegrations.filter((item) => INTEGRATION_PROVIDER_IDS.includes(item)))]
+      : [],
+    oauthConnections: Array.isArray(parsed.oauthConnections)
+      ? parsed.oauthConnections.slice(0, 4).flatMap((item) => {
+          try { return [normalizeGoogleOAuthConnection(item)]; } catch { return []; }
+        })
       : [],
     devices: Array.isArray(parsed.devices) ? parsed.devices.slice(-50) : [],
     research: Array.isArray(parsed.research) ? parsed.research.slice(-50) : [],
