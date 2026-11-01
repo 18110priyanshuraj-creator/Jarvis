@@ -4,7 +4,7 @@ JARVIS is a private, single-owner assistant with a web dashboard and an Android 
 
 ## How JARVIS handles information
 
-- **Ordinary chats are temporary.** The server keeps up to 32 messages per conversation in process memory, with a one-hour inactivity expiry. They are removed on sign-out or server restart. They are not written into Neon or the JSON state file.
+- **Ordinary chats are temporary.** With `DATABASE_URL` configured, JARVIS stores up to 32 messages per conversation in shared Neon tables and expires them after one hour of inactivity. Without a database, local development uses process memory. Chat messages are never written into the durable `jarvis_app_state` snapshot or JSON state file.
 - **Long-term memory is selective.** JARVIS saves a preference or fact only when the user explicitly says something like "Remember that I prefer concise Hinglish explanations" or "Yaad rakhna: ...". The Memory screen can review and delete saved notes.
 - **Secrets and sensitive personal details are rejected.** Do not ask JARVIS to store passwords, PINs, OTPs, API keys, bank/card details, medical information, home addresses, phone numbers or email addresses.
 - **Internet research is not memory.** Relevant current/time-sensitive prompts and explicit requests to check the internet can be routed to Google Search grounding. Responses show available source links. A search result is used to answer the current question and is not saved as a long-term memory or research record automatically.
@@ -12,7 +12,7 @@ JARVIS is a private, single-owner assistant with a web dashboard and an Android 
 
 ## Memory and Personal Data Controls (Phase 3)
 
-- Temporary conversation turns stay in process memory only, expire after one hour of inactivity, and are not part of database/file snapshots.
+- Temporary conversation turns expire after one hour of inactivity and are kept separate from the durable personal-data snapshot. Neon-backed deployments use the shared runtime chat table; local development without a database uses process memory.
 - Durable memories are saved only through an explicit “Remember / Yaad rakhna” instruction or the Memory form. Ordinary chat is never automatically promoted to long-term memory.
 - Memory entries support preference, goal, and fact categories; the Memory screen supports keyword/category search, edit, and delete.
 - Duplicate detection normalizes Unicode, casing, and repeated whitespace. The server also rejects likely credentials and sensitive personal records.
@@ -251,6 +251,16 @@ The current implementation stores text knowledge records in the existing jarvis_
 ## Persistent data
 
 Neon PostgreSQL is used when `DATABASE_URL` is configured. Otherwise, local development uses the JSON state file. Chat transcripts are deliberately excluded from both persistent stores. Memories, tasks, structured feedback, user-approved response preferences, approved workflows and bounded workflow execution history, devices and manually saved research use the persistent app state.
+
+## Shared Runtime State (Phase 10)
+
+- When `DATABASE_URL` is configured, login sessions, temporary conversation messages, and pending Google OAuth handshakes use shared Neon PostgreSQL tables. They are no longer tied to one server process.
+- `jarvis_sessions` stores a SHA-256 hash of each random session cookie token, never the raw cookie value. The session is renewed while active and expires after 12 hours of inactivity.
+- `jarvis_chat_messages` stores a hashed conversation key, message text, bounded source/citation metadata, and an expiry timestamp. Each conversation is limited to 32 messages; activity refreshes the one-hour expiry. Sign-out and Clear Chat remove the relevant records.
+- `jarvis_oauth_pending` stores only hashed OAuth state, login-session and browser-binding identifiers. The PKCE verifier is encrypted with the existing `JARVIS_TOKEN_ENCRYPTION_KEY` before persistence. OAuth state expires after ten minutes and is consumed once.
+- These tables and their indexes are created automatically during server startup. No manual SQL migration is required for the runtime tables.
+- `jarvis_app_state` now has a revision counter. Saves use an atomic revision check; when another server instance wins a concurrent update, JARVIS loads the latest snapshot, merges collection changes by record ID/provider, and retries rather than silently replacing the latest data.
+- Without `DATABASE_URL`, the runtime store falls back to process memory for local development. Production deployments that need sessions and conversations to survive across server instances must configure a persistent shared database.
 
 ## Built-in offline mode
 

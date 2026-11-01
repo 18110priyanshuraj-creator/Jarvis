@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { createRuntimeStore } from "../services/runtime-store.js";
 import {
   beginGoogleOAuth,
   clearGoogleDriveTokenCache,
@@ -101,6 +103,52 @@ test("OAuth callback encrypts the refresh token and verifies browser binding and
   const status = getGoogleOAuthStatus(connection, env);
   assert.equal(status.connected, true);
   assert.deepEqual(status.grantedScopes, [GOOGLE_DRIVE_METADATA_SCOPE]);
+});
+
+test("Google OAuth uses encrypted shared runtime state and validates the hashed login session", async () => {
+  const runtimeStore = createRuntimeStore();
+  const flow = await beginGoogleOAuth({
+    sessionToken: "test-session-id",
+    env,
+    runtimeStore
+  });
+  const state = new URL(flow.authorizationUrl).searchParams.get("state");
+  const expectedSessionHash = createHash("sha256")
+    .update("test-session-id")
+    .digest("base64url");
+  let exchanged = false;
+
+  const connection = await finishGoogleOAuth({
+    state,
+    browserBinding: flow.browserBinding,
+    code: "shared-state-test-code",
+    runtimeStore,
+    isSessionValid: (sessionHash) => sessionHash === expectedSessionHash,
+    env,
+    fetchImpl: async (_url, options) => {
+      exchanged = true;
+      const body = new URLSearchParams(options.body);
+      assert.ok(body.get("code_verifier"));
+      return response({
+        access_token: "shared-state-access",
+        refresh_token: "shared-state-refresh",
+        expires_in: 3600,
+        scope: GOOGLE_DRIVE_METADATA_SCOPE
+      });
+    }
+  });
+
+  assert.equal(exchanged, true);
+  assert.equal(getGoogleOAuthStatus(connection, env).connected, true);
+  await assert.rejects(() => finishGoogleOAuth({
+    state,
+    browserBinding: flow.browserBinding,
+    code: "replay-code",
+    runtimeStore,
+    isSessionValid: () => true,
+    env,
+    fetchImpl: async () => response({})
+  }), /invalid, expired, or already used/i);
 });
 
 test("OAuth state is one-time and cannot be completed from a different browser binding", async () => {

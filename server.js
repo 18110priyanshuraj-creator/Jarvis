@@ -9,6 +9,7 @@ import crypto from "node:crypto";
 import { runLocalBrain, searchLocalKnowledge } from "./brain.js";
 import { fileURLToPath } from "node:url";
 import { createDevicesRouter } from "./routes/devices.js";
+import { createRuntimeStore } from "./services/runtime-store.js";
 import { createAgentPlan } from "./services/agent-planner.js";
 import { createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
 import { createGroundedResearch, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
@@ -38,7 +39,6 @@ const PASSWORD = process.env.JARVIS_PASSWORD || "";
 const DATA_DIR = path.resolve(process.env.JARVIS_DATA_DIR || path.join(__dirname, "data"));
 const STORE_FILE = path.join(DATA_DIR, "state.json");
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
-const sessions = new Map();
 
 if (process.env.NODE_ENV === "production" && !PASSWORD) {
   console.error("JARVIS_PASSWORD is required in production. Set it in the host's environment settings.");
@@ -121,16 +121,94 @@ const oauthCallbackLimiter = rateLimit({
 app.use("/api", apiLimiter);
 
 let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [] };
-const sessionChats = new Map();
-const MAX_EPHEMERAL_CHAT_MESSAGES = 32;
-const EPHEMERAL_CHAT_TTL_MS = 60 * 60 * 1000;
 let writeQueue = Promise.resolve();
 let neonSql;
+let databaseRevision = null;
+let databaseBaseStore = null;
 
 function getNeonSql() {
   if (!process.env.DATABASE_URL) return null;
   if (!neonSql) neonSql = neon(process.env.DATABASE_URL);
   return neonSql;
+}
+
+const runtimeStore = createRuntimeStore({ getSql: getNeonSql });
+
+function cloneStore(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function sameJson(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function storeItemIdentity(item) {
+  if (typeof item === "string") return "string:" + item;
+  if (!item || typeof item !== "object") return null;
+  if (typeof item.id === "string" && item.id) return "id:" + item.id;
+  if (typeof item.provider === "string" && item.provider) return "provider:" + item.provider;
+  return null;
+}
+
+function mergeStoreArray(base, local, latest) {
+  if ([...base, ...local, ...latest].every((item) => typeof item === "string")) {
+    const removed = new Set(base.filter((item) => !local.includes(item)));
+    const added = local.filter((item) => !base.includes(item) && !latest.includes(item));
+    return latest.filter((item) => !removed.has(item)).concat(added);
+  }
+
+  const allItems = [...base, ...local, ...latest];
+  if (allItems.every((item) => storeItemIdentity(item) !== null)) {
+    const identity = storeItemIdentity;
+    const baseById = new Map(base.map((item) => [identity(item), item]));
+    const localById = new Map(local.map((item) => [identity(item), item]));
+    let merged = latest.filter((item) => !(baseById.has(identity(item)) && !localById.has(identity(item))));
+
+    for (const item of local) {
+      const key = identity(item);
+      const previous = baseById.get(key);
+      if (previous !== undefined && sameJson(previous, item)) continue;
+      const index = merged.findIndex((candidate) => identity(candidate) === key);
+      if (index >= 0) merged[index] = item;
+      else merged.push(item);
+    }
+    return merged;
+  }
+
+  return local;
+}
+
+function mergeStoreChanges(base = {}, local = {}, latest = {}) {
+  const merged = { ...latest };
+  for (const key of new Set([...Object.keys(base), ...Object.keys(local), ...Object.keys(latest)])) {
+    const previous = base[key];
+    const desired = local[key];
+    const current = latest[key];
+    if (sameJson(previous, desired)) {
+      if (current === undefined) delete merged[key];
+      else merged[key] = current;
+    } else if (Array.isArray(previous) && Array.isArray(desired) && Array.isArray(current)) {
+      merged[key] = mergeStoreArray(previous, desired, current);
+    } else if (desired === undefined) {
+      delete merged[key];
+    } else {
+      merged[key] = desired;
+    }
+  }
+  return normalizeStore(merged);
+}
+
+function safeErrorMetadata(error) {
+  const details = {
+    name: /^[A-Za-z][A-Za-z0-9_.-]{0,49}$/.test(String(error?.name || ""))
+      ? String(error.name)
+      : "Error"
+  };
+  const status = Number(error?.status ?? error?.statusCode);
+  if (Number.isInteger(status) && status >= 100 && status <= 599) details.status = status;
+  const code = typeof error?.code === "string" ? error.code : "";
+  if (/^[A-Z0-9_.-]{1,50}$/.test(code)) details.code = code;
+  return details;
 }
 
 function normalizeStore(parsed = {}) {
@@ -238,19 +316,21 @@ function clearGoogleOAuthCookie(res) {
   res.append("Set-Cookie", "jarvis_google_oauth=; HttpOnly; SameSite=Lax; Path=/api/integrations/google_drive/oauth/callback; Max-Age=0" + secure);
 }
 
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
   const token = parseCookies(req.headers.cookie).jarvis_session;
-  const session = token ? sessions.get(token) : null;
-  if (!session || session.expiresAt <= Date.now()) {
-    if (token) {
-      sessions.delete(token);
-      sessionChats.delete("session:" + token);
+  if (!token) return res.status(401).json({ error: "Please sign in to continue." });
+  try {
+    const valid = await runtimeStore.refreshSession(token, SESSION_TTL_MS);
+    if (!valid) {
+      clearSessionCookie(res);
+      return res.status(401).json({ error: "Please sign in to continue." });
     }
-    return res.status(401).json({ error: "Please sign in to continue." });
+    req.sessionToken = token;
+    return next();
+  } catch (error) {
+    console.error("Session validation failed:", error?.name || "Error");
+    return res.status(503).json({ error: "Authentication is temporarily unavailable. Please try again." });
   }
-  session.expiresAt = Date.now() + SESSION_TTL_MS;
-  req.sessionToken = token;
-  next();
 }
 
 app.use("/api", (req, res, next) => {
@@ -271,16 +351,22 @@ app.use("/api", (req, res, next) => {
 async function loadStore() {
   const sql = getNeonSql();
   if (sql) {
+    await runtimeStore.ensureTables();
     await sql`CREATE TABLE IF NOT EXISTS jarvis_app_state (
       id SMALLINT PRIMARY KEY CHECK (id = 1),
       state JSONB NOT NULL,
+      revision BIGINT NOT NULL DEFAULT 1,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`;
-    const rows = await sql`SELECT state FROM jarvis_app_state WHERE id = 1 LIMIT 1`;
+    await sql`ALTER TABLE jarvis_app_state
+      ADD COLUMN IF NOT EXISTS revision BIGINT NOT NULL DEFAULT 1`;
+    const rows = await sql`SELECT state, revision FROM jarvis_app_state WHERE id = 1 LIMIT 1`;
     if (rows.length > 0) {
       const saved = typeof rows[0].state === "string" ? JSON.parse(rows[0].state) : rows[0].state;
       store = normalizeStore(saved);
-      // Remove legacy durable chat transcripts from the persistent snapshot.
+      databaseBaseStore = cloneStore(store);
+      databaseRevision = Number(rows[0].revision) || 1;
+      // Remove legacy durable chat transcripts without overwriting concurrent updates.
       await saveStore();
       return;
     }
@@ -294,7 +380,20 @@ async function loadStore() {
     }
     store = initial;
     const snapshot = JSON.stringify(store);
-    await sql`INSERT INTO jarvis_app_state (id, state, updated_at) VALUES (1, ${snapshot}::jsonb, now()) ON CONFLICT (id) DO NOTHING`;
+    const inserted = await sql`INSERT INTO jarvis_app_state (id, state, revision, updated_at)
+      VALUES (1, ${snapshot}::jsonb, 1, now())
+      ON CONFLICT (id) DO NOTHING RETURNING revision`;
+    if (inserted.length > 0) {
+      databaseRevision = Number(inserted[0].revision) || 1;
+      databaseBaseStore = cloneStore(store);
+      return;
+    }
+    const latestRows = await sql`SELECT state, revision FROM jarvis_app_state WHERE id = 1 LIMIT 1`;
+    if (!latestRows.length) throw new Error("JARVIS application state could not be initialized.");
+    const latestState = typeof latestRows[0].state === "string" ? JSON.parse(latestRows[0].state) : latestRows[0].state;
+    store = normalizeStore(latestState);
+    databaseBaseStore = cloneStore(store);
+    databaseRevision = Number(latestRows[0].revision) || 1;
     return;
   }
   await fs.mkdir(DATA_DIR, { recursive: true });
@@ -314,9 +413,30 @@ function saveStore() {
   writeQueue = writeQueue.catch(() => {}).then(async () => {
     const sql = getNeonSql();
     if (sql) {
-      const databaseSnapshot = JSON.stringify(store);
-      await sql`INSERT INTO jarvis_app_state (id, state, updated_at) VALUES (1, ${databaseSnapshot}::jsonb, now()) ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, updated_at = now()`;
-      return;
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const databaseSnapshot = JSON.stringify(store);
+        const expectedRevision = Number(databaseRevision) || 1;
+        const updated = await sql`UPDATE jarvis_app_state
+          SET state = ${databaseSnapshot}::jsonb,
+              revision = revision + 1,
+              updated_at = now()
+          WHERE id = 1 AND revision = ${expectedRevision}
+          RETURNING revision`;
+        if (updated.length > 0) {
+          databaseRevision = Number(updated[0].revision);
+          databaseBaseStore = cloneStore(store);
+          return;
+        }
+
+        const latestRows = await sql`SELECT state, revision FROM jarvis_app_state WHERE id = 1 LIMIT 1`;
+        if (!latestRows.length) throw new Error("JARVIS application state is missing from Neon.");
+        const latestState = typeof latestRows[0].state === "string" ? JSON.parse(latestRows[0].state) : latestRows[0].state;
+        const latest = normalizeStore(latestState);
+        store = mergeStoreChanges(databaseBaseStore || {}, store, latest);
+        databaseBaseStore = cloneStore(latest);
+        databaseRevision = Number(latestRows[0].revision) || 1;
+      }
+      throw new Error("JARVIS data kept changing during the save. Please retry the action.");
     }
     await fs.mkdir(DATA_DIR, { recursive: true });
     const tempFile = STORE_FILE + ".tmp";
@@ -326,36 +446,12 @@ function saveStore() {
   return writeQueue;
 }
 
-function getConversationMessages(key) {
-  const now = Date.now();
-  for (const [entryKey, entry] of sessionChats) {
-    if (now - entry.updatedAt > EPHEMERAL_CHAT_TTL_MS) sessionChats.delete(entryKey);
-  }
-  let entry = sessionChats.get(key);
-  if (!entry) {
-    entry = { messages: [], updatedAt: now };
-    sessionChats.set(key, entry);
-  }
-  entry.updatedAt = now;
-  return entry.messages;
+async function getConversationMessages(key) {
+  return runtimeStore.getConversationMessages(key);
 }
 
-function appendConversationTurn(key, message, result) {
-  const messages = getConversationMessages(key);
-  const createdAt = new Date().toISOString();
-  messages.push({ id: newId(), role: "user", content: message, createdAt });
-  messages.push({
-    id: newId(),
-    role: "assistant",
-    content: result.answer,
-    engine: result.engine,
-    sources: Array.isArray(result.sources) ? result.sources : [],
-    citations: Array.isArray(result.citations) ? result.citations : [],
-    createdAt: new Date().toISOString()
-  });
-  if (messages.length > MAX_EPHEMERAL_CHAT_MESSAGES) {
-    messages.splice(0, messages.length - MAX_EPHEMERAL_CHAT_MESSAGES);
-  }
+async function appendConversationTurn(key, message, result) {
+  return runtimeStore.appendConversationTurn(key, message, result);
 }
 
 function parseExplicitMemoryIntent(message) {
@@ -375,7 +471,7 @@ function parseExplicitMemoryIntent(message) {
 }
 
 async function processAssistantTurn(message, conversationKey) {
-  const history = getConversationMessages(conversationKey)
+  const history = (await getConversationMessages(conversationKey))
     .filter((item) => item.role === "user" || item.role === "assistant")
     .slice(-8)
     .map(({ role, content }) => ({ role, content }));
@@ -405,7 +501,7 @@ async function processAssistantTurn(message, conversationKey) {
     result = await generateAssistantAnswer(message, history, store.memories);
   }
 
-  appendConversationTurn(conversationKey, message, result);
+  await appendConversationTurn(conversationKey, message, result);
   return result;
 }
 
@@ -427,7 +523,7 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
         if (error?.code === "RESTRICTED_RESEARCH_QUERY") {
           return { answer: error.message, engine: "safety-filter", externalAI: false };
         }
-        console.error("Automatic live web research failed:", error?.name || "Error");
+        console.error("Automatic live web research failed:", safeErrorMetadata(error));
         webNotice = "I could not verify this with live web sources right now. The answer below is not live-verified.";
       }
     } else {
@@ -450,7 +546,7 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
         liveWebChecked: false
       };
     } catch (error) {
-      console.error("Gemini conversation failed; using the offline brain:", error?.name || "Error");
+      console.error("Gemini conversation failed; using the offline brain:", safeErrorMetadata(error));
     }
   }
 
@@ -491,38 +587,46 @@ app.get("/api/health", (_req, res) => {
       modelValid: gemini.modelValid,
       requestTimeoutMs: gemini.requestTimeoutMs,
       retryAttempts: gemini.retryAttempts
-    }
+    },
+    runtimeStorage: runtimeStore.mode()
   });
 });
 
-app.post("/api/login", loginLimiter, (req, res) => {
+app.post("/api/login", loginLimiter, async (req, res) => {
   const candidate = cleanText(req.body?.password, 500);
   if (!PASSWORD || !candidate || !passwordsMatch(candidate, PASSWORD)) {
     return res.status(401).json({ error: "Incorrect password or server password is not configured." });
   }
-  for (const [sessionId, session] of sessions) {
-    if (session.expiresAt <= Date.now()) sessions.delete(sessionId);
-  }
   const token = crypto.randomBytes(32).toString("base64url");
-  sessions.set(token, { createdAt: Date.now(), expiresAt: Date.now() + SESSION_TTL_MS });
+  try {
+    await runtimeStore.createSession(token, SESSION_TTL_MS);
+  } catch (error) {
+    console.error("Session creation failed:", error?.name || "Error");
+    return res.status(503).json({ error: "Authentication is temporarily unavailable. Please try again." });
+  }
   setSessionCookie(res, token);
   res.json({ ok: true });
 });
 
-app.post("/api/logout", requireAuth, (req, res) => {
-  sessions.delete(req.sessionToken);
-  sessionChats.delete("session:" + req.sessionToken);
+app.post("/api/logout", requireAuth, async (req, res) => {
   clearSessionCookie(res);
-  res.json({ ok: true });
+  try {
+    await runtimeStore.deleteSession(req.sessionToken);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("Session cleanup failed:", error?.name || "Error");
+    res.status(503).json({ error: "The session was signed out locally, but server cleanup could not be confirmed." });
+  }
 });
 
 app.get("/api/session", requireAuth, (_req, res) => {
   res.json({ authenticated: true });
 });
 
-app.get("/api/state", requireAuth, (req, res) => {
-  res.json({
-    chats: getConversationMessages("session:" + req.sessionToken),
+app.get("/api/state", requireAuth, async (req, res, next) => {
+  try {
+    res.json({
+    chats: await getConversationMessages("session:" + req.sessionToken),
     memories: store.memories,
     tasks: store.tasks.slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))),
     feedback: store.feedback.slice(-100),
@@ -531,12 +635,19 @@ app.get("/api/state", requireAuth, (req, res) => {
     workflows: store.workflows,
     workflowRuns: store.workflowRuns.slice().reverse().slice(0, 50),
     research: store.research.slice().reverse()
-  });
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
-app.delete("/api/chat/history", requireAuth, (req, res) => {
-  sessionChats.delete("session:" + req.sessionToken);
-  res.json({ ok: true });
+app.delete("/api/chat/history", requireAuth, async (req, res, next) => {
+  try {
+    await runtimeStore.deleteConversationMessages("session:" + req.sessionToken);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get("/api/export", requireAuth, (req, res) => {
@@ -576,7 +687,7 @@ app.post("/api/chat", requireAuth, async (req, res) => {
     const result = await processAssistantTurn(message, "session:" + req.sessionToken);
     res.json(result);
   } catch (error) {
-    console.error("Assistant reply failed:", error?.name || "Error");
+    console.error("Assistant reply failed:", safeErrorMetadata(error));
     res.status(500).json({ error: "JARVIS could not process this request. Please try again." });
   }
 });
@@ -996,13 +1107,13 @@ app.get("/api/integrations", requireAuth, (_req, res) => {
   res.json(integrationCatalogResponse());
 });
 
-app.post("/api/integrations/google_drive/oauth/start", requireAuth, oauthStartLimiter, (req, res) => {
+app.post("/api/integrations/google_drive/oauth/start", requireAuth, oauthStartLimiter, async (req, res) => {
   if (store.disabledIntegrations.includes("google_drive")) {
     return res.status(409).json({ error: "Enable Google Drive in JARVIS before starting OAuth." });
   }
   try {
     const capability = req.body?.capability === "create_docs" ? "create_docs" : "read";
-    const result = beginGoogleOAuth({ sessionToken: req.sessionToken, capability });
+    const result = await beginGoogleOAuth({ sessionToken: req.sessionToken, capability, runtimeStore });
     setGoogleOAuthCookie(res, result.browserBinding);
     res.setHeader("Cache-Control", "no-store");
     res.json({ authorizationUrl: result.authorizationUrl });
@@ -1025,12 +1136,8 @@ app.get("/api/integrations/google_drive/oauth/callback", oauthCallbackLimiter, a
       oauthError,
       browserBinding,
       existingConnection,
-      isSessionValid: (sessionToken) => {
-        const session = sessions.get(sessionToken);
-        if (!session || session.expiresAt <= Date.now()) return false;
-        session.expiresAt = Date.now() + SESSION_TTL_MS;
-        return true;
-      }
+      runtimeStore,
+      isSessionValid: (sessionHash) => runtimeStore.refreshSessionByHash(sessionHash, SESSION_TTL_MS)
     });
     store.oauthConnections = store.oauthConnections.filter((item) => item.provider !== "google_drive");
     store.oauthConnections.push(connection);
@@ -1383,7 +1490,7 @@ app.post("/api/research", requireAuth, webResearchLimiter, async (req, res) => {
     if (error?.code === "RESTRICTED_RESEARCH_QUERY") {
       return res.status(400).json({ error: error.message });
     }
-    console.error("Grounded web research failed:", error?.name || "Error");
+    console.error("Grounded web research failed:", safeErrorMetadata(error));
     res.status(502).json({ error: "Live web research could not complete this request. Please try again later." });
   }
 });

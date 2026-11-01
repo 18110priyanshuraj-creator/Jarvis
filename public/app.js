@@ -2485,35 +2485,7 @@ $("#knowledge-form").addEventListener("submit", async (event) => {
   }
 });
 
-$("#voice-button").addEventListener("click", () => {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    toast("Voice input is not supported in this browser. You can type your message instead.", true);
-    return;
-  }
-  const button = $("#voice-button");
-  const recognition = new SpeechRecognition();
-  recognition.lang = "en-IN";
-  recognition.interimResults = false;
-  recognition.maxAlternatives = 1;
-  button.disabled = true;
-  button.textContent = "Listening…";
-  recognition.onresult = (event) => {
-    const transcript = event.results?.[0]?.[0]?.transcript || "";
-    $("#chat-input").value = ($("#chat-input").value + " " + transcript).trim();
-    $("#chat-input").focus();
-  };
-  recognition.onerror = () => toast("Voice input was unavailable. Check browser microphone permissions.", true);
-  recognition.onend = () => {
-    button.disabled = false;
-    button.innerHTML = "🎙 <span>Voice</span>";
-  };
-  try { recognition.start(); } catch {
-    button.disabled = false;
-    button.innerHTML = "🎙 <span>Voice</span>";
-    toast("Could not start voice input.", true);
-  }
-});
+
 
 
 async function refreshDevices() {
