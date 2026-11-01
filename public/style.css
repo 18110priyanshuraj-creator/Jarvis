@@ -420,3 +420,60 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .action-safety p {
   overflow-wrap: anywhere;
 }
+
+
+/* Phase 13 — real-time voice conversation */
+.live-voice-panel {
+  width: min(100%, 920px);
+  margin: 0 auto 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(135deg, #111d31, #0e1728);
+}
+.live-voice-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.live-voice-controls #live-voice-button {
+  border-color: #91abff55;
+  color: #e0e9ff;
+  background: #819ded17;
+}
+.live-voice-controls #live-voice-button[aria-pressed="true"] {
+  color: #ffe1e4;
+  border-color: #ff9a9e77;
+  background: #ff9a9e13;
+}
+.live-voice-status {
+  color: var(--muted);
+  font-size: .8rem;
+  font-weight: 650;
+}
+.live-voice-transcript {
+  display: grid;
+  gap: 6px;
+  max-height: 190px;
+  overflow: auto;
+  margin-top: 10px;
+}
+.live-transcript-line {
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: #0a1221;
+  color: var(--text);
+  font-size: .85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.live-transcript-line.assistant { border-left: 2px solid #91abff; }
+.live-transcript-line.user { border-left: 2px solid #73d9b0; }
+.live-transcript-line.interim { opacity: .68; font-style: italic; }
+@media (max-width: 650px) {
+  .live-voice-panel { padding: 12px; }
+  .live-voice-controls { align-items: flex-start; }
+}
