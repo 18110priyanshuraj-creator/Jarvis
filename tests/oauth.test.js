@@ -151,7 +151,7 @@ test("OAuth callback refuses broader or missing Drive permissions", async () => 
       refresh_token: "persistent-refresh-value",
       scope: "https://www.googleapis.com/auth/drive"
     })
-  }), /only the required read-only Drive metadata permission/i);
+  }), /exactly the permissions requested/i);
 
   const extraScopeFlow = startFlow();
   const extraScopeState = new URL(extraScopeFlow.authorizationUrl).searchParams.get("state");
