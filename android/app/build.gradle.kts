@@ -13,8 +13,8 @@ android {
         applicationId = "com.priyanshuraj.jarviscompanion"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.2.0-phase18"
+        versionCode = 2
+        versionName = "0.2.1-phase21"
     }
 
     compileOptions {
@@ -27,4 +27,9 @@ kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.fromTarget("17")
     }
+}
+
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
 }

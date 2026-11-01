@@ -371,6 +371,17 @@ The read controls appear only on live search source cards after page reading is 
 - Unsupported or ambiguous requests are not guessed. Broader AI planning remains optional and requires a separately configured server-side AI provider. A paired device, an enabled microphone and Accessibility permission do not by themselves guarantee general-purpose AI or unrestricted device control.
 - Full behavior and limitations: `docs/PHASE20_ANDROID_DEVICE_CONTROL.md`.
 
+## Interruptible Android Task Execution (Phase 21)
+
+- The Android Companion now treats each multi-step device plan as a cancellable sequence with a maximum of six actions.
+- The visible notification action **Interrupt / cancel task** cancels the queued remainder of the current device plan, stops speech, and returns the active session to listening.
+- **Stop** cancels queued device actions, invalidates pending responses from the previous voice turn, ends speech recognition, and stops the foreground voice session.
+- New voice turns, service destruction and removal of the app task also invalidate older work. Late planner/chat responses from an older turn are ignored instead of being spoken or executed.
+- A failed step or an explicit user checkpoint ends the sequence immediately. Cancellation does not roll back an action that Android already completed; it prevents later queued steps.
+- The planner's HTTP request is not forcibly terminated by interruption, but its late response is discarded and cannot start another action sequence.
+- The Android CI now runs JVM unit tests for sequential completion, queued-step cancellation, cancellation before first dispatch, user checkpoints and failed-step stopping before building the APK.
+- Full behavior and limitations: `docs/PHASE21_INTERRUPTIBLE_ANDROID_TASKS.md`.
+
 ## Built-in offline mode
 
 The offline brain is not a general-purpose language model. It contains a safe arithmetic parser, deterministic rules and a curated knowledge pack for selected topics such as Newton's laws, units and dimensions, mole concept, sets, circular motion and Ohm's law. It cannot answer arbitrary questions. Live web retrieval requires a trusted SearXNG endpoint configured on the server.

@@ -34,6 +34,8 @@ class VoiceControlService : Service() {
     private var stopAfterSpeech = false
     private var recognitionLanguage = "hi-IN"
     private var lastSpeechUtteranceId: String? = null
+    private var requestGeneration = 0L
+    private var cancelActivePlan: (() -> Unit)? = null
     private var voiceStatus = "Microphone session is active. Speak a command or use Stop to end it."
 
     override fun onCreate() {
@@ -72,6 +74,7 @@ class VoiceControlService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            invalidatePendingWork()
             running = false
             mainHandler.removeCallbacks(listenRunnable)
             recognizer?.cancel()
@@ -84,6 +87,7 @@ class VoiceControlService : Service() {
 
         if (intent?.action == ACTION_INTERRUPT) {
             if (!running) return START_NOT_STICKY
+            invalidatePendingWork()
             stopAfterSpeech = false
             mainHandler.removeCallbacks(listenRunnable)
             recognizer?.cancel()
@@ -158,7 +162,7 @@ class VoiceControlService : Service() {
             .addAction(
                 Notification.Action.Builder(
                     android.R.drawable.ic_media_play,
-                    "Interrupt speech",
+                    "Interrupt / cancel task",
                     interruptPendingIntent
                 ).build()
             )
@@ -266,7 +270,12 @@ class VoiceControlService : Service() {
     }
 
     private fun handleTranscript(transcript: String) {
+        cancelActivePlan?.invoke()
+        cancelActivePlan = null
+        val requestId = ++requestGeneration
+
         if (LocalCommandProcessor.isStopCommand(transcript)) {
+            invalidatePendingWork()
             stopAfterSpeech = true
             speak("Hands-free control is stopping.")
             return
@@ -291,21 +300,33 @@ class VoiceControlService : Service() {
                 val plan = DeviceConnector.agentPlan(serverUrl, token, transcript)
                 when (plan.optString("mode", "device_action")) {
                     "device_action" -> mainHandler.post {
-                        if (running) {
-                            AgentPlanRunner.execute(this@VoiceControlService, plan, mainHandler) { result ->
-                                if (running) speak(result)
+                        if (running && requestId == requestGeneration) {
+                            cancelActivePlan?.invoke()
+                            cancelActivePlan = AgentPlanRunner.execute(
+                                this@VoiceControlService,
+                                plan,
+                                mainHandler
+                            ) { result ->
+                                if (requestId == requestGeneration) {
+                                    cancelActivePlan = null
+                                    if (running) speak(result)
+                                }
                             }
                         }
                     }
                     "conversation" -> {
                         val answer = DeviceConnector.voiceCommand(serverUrl, token, transcript)
-                        mainHandler.post { if (running) speak(answer) }
+                        mainHandler.post {
+                            if (running && requestId == requestGeneration) speak(answer)
+                        }
                     }
                     "clarification" -> {
                         val question = plan.optString("reply").ifBlank {
                             "Please clarify what you want me to do."
                         }
-                        mainHandler.post { if (running) speak(question) }
+                        mainHandler.post {
+                            if (running && requestId == requestGeneration) speak(question)
+                        }
                     }
                     else -> throw IllegalStateException("JARVIS returned an unsupported request mode.")
                 }
@@ -313,15 +334,24 @@ class VoiceControlService : Service() {
                 try {
                     val answer = DeviceConnector.voiceCommand(serverUrl, token, transcript)
                     mainHandler.post {
-                        if (running) speak(answer)
+                        if (running && requestId == requestGeneration) speak(answer)
                     }
                 } catch (_: Exception) {
                     mainHandler.post {
-                        if (running) speak("I could not reach the JARVIS server. Check your connection.")
+                        if (running && requestId == requestGeneration) {
+                            speak("I could not reach the JARVIS server. Check your connection.")
+                        }
                     }
                 }
             }
         }
+    }
+
+    /** Invalidate network responses and queued device actions from the previous voice turn. */
+    private fun invalidatePendingWork() {
+        requestGeneration += 1
+        cancelActivePlan?.invoke()
+        cancelActivePlan = null
     }
 
     private fun speak(text: String) {
@@ -365,12 +395,14 @@ class VoiceControlService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        invalidatePendingWork()
         running = false
         stopSelf()
         super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
+        invalidatePendingWork()
         running = false
         mainHandler.removeCallbacksAndMessages(null)
         lastSpeechUtteranceId = null
