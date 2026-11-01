@@ -166,7 +166,7 @@ test("OAuth callback refuses broader or missing Drive permissions", async () => 
       refresh_token: "persistent-refresh-value",
       scope: GOOGLE_DRIVE_METADATA_SCOPE + " https://www.googleapis.com/auth/drive"
     })
-  }), /only the required read-only Drive metadata permission/i);
+  }), /exactly the permissions requested/i);
 });
 
 test("Google Docs permission upgrade requests metadata plus drive.file and stores both grants", async () => {
