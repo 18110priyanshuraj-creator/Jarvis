@@ -7,7 +7,7 @@
   <meta name="description" content="Private JARVIS personal assistant dashboard">
   <title>JARVIS — Personal Assistant</title>
   <link rel="stylesheet" href="/style.css">
-  <script src="/app.js" defer></script>
+  <script type="module" src="/app.js"></script>
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -81,7 +81,15 @@
           <textarea id="chat-input" rows="1" maxlength="4000" placeholder="Message JARVIS…" aria-label="Message JARVIS"></textarea>
           <div class="composer-bottom">
             <div class="composer-tools">
-              <button type="button" id="voice-button" class="tool-button" title="Start voice input" aria-label="Start voice input">🎙 <span>Speak</span></button>
+              <button type="button" id="voice-button" class="tool-button" title="Start voice input" aria-label="Start voice input" aria-pressed="false">🎙 <span>Speak</span></button>
+              <label class="voice-language-label" for="voice-language">Input
+                <select id="voice-language" aria-label="Voice input language">
+                  <option value="hi-IN" selected>Hindi</option>
+                  <option value="en-IN">English (India)</option>
+                </select>
+              </label>
+              <span id="voice-status" class="voice-status" role="status" aria-live="polite">Voice ready</span>
+              <button type="button" id="stop-speech-button" class="tool-button hidden" title="Stop spoken reply" aria-label="Stop spoken reply" disabled>Stop speaking</button>
               <button type="button" id="clear-chat-button" class="tool-button" title="Clear temporary conversation">Clear chat</button>
               <label class="speak-label"><input id="speak-toggle" type="checkbox"> Read replies aloud</label>
             </div>
