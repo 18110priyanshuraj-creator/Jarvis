@@ -33,6 +33,7 @@ class VoiceControlService : Service() {
     private var running = false
     private var stopAfterSpeech = false
     private var recognitionLanguage = "hi-IN"
+    private var lastSpeechUtteranceId: String? = null
     private var voiceStatus = "Microphone session is active. Speak a command or use Stop to end it."
 
     override fun onCreate() {
@@ -40,17 +41,9 @@ class VoiceControlService : Service() {
         createNotificationChannel()
         textToSpeech = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                val hindi = Locale("hi", "IN")
-                val hindiStatus = textToSpeech?.isLanguageAvailable(hindi) ?: TextToSpeech.LANG_NOT_SUPPORTED
-                val selected = if (hindiStatus >= TextToSpeech.LANG_AVAILABLE) hindi else Locale("en", "IN")
-                val selectedStatus = textToSpeech?.isLanguageAvailable(selected) ?: TextToSpeech.LANG_NOT_SUPPORTED
-                ttsReady = selectedStatus >= TextToSpeech.LANG_AVAILABLE
-                if (ttsReady) {
-                    textToSpeech?.language = selected
-                    updateVoiceStatus(if (selected == hindi) "Hindi voice output ready. Listening when active." else "Hindi voice data unavailable; using English (India) voice.")
-                } else {
-                    updateVoiceStatus("No supported text-to-speech voice is installed. Install Hindi or English voice data in Android settings.")
-                }
+                val selection = textToSpeech?.let { VoiceOutput.configure(it, recognitionLanguage) }
+                ttsReady = selection != null && !selection.message.startsWith("No supported")
+                updateVoiceStatus(selection?.message ?: "Android text-to-speech could not initialize.")
             } else {
                 ttsReady = false
                 updateVoiceStatus("Android text-to-speech could not initialize (code " + status + ").")
@@ -61,12 +54,16 @@ class VoiceControlService : Service() {
 
             override fun onDone(utteranceId: String?) {
                 mainHandler.post {
+                    if (!running || utteranceId != lastSpeechUtteranceId) return@post
+                    lastSpeechUtteranceId = null
                     if (stopAfterSpeech) stopSelf() else scheduleListening(350)
                 }
             }
 
             override fun onError(utteranceId: String?) {
                 mainHandler.post {
+                    if (!running || utteranceId != lastSpeechUtteranceId) return@post
+                    lastSpeechUtteranceId = null
                     if (stopAfterSpeech) stopSelf() else scheduleListening(500)
                 }
             }
@@ -76,9 +73,24 @@ class VoiceControlService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             running = false
+            mainHandler.removeCallbacks(listenRunnable)
             recognizer?.cancel()
+            textToSpeech?.stop()
+            lastSpeechUtteranceId = null
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
+            return START_NOT_STICKY
+        }
+
+        if (intent?.action == ACTION_INTERRUPT) {
+            if (!running) return START_NOT_STICKY
+            stopAfterSpeech = false
+            mainHandler.removeCallbacks(listenRunnable)
+            recognizer?.cancel()
+            textToSpeech?.stop()
+            lastSpeechUtteranceId = null
+            updateVoiceStatus("Speech interrupted. Listening again.")
+            scheduleListening(250)
             return START_NOT_STICKY
         }
 
@@ -130,12 +142,26 @@ class VoiceControlService : Service() {
             stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val interruptIntent = Intent(this, VoiceControlService::class.java).setAction(ACTION_INTERRUPT)
+        val interruptPendingIntent = PendingIntent.getService(
+            this,
+            INTERRUPT_REQUEST_CODE,
+            interruptIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("JARVIS hands-free control is active")
             .setContentText(voiceStatus)
             .setCategory(Notification.CATEGORY_SERVICE)
             .setOngoing(true)
+            .addAction(
+                Notification.Action.Builder(
+                    android.R.drawable.ic_media_play,
+                    "Interrupt speech",
+                    interruptPendingIntent
+                ).build()
+            )
             .addAction(
                 Notification.Action.Builder(
                     android.R.drawable.ic_media_pause,
@@ -300,7 +326,8 @@ class VoiceControlService : Service() {
 
     private fun speak(text: String) {
         if (!running) return
-        if (!ttsReady || textToSpeech == null) {
+        val engine = textToSpeech
+        if (!ttsReady || engine == null) {
             updateVoiceStatus("Voice output is unavailable. Install Hindi or English text-to-speech data in Android settings.")
             if (stopAfterSpeech) mainHandler.postDelayed({ stopSelf() }, 1200)
             else scheduleListening(900)
@@ -308,22 +335,24 @@ class VoiceControlService : Service() {
         }
 
         recognizer?.cancel()
-        val utteranceId = "jarvis-" + System.currentTimeMillis()
-        updateVoiceStatus("Speaking the JARVIS response.")
-        val speechResult = textToSpeech?.speak(text.take(1200), TextToSpeech.QUEUE_FLUSH, null, utteranceId)
-        if (speechResult == TextToSpeech.ERROR) {
-            updateVoiceStatus("Android could not play the response. Check installed Hindi or English voice data.")
-            scheduleListening(1200)
-            return
-        }
-        mainHandler.postDelayed({
-            if (!running) return@postDelayed
-            if (stopAfterSpeech && textToSpeech?.isSpeaking != true) {
-                stopSelf()
-            } else if (textToSpeech?.isSpeaking != true) {
-                scheduleListening(350)
+        mainHandler.removeCallbacks(listenRunnable)
+        val replyLanguage = if (text.any { it.code in 0x0900..0x097F }) "hi-IN" else "en-IN"
+        val selection = VoiceOutput.configure(engine, replyLanguage)
+        updateVoiceStatus(selection.message)
+
+        val utterancePrefix = "jarvis-" + System.currentTimeMillis()
+        try {
+            val chunks = VoiceOutput.speakChunks(engine, text, utterancePrefix)
+            if (chunks.isEmpty()) {
+                if (stopAfterSpeech) stopSelf() else scheduleListening(350)
+                return
             }
-        }, 1800)
+            lastSpeechUtteranceId = utterancePrefix + "-" + (chunks.size - 1)
+        } catch (error: Exception) {
+            lastSpeechUtteranceId = null
+            updateVoiceStatus(error.message ?: "Android could not play the full reply.")
+            if (stopAfterSpeech) stopSelf() else scheduleListening(900)
+        }
     }
 
     private fun scheduleListening(delayMs: Long) {
@@ -344,6 +373,7 @@ class VoiceControlService : Service() {
     override fun onDestroy() {
         running = false
         mainHandler.removeCallbacksAndMessages(null)
+        lastSpeechUtteranceId = null
         recognizer?.cancel()
         recognizer?.destroy()
         textToSpeech?.stop()
@@ -358,8 +388,10 @@ class VoiceControlService : Service() {
     companion object {
         const val ACTION_START = "com.priyanshuraj.jarviscompanion.voice.START"
         const val ACTION_STOP = "com.priyanshuraj.jarviscompanion.voice.STOP"
+        const val ACTION_INTERRUPT = "com.priyanshuraj.jarviscompanion.voice.INTERRUPT"
         private const val CHANNEL_ID = "jarvis_voice_control"
         private const val NOTIFICATION_ID = 7251
         private const val STOP_REQUEST_CODE = 7252
+        private const val INTERRUPT_REQUEST_CODE = 7253
     }
 }

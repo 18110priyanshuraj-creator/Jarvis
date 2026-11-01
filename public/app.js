@@ -1758,16 +1758,40 @@ function stopHandsFreeMode() {
   if (footer) footer.textContent = "MICROPHONE OFF";
 }
 
+function renderVoiceOptions(voices = voiceController.getVoiceOptions($("#voice-language")?.value || "hi-IN")) {
+  const select = $("#voice-output-voice");
+  if (!select) return;
+  const selectedURI = voiceController.getSelectedVoiceURI();
+  select.replaceChildren();
+  const automatic = document.createElement("option");
+  automatic.value = "auto";
+  automatic.textContent = "Automatic · match reply language";
+  select.append(automatic);
+  for (const voice of voices) {
+    const option = document.createElement("option");
+    option.value = voice.voiceURI;
+    option.textContent = voice.name + " (" + voice.lang + ")" +
+      (voice.localService ? " · device" : "");
+    select.append(option);
+  }
+  select.value = selectedURI && voices.some(voice => voice.voiceURI === selectedURI)
+    ? selectedURI : "auto";
+}
+
 const voiceController = createVoiceController({
   SpeechRecognitionCtor: window.SpeechRecognition || window.webkitSpeechRecognition,
   speechSynthesis: window.speechSynthesis,
   createUtterance: (text) => new SpeechSynthesisUtterance(text),
+  maxChunkChars: 220,
+  onVoicesChanged: (voices) => renderVoiceOptions(voices),
   onStateChange: (voiceState) => {
     const status = $("#voice-status");
     const button = $("#voice-button");
     if (status) status.textContent = voiceState === "listening"
       ? "Listening…"
       : voiceState === "speaking" ? "Speaking…" : "Voice ready";
+    const stopSpeechButton = $("#stop-speech-button");
+    if (stopSpeechButton) stopSpeechButton.disabled = voiceState !== "speaking";
     if (button) {
       button.dataset.state = voiceState;
       button.setAttribute("aria-pressed", String(voiceModeActive));
@@ -1823,6 +1847,21 @@ const voiceController = createVoiceController({
   }
 });
 
+voiceController.refreshVoices();
+renderVoiceOptions();
+
+$("#voice-output-voice").addEventListener("change", (event) => {
+  const ok = voiceController.setVoiceURI(event.currentTarget.value);
+  if (!ok) {
+    event.currentTarget.value = "auto";
+    toast("That voice is no longer available. Automatic voice matching is active.", true);
+  }
+});
+
+$("#voice-output-rate").addEventListener("change", (event) => {
+  voiceController.setSpeechRate(Number(event.currentTarget.value));
+});
+
 $("#menu-toggle").addEventListener("click", () => {
   const open = $("#app-shell").classList.toggle("menu-open");
   $("#menu-toggle").setAttribute("aria-expanded", String(open));
@@ -1853,7 +1892,7 @@ $("#voice-button").addEventListener("click", () => {
 window.addEventListener("pagehide", () => {
   voiceModeActive = false;
   clearTimeout(voiceRestartTimer);
-  voiceController.stop();
+  voiceController.destroy();
   orbitalVisual?.destroy();
 });
 
@@ -1863,6 +1902,12 @@ $("#stop-speech-button").addEventListener("click", () => {
 
 $("#voice-language").addEventListener("change", (event) => {
   voiceController.setLanguage(event.target.value);
+  const options = voiceController.getVoiceOptions(event.target.value);
+  if (voiceController.getSelectedVoiceURI() &&
+      !options.some(voice => voice.voiceURI === voiceController.getSelectedVoiceURI())) {
+    voiceController.setVoiceURI("auto");
+  }
+  renderVoiceOptions(options);
 });
 
 

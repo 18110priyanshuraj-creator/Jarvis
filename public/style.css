@@ -1321,3 +1321,88 @@ body::before { display: none; }
   min-width: 150px;
   max-width: 100%;
 }
+
+
+/* Phase 18 — user-visible, compact voice settings */
+.orbital-preferences {
+  display: grid !important;
+  width: min(100%, 560px);
+  margin: 12px auto 0;
+  color: #c5b59f;
+  font-size: .76rem;
+}
+.orbital-preferences > summary {
+  width: fit-content;
+  margin: 0 auto;
+  padding: 8px 12px;
+  border: 1px solid rgba(210, 155, 89, .2);
+  border-radius: 999px;
+  color: #d4b38a;
+  cursor: pointer;
+  list-style-position: inside;
+}
+.orbital-preferences[open] > summary {
+  margin-bottom: 9px;
+  background: rgba(172, 112, 47, .08);
+}
+.orbital-preferences-controls {
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(210, 155, 89, .16);
+  border-radius: 13px;
+  background: rgba(9, 7, 5, .78);
+}
+.orbital-preferences-controls label {
+  display: grid;
+  gap: 5px;
+  color: #ad9b83;
+  font-size: .65rem;
+  text-align: left;
+}
+.orbital-preferences-controls select {
+  min-width: 124px;
+  max-width: min(240px, 72vw);
+  padding: 8px 10px;
+  border: 1px solid rgba(210, 155, 89, .2);
+  border-radius: 8px;
+  background: #100c08;
+  color: #f0dfc7;
+  font: inherit;
+}
+.orbital-preferences-controls .voice-speak-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+}
+.voice-speak-toggle input { accent-color: #d89a4c; }
+.orbital-preferences-controls #stop-speech-button {
+  padding: 8px 12px;
+  border: 1px solid rgba(210, 155, 89, .25);
+  border-radius: 8px;
+  background: #17100a;
+  color: #e9d0ae;
+  font-size: .68rem;
+}
+.orbital-preferences-controls #stop-speech-button:disabled {
+  opacity: .42;
+  cursor: not-allowed;
+}
+.voice-preferences-note {
+  margin: 7px 4px 0;
+  color: #8f806c;
+  font-size: .62rem;
+  line-height: 1.5;
+  text-align: center;
+}
+@media (max-width: 640px) {
+  .orbital-preferences { width: 100%; }
+  .orbital-preferences-controls { align-items: stretch; flex-direction: column; }
+  .orbital-preferences-controls label { width: 100%; }
+  .orbital-preferences-controls select { width: 100%; max-width: none; }
+  .orbital-preferences-controls #stop-speech-button { width: 100%; }
+}

@@ -25,6 +25,7 @@ import com.priyanshuraj.jarviscompanion.device.DeviceConnector
 import com.priyanshuraj.jarviscompanion.device.DeviceTokenStore
 import com.priyanshuraj.jarviscompanion.voice.LocalCommandProcessor
 import com.priyanshuraj.jarviscompanion.voice.VoiceControlService
+import com.priyanshuraj.jarviscompanion.voice.VoiceOutput
 import java.util.Locale
 import java.util.concurrent.Executors
 
@@ -126,7 +127,7 @@ class MainActivity : Activity() {
                 textSize = 26f
             })
             addView(TextView(this@MainActivity).apply {
-                text = "Phase 3: guided permissions, optional Gemini task planning and local Android control."
+                text = "Natural Hindi / English voice conversation with user-started Android Companion controls."
                 textSize = 14f
                 setPadding(0, 8, 0, 8)
             })
@@ -160,16 +161,9 @@ class MainActivity : Activity() {
 
         textToSpeech = TextToSpeech(this) { result ->
             if (result == TextToSpeech.SUCCESS) {
-                val hindi = Locale("hi", "IN")
-                val hindiStatus = textToSpeech?.isLanguageAvailable(hindi) ?: TextToSpeech.LANG_NOT_SUPPORTED
-                val english = Locale("en", "IN")
-                val selected = if (hindiStatus >= TextToSpeech.LANG_AVAILABLE) hindi else english
-                val selectedStatus = textToSpeech?.isLanguageAvailable(selected) ?: TextToSpeech.LANG_NOT_SUPPORTED
-                if (selectedStatus >= TextToSpeech.LANG_AVAILABLE) {
-                    textToSpeech?.language = selected
-                } else {
-                    refreshStatus("No supported voice data is installed. Install Hindi or English text-to-speech data in Android settings.")
-                }
+                val selection = textToSpeech?.let { VoiceOutput.configure(it, recognitionLanguage) }
+                if (selection != null) refreshStatus(selection.message)
+                else refreshStatus("Android text-to-speech could not initialize.")
             } else {
                 refreshStatus("Android text-to-speech could not initialize (code " + result + ").")
             }
@@ -307,6 +301,7 @@ class MainActivity : Activity() {
     }
 
     private fun startHandsFreeControl(allowVoiceOnly: Boolean = false) {
+        textToSpeech?.stop()
         if (!PermissionSetup.isAccessibilityEnabled(this) && !allowVoiceOnly) {
             showAccessibilityDisclosure()
             return
@@ -334,6 +329,7 @@ class MainActivity : Activity() {
     }
 
     private fun startVoiceRecognition() {
+        textToSpeech?.stop()
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             pendingVoicePermission = true
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_MICROPHONE)
@@ -383,7 +379,7 @@ class MainActivity : Activity() {
                     val localResponse = LocalCommandProcessor.handle(this@MainActivity, message, allowUiActions = false)
                     if (localResponse != null) {
                         refreshStatus(localResponse)
-                        textToSpeech?.speak(localResponse, TextToSpeech.QUEUE_FLUSH, null, "jarvis-local-answer")
+                        speakReply(localResponse)
                     } else {
                         sendVoiceCommand(message)
                     }
@@ -402,6 +398,21 @@ class MainActivity : Activity() {
         speechRecognizer?.startListening(intent)
     }
 
+    private fun speakReply(text: String) {
+        val engine = textToSpeech ?: run {
+            refreshStatus("Android text-to-speech is not ready yet.")
+            return
+        }
+        val replyLanguage = if (text.any { it.code in 0x0900..0x097F }) "hi-IN" else "en-IN"
+        val selection = VoiceOutput.configure(engine, replyLanguage)
+        if (!selection.message.isBlank()) refreshStatus(selection.message)
+        try {
+            VoiceOutput.speakChunks(engine, text, "jarvis-" + System.currentTimeMillis())
+        } catch (error: Exception) {
+            refreshStatus(error.message ?: "Android could not speak the full reply.")
+        }
+    }
+
     private fun sendVoiceCommand(message: String) {
         val token = DeviceTokenStore.read(applicationContext)
         val serverUrl = getSharedPreferences("jarvis_companion_settings", MODE_PRIVATE)
@@ -417,7 +428,7 @@ class MainActivity : Activity() {
                 val answer = DeviceConnector.voiceCommand(serverUrl, token, message)
                 runOnUiThread {
                     refreshStatus("JARVIS: " + answer)
-                    textToSpeech?.speak(answer, TextToSpeech.QUEUE_FLUSH, null, "jarvis-answer")
+                    speakReply(answer)
                 }
             } catch (error: Exception) {
                 runOnUiThread { refreshStatus(error.message ?: "Voice request failed.") }
@@ -456,6 +467,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         speechRecognizer?.destroy()
+        textToSpeech?.stop()
         textToSpeech?.shutdown()
         executor.shutdown()
         super.onDestroy()

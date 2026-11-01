@@ -92,14 +92,35 @@
             <span class="orbital-footer-separator">·</span>
             <span>Tap orb to begin, tap again to stop</span>
           </div>
-          <div class="orbital-preferences hidden" aria-hidden="true">
-            <select id="voice-language" aria-label="Voice input language">
-              <option value="hi-IN" selected>Hindi / Hinglish</option>
-              <option value="en-IN">English (India)</option>
-            </select>
-            <input id="speak-toggle" type="checkbox" checked>
-            <button type="button" id="stop-speech-button" disabled>Stop speaking</button>
-          </div>
+          <details class="orbital-preferences">
+            <summary>Voice settings</summary>
+            <div class="orbital-preferences-controls">
+              <label for="voice-language">Voice language
+                <select id="voice-language">
+                  <option value="hi-IN" selected>Hindi / Hinglish</option>
+                  <option value="en-IN">English (India)</option>
+                </select>
+              </label>
+              <label for="voice-output-voice">Spoken voice
+                <select id="voice-output-voice">
+                  <option value="auto">Automatic · match reply language</option>
+                </select>
+              </label>
+              <label for="voice-output-rate">Speaking speed
+                <select id="voice-output-rate">
+                  <option value="0.9">Slower</option>
+                  <option value="1" selected>Normal</option>
+                  <option value="1.1">Faster</option>
+                </select>
+              </label>
+              <label class="voice-speak-toggle" for="speak-toggle">
+                <input id="speak-toggle" type="checkbox" checked>
+                Speak replies aloud
+              </label>
+              <button type="button" id="stop-speech-button" disabled>Stop speaking</button>
+            </div>
+            <p class="voice-preferences-note">JARVIS prefers an installed local voice for the selected language when available. Voice availability depends on your browser and device.</p>
+          </details>
         </div>
       </section>
 
