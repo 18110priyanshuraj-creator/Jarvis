@@ -379,6 +379,9 @@ export function clearGoogleDriveTokenCache() {
 
 export function getIntegrationPermissionCatalog(connection, env = process.env) {
   const google = getGoogleOAuthStatus(connection, env);
+  const githubConfigured = Boolean(cleanString(env.JARVIS_GITHUB_TOKEN, 500));
+  const telegramConfigured = Boolean(cleanString(env.JARVIS_TELEGRAM_BOT_TOKEN, 500));
+  const elevenLabsConfigured = Boolean(cleanString(env.JARVIS_ELEVENLABS_API_KEY, 500));
   return [
     {
       provider: "google_drive",
@@ -392,7 +395,7 @@ export function getIntegrationPermissionCatalog(connection, env = process.env) {
     {
       provider: "github",
       authModel: "Fine-grained personal access token or GitHub App installation",
-      status: "server_environment_credential",
+      status: githubConfigured ? "configured" : "not_configured",
       requestedScopes: [],
       grantedScopes: [],
       actions: ["Read repository metadata"],
@@ -401,7 +404,7 @@ export function getIntegrationPermissionCatalog(connection, env = process.env) {
     {
       provider: "telegram",
       authModel: "Telegram bot token",
-      status: "server_environment_credential",
+      status: telegramConfigured ? "configured" : "not_configured",
       requestedScopes: [],
       grantedScopes: [],
       actions: ["Read bot profile"],
@@ -410,7 +413,7 @@ export function getIntegrationPermissionCatalog(connection, env = process.env) {
     {
       provider: "elevenlabs",
       authModel: "Restricted API key",
-      status: "server_environment_credential",
+      status: elevenLabsConfigured ? "configured" : "not_configured",
       requestedScopes: [],
       grantedScopes: [],
       actions: ["Read account subscription summary"],
