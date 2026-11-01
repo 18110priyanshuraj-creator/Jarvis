@@ -180,7 +180,7 @@ test("source answer drops unsupported source numbers and handles invalid AI JSON
   assert.equal(result.grounded, false);
   assert.equal(result.findings.length, 0);
   assert.equal(result.answerStatus, "insufficient-evidence");
-  assert.match(result.answer, /not enough source-supported evidence/i);
+  assert.match(result.answer, /do not provide enough source-supported evidence/i);
   assert.deepEqual(result.citations[0].sourceUrls, [URL_ONE, URL_TWO]);
 
   const invalid = await createSourceBasedAnswer(tokens([URL_ONE, URL_TWO]), {
