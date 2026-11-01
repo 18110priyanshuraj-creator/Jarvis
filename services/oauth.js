@@ -148,7 +148,7 @@ export function getGoogleOAuthStatus(connection, env = process.env) {
     vaultConfigured,
     canConnect: oauthClientConfigured && vaultConfigured,
     requiredScopes: [GOOGLE_DRIVE_METADATA_SCOPE],
-    grantedScopes: normalized && vaultConfigured ? normalized.grantedScopes : [],
+    grantedScopes: credentialHealthy ? normalized.grantedScopes : [],
     connectedAt: credentialHealthy ? normalized.connectedAt : null,
     redirectPath: GOOGLE_CALLBACK_PATH,
     tokenStorage: "AES-256-GCM encrypted refresh token; access tokens held in process memory"
@@ -186,7 +186,7 @@ export function beginGoogleOAuth({ sessionToken, env = process.env }) {
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", GOOGLE_DRIVE_METADATA_SCOPE);
   url.searchParams.set("access_type", "offline");
-  url.searchParams.set("include_granted_scopes", "true");
+  url.searchParams.set("include_granted_scopes", "false");
   url.searchParams.set("prompt", "consent");
   url.searchParams.set("state", state);
   url.searchParams.set("code_challenge", challenge);
@@ -268,8 +268,8 @@ export async function finishGoogleOAuth(options = {}) {
   }, fetchImpl);
 
   const scopes = typeof tokens.scope === "string" ? tokens.scope.split(/\s+/).filter(Boolean) : [];
-  if (!scopes.includes(GOOGLE_DRIVE_METADATA_SCOPE)) {
-    throw new Error("Google did not grant the required read-only Drive metadata permission. No connection was saved.");
+  if (scopes.length !== 1 || scopes[0] !== GOOGLE_DRIVE_METADATA_SCOPE) {
+    throw new Error("Google did not grant only the required read-only Drive metadata permission. No connection was saved.");
   }
   let refreshToken = typeof tokens.refresh_token === "string" ? tokens.refresh_token : "";
   if (!refreshToken && options.existingConnection) {
