@@ -337,6 +337,18 @@ The read controls appear only on live search source cards after page reading is 
 - A Phase 16 source-based answer can be saved only after the user clicks the save action. It starts unreviewed; nothing is silently saved or used for model training.
 - Full implementation and API behavior: `docs/PHASE17_PERSISTENT_KNOWLEDGE.md`.
 
+## Natural Voice Conversation (Phase 18)
+
+- Browser and Android Companion voice output is language-matched for Hindi (India) or English (India).
+- The browser Voice settings let you choose an available voice, adjust output speed, enable/disable spoken replies and stop current playback.
+- Long browser replies are split into sentence/word-bounded chunks and played sequentially. New input and Stop speaking cancel the queued reply.
+- Browser voice selection prefers an installed/local language-matched voice when the browser exposes that capability.
+- Android Companion prefers an installed, offline language-matched TTS voice. Long replies are queued in bounded chunks rather than being cut off at the old text limit.
+- The Android foreground-service notification exposes separate Interrupt speech and Stop actions. Starting a new one-shot request stops earlier TTS output.
+- Microphone capture remains user-started. Browser/Android recognition uses the selected browser or Android speech service; recognized text, not raw microphone audio, goes to JARVIS over the existing HTTPS API.
+- No always-on microphone, wake-word, background hidden listening, full-duplex streaming or VAD is introduced.
+- Full implementation and limitations: `docs/PHASE18_NATURAL_VOICE.md`.
+
 ## Built-in offline mode
 
 The offline brain is not a general-purpose language model. It contains a safe arithmetic parser, deterministic rules and a curated knowledge pack for selected topics such as Newton's laws, units and dimensions, mole concept, sets, circular motion and Ohm's law. It cannot answer arbitrary questions. Live web retrieval requires a trusted SearXNG endpoint configured on the server.
