@@ -105,10 +105,10 @@ JARVIS is a private, single-owner assistant with a web dashboard and an Android 
 ## Connected Services and Integrations (Phase 7)
 
 - The Connections dashboard lists four optional read-only providers: GitHub, Google Drive, Telegram, and ElevenLabs.
-- Credentials are read only from server environment variables. They are never entered into browser forms or stored in the app JSON/Neon state, workflow definitions, run logs, or data export.
+- GitHub, Telegram and ElevenLabs credentials are read from server environment variables. Google Drive refresh tokens use the encrypted server-side vault added in Phase 8. Credentials are never entered into browser forms, workflow definitions, run logs or data exports.
 - All provider requests use fixed HTTPS endpoints and GET only, with an eight-second request timeout, redirect blocking, safe response summaries, and no raw provider error bodies returned to the dashboard.
 - GitHub: checks repository metadata access and can list up to eight recently updated repositories. For a fine-grained personal access token, grant only **Metadata: read** for the repositories you select.
-- Google Drive: lists up to eight recent file metadata records. The configured access token should use the `https://www.googleapis.com/auth/drive.metadata.readonly` scope. Access tokens expire; refresh-token OAuth is not implemented.
+- Google Drive: lists up to eight recent file metadata records. Phase 7 supports a legacy short-lived access token; Phase 8 adds OAuth authorization, encrypted refresh-token storage and automatic access-token refresh.
 - Telegram: checks the configured bot profile using the read-only getMe endpoint. It does not send messages.
 - ElevenLabs: reads a limited account/subscription summary. It does not generate audio or consume generation credits.
 - Each provider can be tested from the Connections dashboard. A configured credential does not mean the provider has been verified; use **Test connection** to check it.
@@ -133,6 +133,33 @@ Set values in the private server environment settings (not in the Git repository
 - POST /api/integrations/:provider/enable — allow that configured provider to be used by JARVIS again.
 - Disabling is not provider-side token revocation. Remove/rotate the credential in the hosting environment and revoke it with the provider for full revocation.
 - Supported workflow actions: `github_list_repositories`, `google_drive_list_files`, `telegram_get_bot_profile`, `elevenlabs_get_account`.
+
+## OAuth, Encrypted Token Vault and Permission Management (Phase 8)
+
+- Google Drive uses the authorization-code flow with PKCE S256 and a one-time state value bound to the browser and authenticated JARVIS session. Pending state expires after ten minutes and exists only in server memory.
+- The only Google permission requested is https://www.googleapis.com/auth/drive.metadata.readonly. JARVIS lists file names and metadata; it does not request Drive file contents or write access.
+- The refresh token is encrypted at rest with AES-256-GCM using JARVIS_TOKEN_ENCRYPTION_KEY. The encryption key is not stored beside the ciphertext. Access tokens are held in process memory, refreshed before expiry, and never written to the persistent state snapshot.
+- If Google rotates the refresh token, the replacement is encrypted and persisted. A single in-flight refresh per provider avoids duplicate refresh requests.
+- Configure JARVIS_GOOGLE_OAUTH_CLIENT_ID, JARVIS_GOOGLE_OAUTH_CLIENT_SECRET, JARVIS_GOOGLE_OAUTH_REDIRECT_URI and JARVIS_TOKEN_ENCRYPTION_KEY in private server environment settings. The callback URI must exactly match the URI registered in the Google OAuth client and use HTTPS in production.
+- The encryption key must remain stable and backed up. Changing or losing it makes an existing stored refresh token undecryptable; reconnect Google Drive after replacing a lost key.
+- The Connections view shows OAuth readiness, connection state and requested/granted permission scopes. Revoke Google access explicitly from the dashboard; JARVIS calls Google's revocation endpoint and removes its encrypted local copy after a successful or already-invalid response.
+- The original JARVIS session cookie remains SameSite=Strict. A separate short-lived, HttpOnly, SameSite=Lax callback-binding cookie is used for Google's top-level OAuth redirect.
+- GitHub OAuth Apps are not used because their scopes are not as granular as GitHub App permissions. Use a fine-grained token with Metadata: read or a GitHub App with the minimum required read permission.
+- Telegram's bot API uses a bot token, not OAuth. ElevenLabs uses restricted API keys, not OAuth. Their credentials remain server-side and only their existing read-only provider operations are enabled.
+- Encrypted OAuth token records are intentionally excluded from /api/state and personal data export. The export contains no refresh token, access token, client secret or encryption key.
+
+### OAuth environment variables
+
+- JARVIS_GOOGLE_OAUTH_CLIENT_ID
+- JARVIS_GOOGLE_OAUTH_CLIENT_SECRET
+- JARVIS_GOOGLE_OAUTH_REDIRECT_URI
+- JARVIS_TOKEN_ENCRYPTION_KEY — exactly 32 bytes when decoded from base64, or 64 hexadecimal characters.
+
+### OAuth API
+
+- POST /api/integrations/google_drive/oauth/start — start the PKCE authorization flow.
+- GET /api/integrations/google_drive/oauth/callback — validate state/session and exchange the authorization code.
+- POST /api/integrations/google_drive/oauth/revoke — revoke the stored Google refresh token and remove the encrypted local connection.
 
 ## Voice and Android companion
 
