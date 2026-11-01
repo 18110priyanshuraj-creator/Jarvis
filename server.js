@@ -554,7 +554,8 @@ app.get("/api/export", requireAuth, (req, res) => {
       skills: store.skills,
       workflows: store.workflows,
       workflowRuns: store.workflowRuns,
-      disabledIntegrations: store.disabledIntegrations
+      disabledIntegrations: store.disabledIntegrations,
+      externalActions: store.externalActions
     },
     excluded: [
       "temporary conversation history",
@@ -1000,7 +1001,8 @@ app.post("/api/integrations/google_drive/oauth/start", requireAuth, oauthStartLi
     return res.status(409).json({ error: "Enable Google Drive in JARVIS before starting OAuth." });
   }
   try {
-    const result = beginGoogleOAuth({ sessionToken: req.sessionToken });
+    const capability = req.body?.capability === "create_docs" ? "create_docs" : "read";
+    const result = beginGoogleOAuth({ sessionToken: req.sessionToken, capability });
     setGoogleOAuthCookie(res, result.browserBinding);
     res.setHeader("Cache-Control", "no-store");
     res.json({ authorizationUrl: result.authorizationUrl });
@@ -1035,7 +1037,8 @@ app.get("/api/integrations/google_drive/oauth/callback", oauthCallbackLimiter, a
     await saveStore();
     clearGoogleOAuthCookie(res);
     res.setHeader("Cache-Control", "no-store");
-    return res.redirect(303, "/?integration=google_drive_connected");
+    const docsEnabled = connection.grantedScopes.includes("https://www.googleapis.com/auth/drive.file");
+    return res.redirect(303, "/?integration=google_drive_connected" + (docsEnabled ? "&capability=create_docs" : ""));
   } catch (error) {
     clearGoogleOAuthCookie(res);
     console.warn("Google Drive OAuth callback was not completed:", error?.message || "OAuth error");
