@@ -837,6 +837,189 @@ function integrationDetailText(provider, result) {
   return "Connection verified.";
 }
 
+async function refreshExternalActions() {
+  const [actionsData, capabilities] = await Promise.all([
+    api("/api/actions"),
+    api("/api/actions/capabilities")
+  ]);
+  state.externalActions = actionsData.actions || [];
+  state.actionCapabilities = capabilities;
+  renderExternalActions();
+}
+
+function updateExternalActionFields() {
+  const type = $("#external-action-type")?.value || "telegram_send_message";
+  const telegram = type === "telegram_send_message";
+  $("#action-telegram-fields")?.classList.toggle("hidden", !telegram);
+  $("#action-google-fields")?.classList.toggle("hidden", telegram);
+  const capabilities = state.actionCapabilities || {};
+  const chatSelect = $("#action-telegram-chat");
+  if (chatSelect) {
+    const allowlist = capabilities.telegram?.allowedChatIds || [];
+    const selected = chatSelect.value;
+    chatSelect.replaceChildren();
+    for (const chatId of allowlist) {
+      const option = document.createElement("option");
+      option.value = chatId;
+      option.textContent = "Allowed chat · " + chatId;
+      chatSelect.append(option);
+    }
+    if (allowlist.includes(selected)) chatSelect.value = selected;
+    chatSelect.disabled = !capabilities.telegram?.enabled || allowlist.length === 0;
+  }
+  const docsPermission = $("#action-google-permission");
+  if (docsPermission) {
+    docsPermission.classList.toggle("hidden", Boolean(capabilities.googleDrive?.canCreateDocs));
+    docsPermission.disabled = !state.googleDriveOAuth?.canConnect || !capabilities.googleDrive?.connected;
+  }
+  const submit = $("#external-action-submit");
+  if (submit) {
+    const allowed = telegram
+      ? Boolean(capabilities.telegram?.enabled && capabilities.telegram?.allowedChatIds?.length)
+      : Boolean(capabilities.googleDrive?.canCreateDocs);
+    submit.disabled = !allowed;
+    submit.textContent = telegram ? "Create message preview" : "Create document preview";
+  }
+}
+
+async function startGoogleDocsPermissionUpgrade() {
+  const button = $("#action-google-permission");
+  if (!state.googleDriveOAuth?.canConnect) {
+    toast("Configure Google OAuth client and token-vault settings in the server environment first.", true);
+    return;
+  }
+  button.disabled = true;
+  try {
+    const data = await api("/api/integrations/google_drive/oauth/start", {
+      method: "POST",
+      body: JSON.stringify({ capability: "create_docs" })
+    });
+    window.location.href = data.authorizationUrl;
+  } catch (error) {
+    toast(error.message, true);
+    button.disabled = false;
+  }
+}
+
+function renderExternalActions() {
+  const list = $("#external-action-list");
+  if (!list) return;
+  const capabilities = state.actionCapabilities || {};
+  const summary = $("#action-capability-summary");
+  if (summary) {
+    summary.replaceChildren();
+    const telegram = document.createElement("p");
+    const allowedChats = capabilities.telegram?.allowedChatIds || [];
+    telegram.textContent = capabilities.telegram?.enabled
+      ? "Telegram: ready · " + allowedChats.length + " allow-listed destination(s)."
+      : "Telegram: not enabled. Add the bot token and numeric chat allow-list on the server.";
+    const google = document.createElement("p");
+    google.textContent = capabilities.googleDrive?.canCreateDocs
+      ? "Google Docs: ready · JARVIS can create new documents only."
+      : "Google Docs: needs a Google Drive connection with the separate drive.file permission.";
+    summary.append(telegram, google);
+  }
+  updateExternalActionFields();
+  list.replaceChildren();
+  if (!state.externalActions.length) {
+    list.append(makeEmpty("No action previews yet. Create a preview above; nothing happens until you confirm it."));
+    return;
+  }
+  for (const action of state.externalActions) {
+    const card = document.createElement("article");
+    card.className = "list-item controlled-action-card";
+    const main = document.createElement("div");
+    main.className = "list-item-main";
+    const title = document.createElement("strong");
+    title.textContent = action.title;
+    const status = document.createElement("span");
+    status.className = "integration-status " + (action.status === "completed" ? "connected" : action.status === "pending" ? "configured" : action.status === "failed" ? "connection-failed" : "");
+    status.textContent = action.status.replaceAll("_", " ");
+    const meta = document.createElement("div");
+    meta.className = "list-item-meta";
+    meta.textContent = action.provider === "telegram"
+      ? "Telegram chat ID: " + action.chatId
+      : "Google Drive · new document: " + action.documentTitle;
+    const preview = document.createElement("pre");
+    preview.className = "action-preview-text";
+    preview.textContent = action.provider === "telegram" ? action.text : action.content;
+    main.append(title, status, meta, preview);
+    const history = document.createElement("div");
+    history.className = "action-history";
+    for (const event of (action.statusHistory || []).slice(-4)) {
+      const line = document.createElement("p");
+      line.textContent = new Date(event.at).toLocaleString() + " · " + event.summary;
+      history.append(line);
+    }
+    main.append(history);
+    if (action.result?.documentUrl) {
+      const link = document.createElement("a");
+      link.href = action.result.documentUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "Open created Google Doc";
+      main.append(link);
+    }
+    if (action.result?.messageId) {
+      const sent = document.createElement("p");
+      sent.className = "integration-success";
+      sent.textContent = "Telegram message ID: " + action.result.messageId;
+      main.append(sent);
+    }
+    if (action.status === "pending") {
+      const expiry = document.createElement("p");
+      expiry.className = "list-item-meta";
+      expiry.textContent = "Expires: " + new Date(action.expiresAt).toLocaleTimeString();
+      main.append(expiry);
+    }
+    const controls = document.createElement("div");
+    controls.className = "integration-actions";
+    if (action.status === "pending") {
+      const execute = document.createElement("button");
+      execute.type = "button";
+      execute.className = "primary action-confirm-button";
+      execute.textContent = "Confirm & " + (action.provider === "telegram" ? "send" : "create");
+      execute.addEventListener("click", async () => {
+        const entered = window.prompt("Review the preview. Type exactly: " + action.confirmationPhrase);
+        if (entered === null) return;
+        execute.disabled = true;
+        try {
+          await api("/api/actions/" + encodeURIComponent(action.id) + "/execute", {
+            method: "POST",
+            body: JSON.stringify({ confirmation: entered })
+          });
+          await refreshExternalActions();
+          toast(action.provider === "telegram" ? "Telegram message sent." : "Google Doc created.");
+        } catch (error) {
+          await refreshExternalActions();
+          toast(error.message, true);
+        }
+      });
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "item-action";
+      cancel.textContent = "Cancel preview";
+      cancel.addEventListener("click", async () => {
+        cancel.disabled = true;
+        try {
+          await api("/api/actions/" + encodeURIComponent(action.id) + "/cancel", {
+            method: "POST",
+            body: JSON.stringify({})
+          });
+          await refreshExternalActions();
+          toast("Preview cancelled. Nothing was sent or created.");
+        } catch (error) {
+          toast(error.message, true);
+          cancel.disabled = false;
+        }
+      });
+      controls.append(execute, cancel);
+    }
+    card.append(main, controls);
+    list.append(card);
+  }
+}
+
 function renderIntegrations() {
   const target = $("#integration-provider-list");
   if (!target) return;
