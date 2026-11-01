@@ -45,6 +45,7 @@
         <button class="nav-item" data-view="workflows"><span class="nav-icon">↻</span> Workflows</button>
         <button class="nav-item" data-view="integrations"><span class="nav-icon">⛓</span> Connections</button>
         <button class="nav-item" data-view="actions"><span class="nav-icon">✓</span> Action Center</button>
+        <button class="nav-item" data-view="system"><span class="nav-icon">◉</span> System Status</button>
       </nav>
       <div class="sidebar-foot">
         <button id="clear-chat-button" class="logout-button" type="button">Clear conversation</button>
@@ -461,7 +462,27 @@
         <div id="device-list" class="item-list"></div>
       </section>
 
-<footer class="page-footer"><span>JARVIS PERSONAL SYSTEM · v1.6.0</span><span>Built for one user, with safety boundaries</span></footer>
+      <section id="view-system" class="view content-view hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">FINAL INTEGRATION · PHASE 22</p>
+            <h1>System Status</h1>
+            <p class="muted">Inspect JARVIS storage, AI capabilities, live research, integrations and Android pairing in one place. Checks are read-only; external providers are not contacted automatically.</p>
+          </div>
+          <button class="primary" id="refresh-diagnostics" type="button">Run system check</button>
+        </div>
+        <div id="diagnostic-summary" class="diagnostic-summary">
+          <div class="empty-state">Run a system check to view the current JARVIS readiness report.</div>
+        </div>
+        <div class="list-heading">
+          <h2>Capability checks</h2>
+          <span class="small muted" id="diagnostic-generated-at"></span>
+        </div>
+        <div id="diagnostic-check-list" class="diagnostic-grid"></div>
+        <p class="small muted diagnostic-note">A configured integration is not necessarily connected. Use Connections → Test connection when you explicitly want to verify an external provider. Diagnostics never displays credentials, tokens, raw server paths or environment-variable values.</p>
+      </section>
+
+<footer class="page-footer"><span>JARVIS PERSONAL SYSTEM · v1.7.0</span><span>Built for one user, with safety boundaries</span></footer>
     </main>
   </div>
 </body>
