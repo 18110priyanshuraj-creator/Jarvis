@@ -951,6 +951,7 @@ function renderIntegrations() {
       main.append(detail);
     }
   }
+  renderIntegrationPermissions();
 }
 
 function renderIntegrationPermissions() {
@@ -980,10 +981,9 @@ function renderIntegrationPermissions() {
     }
     target.append(card);
   }
-  renderIntegrationPermissions();
 }
 
-function renderIntegrationPermissions() {
+function workflowStepLabel(type) {
   return ({
     create_task: "Create local task",
     save_memory: "Save personal memory",
