@@ -52,7 +52,7 @@ before(async () => {
       GEMINI_WEB_RESEARCH_ENABLED: "false",
       JARVIS_GITHUB_TOKEN: "",
       JARVIS_GOOGLE_DRIVE_ACCESS_TOKEN: "",
-      JARVIS_TELEGRAM_BOT_TOKEN: "",
+      JARVIS_TELEGRAM_BOT_TOKEN: "123456789:" + "A".repeat(32),
       JARVIS_ELEVENLABS_API_KEY: "",
       JARVIS_TELEGRAM_ALLOWED_CHAT_IDS: "123456789",
       JARVIS_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 11).toString("base64"),
@@ -149,20 +149,39 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   const actionCapabilitiesResponse = await request("/api/actions/capabilities");
   assert.equal(actionCapabilitiesResponse.status, 200);
   const actionCapabilities = await actionCapabilitiesResponse.json();
-  assert.equal(actionCapabilities.telegram.enabled, false);
+  assert.equal(actionCapabilities.telegram.enabled, true);
   assert.deepEqual(actionCapabilities.telegram.allowedChatIds, ["123456789"]);
   assert.equal(actionCapabilities.googleDrive.canCreateDocs, false);
 
-  const blockedTelegramPreview = await request("/api/actions", {
+  const telegramPreview = await request("/api/actions", {
     method: "POST",
     body: JSON.stringify({
       type: "telegram_send_message",
       chatId: "123456789",
-      text: "This should not be sent without a bot token."
+      text: "This is only a preview until exact confirmation."
     })
   });
-  assert.equal(blockedTelegramPreview.status, 409);
-  assert.match((await blockedTelegramPreview.json()).error, /not enabled/i);
+  assert.equal(telegramPreview.status, 201);
+  const telegramPreviewAction = (await telegramPreview.json()).action;
+  assert.equal(telegramPreviewAction.status, "pending");
+  assert.equal(telegramPreviewAction.confirmationPhrase, "SEND MESSAGE");
+
+  const wrongActionConfirmation = await request("/api/actions/" + telegramPreviewAction.id + "/execute", {
+    method: "POST",
+    body: JSON.stringify({ confirmation: "SEND IT" })
+  });
+  assert.equal(wrongActionConfirmation.status, 400);
+  assert.match((await wrongActionConfirmation.json()).error, /no external action was performed/i);
+
+  const pendingActionList = await request("/api/actions");
+  assert.equal(pendingActionList.status, 200);
+  assert.equal((await pendingActionList.json()).actions[0].status, "pending");
+
+  const cancelTelegramPreview = await request("/api/actions/" + telegramPreviewAction.id + "/cancel", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(cancelTelegramPreview.status, 200);
+  assert.equal((await cancelTelegramPreview.json()).action.status, "cancelled");
 
   const blockedGoogleDocPreview = await request("/api/actions", {
     method: "POST",
@@ -174,9 +193,6 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   });
   assert.equal(blockedGoogleDocPreview.status, 409);
   assert.match((await blockedGoogleDocPreview.json()).error, /drive.file permission/i);
-  const emptyActionHistory = await request("/api/actions");
-  assert.equal(emptyActionHistory.status, 200);
-  assert.deepEqual((await emptyActionHistory.json()).actions, []);
 
   const integrationCatalogueResponse = await request("/api/integrations");
   assert.equal(integrationCatalogueResponse.status, 200);
@@ -184,7 +200,9 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(integrationCatalogue.credentialStorage, "server-environment-or-encrypted-vault");
   assert.equal(integrationCatalogue.supportedOperations, "read-only");
   assert.equal(integrationCatalogue.providers.length, 4);
-  assert.equal(integrationCatalogue.providers.filter((item) => item.id !== "google_drive").every((item) => item.configured === false), true);
+  assert.equal(integrationCatalogue.providers.find((item) => item.id === "github").configured, false);
+  assert.equal(integrationCatalogue.providers.find((item) => item.id === "telegram").configured, true);
+  assert.equal(integrationCatalogue.providers.find((item) => item.id === "elevenlabs").configured, false);
   assert.equal(integrationCatalogue.googleDriveOAuth.canConnect, true);
   assert.equal(integrationCatalogue.googleDriveOAuth.connected, false);
   assert.deepEqual(integrationCatalogue.googleDriveOAuth.requiredScopes, [
