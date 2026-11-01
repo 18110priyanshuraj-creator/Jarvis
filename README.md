@@ -327,6 +327,16 @@ The read controls appear only on live search source cards after page reading is 
 - Nothing is automatically saved to Memory or Knowledge, and no model weights are trained.
 - Full implementation and verification details: `docs/PHASE16_SOURCE_BASED_ANSWERS.md`.
 
+## Persistent Knowledge Learning (Phase 17)
+
+- Uses the existing Neon-backed `jarvis_app_state` JSONB store (with the existing local file fallback); no second database is created.
+- Saves capture, publication and retrieval dates, source titles, canonical HTTPS URLs, available snippets and claim-level citations.
+- Exact duplicate saves merge new provenance into the existing record instead of creating duplicate entries.
+- Web research has explicit `unreviewed`, `user-reviewed` and `rejected` states. Only user-authored notes and web research explicitly reviewed by the owner enter assistant knowledge context.
+- The Knowledge screen provides filters and review/reject/reopen controls.
+- A Phase 16 source-based answer can be saved only after the user clicks the save action. It starts unreviewed; nothing is silently saved or used for model training.
+- Full implementation and API behavior: `docs/PHASE17_PERSISTENT_KNOWLEDGE.md`.
+
 ## Built-in offline mode
 
 The offline brain is not a general-purpose language model. It contains a safe arithmetic parser, deterministic rules and a curated knowledge pack for selected topics such as Newton's laws, units and dimensions, mole concept, sets, circular motion and Ohm's law. It cannot answer arbitrary questions. Live web retrieval requires a trusted SearXNG endpoint configured on the server.
