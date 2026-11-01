@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createVoiceController } from "../public/voice-controller.js";
+import { createVoiceController, splitSpeechText } from "../public/voice-controller.js";
 
 class FakeRecognition {
   static instances = [];
@@ -174,4 +174,132 @@ test("unsupported recognition and playback report clear error codes", () => {
   assert.equal(controller.startListening(), false);
   assert.equal(controller.speak("Hello"), false);
   assert.deepEqual(errors, ["unsupported", "speech-unavailable"]);
+});
+
+
+test("splits long spoken replies into readable chunks without losing words", () => {
+  const text = "This is the first sentence. This is the second sentence. " +
+    "यह तीसरा वाक्य है। This is the fourth sentence with a longer explanation.";
+  const chunks = splitSpeechText(text, 90);
+  assert.ok(chunks.length >= 2);
+  assert.equal(chunks.join(" "), text.replace(/\\s+/g, " "));
+  assert.ok(chunks.every(chunk => chunk.length <= 90));
+});
+
+test("uses a language-matched local voice and applies speech rate and pitch", () => {
+  const voices = [
+    { voiceURI: "en-local", name: "English Local", lang: "en-IN", localService: true, default: false },
+    { voiceURI: "hi-network", name: "Hindi Network", lang: "hi-IN", localService: false, default: true },
+    { voiceURI: "hi-local", name: "Hindi Local", lang: "hi-IN", localService: true, default: false }
+  ];
+  const speechSynthesis = {
+    ...makeSpeechHarness(),
+    getVoices: () => voices,
+    addEventListener() {},
+    removeEventListener() {}
+  };
+  const controller = createVoiceController({
+    SpeechRecognitionCtor: FakeRecognition,
+    speechSynthesis,
+    createUtterance: text => ({ text }),
+    rate: 1.1,
+    pitch: 0.95,
+    maxChunkChars: 220
+  });
+
+  assert.equal(controller.getVoiceOptions("hi-IN")[0].voiceURI, "hi-local");
+  assert.equal(controller.speak("नमस्ते, JARVIS यहाँ है।", "hi-IN"), true);
+  const utterance = speechSynthesis.spoken[0];
+  assert.equal(utterance.voice.voiceURI, "hi-local");
+  assert.equal(utterance.lang, "hi-IN");
+  assert.equal(utterance.rate, 1.1);
+  assert.equal(utterance.pitch, 0.95);
+});
+
+test("plays a long reply sequentially and returns to idle only after the last chunk", () => {
+  const speechSynthesis = makeSpeechHarness();
+  const controller = createVoiceController({
+    speechSynthesis,
+    SpeechRecognitionCtor: FakeRecognition,
+    createUtterance: text => ({ text }),
+    maxChunkChars: 80
+  });
+  const text = "First sentence. ".repeat(8);
+
+  assert.equal(controller.speak(text, "en-IN"), true);
+  assert.equal(speechSynthesis.spoken.length, 1);
+  assert.equal(controller.getState(), "speaking");
+
+  let chunksPlayed = 1;
+  while (speechSynthesis.spoken[chunksPlayed - 1]?.onend && chunksPlayed < 10) {
+    speechSynthesis.spoken[chunksPlayed - 1].onend();
+    chunksPlayed = speechSynthesis.spoken.length;
+  }
+
+  assert.ok(speechSynthesis.spoken.length > 1);
+  assert.equal(controller.getState(), "idle");
+  assert.equal(speechSynthesis.spoken.map(item => item.text).join(" "), text.trim());
+});
+
+test("stopping chunked speech prevents queued chunks and ignores late callbacks", () => {
+  const speechSynthesis = makeSpeechHarness();
+  const controller = createVoiceController({
+    speechSynthesis,
+    SpeechRecognitionCtor: FakeRecognition,
+    createUtterance: text => ({ text }),
+    maxChunkChars: 80
+  });
+  controller.speak("A long response that must be interrupted. ".repeat(8), "en-IN");
+  const first = speechSynthesis.spoken[0];
+
+  assert.equal(controller.stopSpeaking(), true);
+  first.onend();
+  assert.equal(speechSynthesis.cancelCalls, 1);
+  assert.equal(speechSynthesis.spoken.length, 1);
+  assert.equal(controller.getState(), "idle");
+});
+
+test("voice selection ignores a selected voice that does not match the answer language", () => {
+  const voices = [
+    { voiceURI: "en-local", name: "English", lang: "en-IN", localService: true },
+    { voiceURI: "hi-local", name: "Hindi", lang: "hi-IN", localService: true }
+  ];
+  const speechSynthesis = {
+    ...makeSpeechHarness(),
+    getVoices: () => voices,
+    addEventListener() {},
+    removeEventListener() {}
+  };
+  const controller = createVoiceController({
+    speechSynthesis,
+    SpeechRecognitionCtor: FakeRecognition,
+    createUtterance: text => ({ text })
+  });
+  assert.equal(controller.setVoiceURI("en-local"), true);
+  controller.speak("नमस्ते", "hi-IN");
+  assert.equal(speechSynthesis.spoken[0].voice.voiceURI, "hi-local");
+});
+
+test("voiceschanged refreshes the available voice list and destroy removes its listener", () => {
+  const listeners = {};
+  const voices = [{ voiceURI: "hi-local", name: "Hindi Local", lang: "hi-IN", localService: true }];
+  const updates = [];
+  const speechSynthesis = {
+    ...makeSpeechHarness(),
+    getVoices: () => voices,
+    addEventListener: (name, handler) => { listeners[name] = handler; },
+    removeEventListener: (name, handler) => {
+      if (listeners[name] === handler) delete listeners[name];
+    }
+  };
+  const controller = createVoiceController({
+    speechSynthesis,
+    SpeechRecognitionCtor: FakeRecognition,
+    createUtterance: text => ({ text }),
+    onVoicesChanged: items => updates.push(items)
+  });
+  listeners.voiceschanged();
+  assert.equal(updates.at(-1)[0].voiceURI, "hi-local");
+  controller.destroy();
+  assert.equal(listeners.voiceschanged, undefined);
 });
