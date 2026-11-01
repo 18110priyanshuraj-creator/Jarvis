@@ -19,6 +19,7 @@ import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillC
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
 import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, createWorkflowDraft, createWorkflowRun, normalizeWorkflow, pauseWorkflow, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
 import { getIntegrationCatalog, INTEGRATION_PROVIDER_IDS, probeIntegration, runIntegrationAction } from "./services/integrations.js";
+import { appendActionStatus, createPendingExternalAction, executeExternalAction, getExternalActionCapabilities, MAX_ACTION_HISTORY, MAX_PENDING_ACTIONS, normalizeExternalAction } from "./services/external-actions.js";
 import {
   beginGoogleOAuth,
   clearGoogleDriveTokenCache,
