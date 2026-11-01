@@ -746,8 +746,8 @@ app.post("/api/chat", requireAuth, async (req, res) => {
 app.get("/api/memories", requireAuth, (req, res) => {
   const query = cleanText(req.query.q, 300);
   const category = cleanText(req.query.category, 30);
-  const requestedLimit = Number.parseInt(String(req.query.limit || "100"), 10);
-  const limit = Number.isFinite(requestedLimit) ? Math.min(100, Math.max(1, requestedLimit)) : 100;
+  const requestedLimit = Number.parseInt(String(req.query.limit || String(KNOWLEDGE_LIMITS.items)), 10);
+  const limit = Number.isFinite(requestedLimit) ? Math.min(KNOWLEDGE_LIMITS.items, Math.max(1, requestedLimit)) : KNOWLEDGE_LIMITS.items;
   const items = searchMemories(store.memories, query, category, limit);
   res.json({ query, category, total: store.memories.length, count: items.length, items });
 });
