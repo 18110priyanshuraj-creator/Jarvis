@@ -933,7 +933,7 @@ function renderIntegrations() {
       revoke.className = "item-action";
       revoke.textContent = "Revoke Google access";
       revoke.addEventListener("click", async () => {
-        if (!confirm("Revoke Google Drive permission and remove the stored JARVIS credential?")) return;
+        if (!confirm("Revoke Google Drive permission and remove the saved JARVIS credential? Google may also revoke tokens for other OAuth clients in the same Google Cloud project.")) return;
         revoke.disabled = true;
         try {
           const data = await api("/api/integrations/google_drive/oauth/revoke", { method: "POST", body: JSON.stringify({}) });
