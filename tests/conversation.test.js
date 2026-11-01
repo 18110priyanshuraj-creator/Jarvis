@@ -95,3 +95,10 @@ test("only enabled, user-approved memories are included as bounded context", () 
   assert.match(instruction, /Do not automatically save questions/);
   assert.match(instruction, /may be outdated/i);
 });
+
+
+test("conversation instructions require server confirmation before claiming memory deletion", () => {
+  const instruction = buildConversationSystemInstruction([]);
+  assert.match(instruction, /exact match to the saved note/i);
+  assert.match(instruction, /Never claim a memory was deleted unless JARVIS has confirmed/i);
+});
