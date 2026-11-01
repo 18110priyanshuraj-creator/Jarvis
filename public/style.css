@@ -1406,3 +1406,48 @@ body::before { display: none; }
   .orbital-preferences-controls select { width: 100%; max-width: none; }
   .orbital-preferences-controls #stop-speech-button { width: 100%; }
 }
+
+
+/* Phase 22 — System readiness */
+.diagnostic-summary { margin: 4px 0 22px; }
+.diagnostic-overview {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #101827c9;
+}
+.diagnostic-overview strong { font-size: .95rem; }
+.diagnostic-overview p { margin: 0; color: var(--muted); font-size: .8rem; line-height: 1.6; }
+.diagnostic-status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: #b9c6dd;
+  font-size: .66rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+.diagnostic-status-ready { color: #83d9b5; border-color: #83d9b54a; }
+.diagnostic-status-warning, .diagnostic-status-attention { color: #f0c27b; border-color: #f0c27b55; }
+.diagnostic-status-error, .diagnostic-status-degraded { color: #ff9a9e; border-color: #ff9a9e55; }
+.diagnostic-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+.diagnostic-card { min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 13px; background: #0e1625c9; }
+.diagnostic-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.diagnostic-card-header strong { font-size: .82rem; line-height: 1.5; }
+.diagnostic-card p { color: #9aa9c1; font-size: .75rem; line-height: 1.6; margin: 9px 0 0; }
+.diagnostic-details { display: grid; gap: 5px; margin-top: 11px; padding-top: 9px; border-top: 1px solid var(--line); }
+.diagnostic-details span { color: #7486a2; font-size: .67rem; line-height: 1.45; overflow-wrap: anywhere; }
+.diagnostic-note { margin-top: 18px; line-height: 1.6; }
+#diagnostic-generated-at { text-align: right; }
+@media (max-width: 680px) {
+  .diagnostic-grid { grid-template-columns: 1fr; }
+  .diagnostic-card-header { align-items: center; }
+  #diagnostic-generated-at { text-align: left; }
+}
