@@ -849,7 +849,7 @@ function renderIntegrations() {
     const lastResult = state.integrationResults[provider.id];
     const googleOAuthConnected = provider.id === "google_drive" && state.googleDriveOAuth?.connected;
     status.className = "integration-status " + (googleOAuthConnected || lastResult?.connected ? "connected" : lastResult?.error ? "connection-failed" : provider.disabled ? "connection-disabled" : provider.configured ? "configured" : "not-configured");
-    status.textContent = googleOAuthConnected ? "Connected via Google OAuth" : lastResult?.connected ? "Connected" : lastResult?.error ? "Test failed" : provider.disabled ? "Disabled in JARVIS" : provider.configured ? "Configured · not tested" : "Not configured";
+    status.textContent = googleOAuthConnected ? "Connected via Google OAuth" : provider.id === "google_drive" && state.googleDriveOAuth?.canConnect ? "Ready to connect" : lastResult?.connected ? "Connected" : lastResult?.error ? "Test failed" : provider.disabled ? "Disabled in JARVIS" : provider.configured ? "Configured · not tested" : "Not configured";
     const access = document.createElement("p");
     access.textContent = provider.access;
     const variable = document.createElement("code");
