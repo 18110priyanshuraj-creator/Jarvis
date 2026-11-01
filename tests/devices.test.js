@@ -151,7 +151,7 @@ test("paired Android devices can authenticate, use voice chat, and be revoked", 
   const offlinePlan = await offlinePlanResponse.json();
   assert.equal(offlinePlan.mode, "device_action");
   assert.equal(offlinePlan.externalAI, false);
-  assert.equal(offlinePlan.engine, "offline-local-rules");
+  assert.equal(offlinePlan.engine, "built-in-device-rules");
   assert.deepEqual(offlinePlan.actions.map((item) => item.type), [
     "open_app", "tap_label", "type_text", "ask_user"
   ]);
