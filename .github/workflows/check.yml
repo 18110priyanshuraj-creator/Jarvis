@@ -19,6 +19,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  npm-lockfile-bootstrap:
+    name: Commit npm lockfile on Phase 11 branch
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/phase11-release-gates' && github.actor == '18110priyanshuraj-creator'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out Phase 11 branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/phase11-release-gates
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Generate npm lockfile without running package scripts
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Commit lockfile only when it changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- package-lock.json; then
+            echo "The npm lockfile is already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "chore: commit npm dependency lockfile"
+          git push origin HEAD:feat/phase11-release-gates
+
   node-quality:
     name: Node.js tests and dependency audit
     runs-on: ubuntu-latest
