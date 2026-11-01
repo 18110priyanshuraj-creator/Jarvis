@@ -39,6 +39,13 @@ async function boot() {
     await api("/api/session");
     showApp();
     await refreshState();
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("integration") === "google_drive_connected") {
+      toast("Google Drive connected with read-only metadata access.");
+    } else if (params.get("integration") === "google_drive_error") {
+      toast("Google Drive was not connected. Check the OAuth setup and try again.", true);
+    }
+    if (params.has("integration")) window.history.replaceState({}, "", window.location.pathname);
   } catch {
     showLogin();
   }
@@ -906,11 +913,18 @@ function renderIntegrations() {
     actions.append(test, toggle);
     const connect = document.createElement("button");
     connect.type = "button";
-    connect.textContent = "Connect Google Drive";
+    connect.className = "item-action";
+    connect.textContent = state.googleDriveOAuth.connected ? "Reconnect Google Drive" : "Connect Google Drive";
     connect.disabled = !provider.enabled;
     connect.addEventListener("click", async () => {
-      const data = await api("/api/integrations/google_drive/oauth/start", { method: "POST", body: JSON.stringify({}) });
-      window.location.href = data.authorizationUrl;
+      connect.disabled = true;
+      try {
+        const data = await api("/api/integrations/google_drive/oauth/start", { method: "POST", body: JSON.stringify({}) });
+        window.location.href = data.authorizationUrl;
+      } catch (error) {
+        toast(error.message, true);
+        connect.disabled = false;
+      }
     });
     if (provider.id === "google_drive" && state.googleDriveOAuth?.canConnect) actions.append(connect);
     if (provider.id === "google_drive" && state.googleDriveOAuth?.connected) {
