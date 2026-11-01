@@ -230,10 +230,8 @@ test("plays a long reply sequentially and returns to idle only after the last ch
   assert.equal(speechSynthesis.spoken.length, 1);
   assert.equal(controller.getState(), "speaking");
 
-  let chunksPlayed = 1;
-  while (speechSynthesis.spoken[chunksPlayed - 1]?.onend && chunksPlayed < 10) {
-    speechSynthesis.spoken[chunksPlayed - 1].onend();
-    chunksPlayed = speechSynthesis.spoken.length;
+  for (let index = 0; index < speechSynthesis.spoken.length && index < 10; index += 1) {
+    speechSynthesis.spoken[index].onend();
   }
 
   assert.ok(speechSynthesis.spoken.length > 1);
