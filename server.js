@@ -825,7 +825,7 @@ function integrationCatalogResponse() {
   if (googleProvider) {
     googleProvider.oauthConnected = googleDriveOAuth.connected;
     googleProvider.oauthReady = googleDriveOAuth.canConnect;
-    googleProvider.configured = googleProvider.environmentConfigured || googleDriveOAuth.connected;
+    googleProvider.configured = googleProvider.environmentConfigured || googleDriveOAuth.connected || googleDriveOAuth.canConnect;
     googleProvider.enabled = googleProvider.configured && !googleProvider.disabled;
   }
   return {
