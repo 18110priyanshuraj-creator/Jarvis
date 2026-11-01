@@ -668,6 +668,9 @@ app.get("/api/health", (_req, res) => {
       pausedMemoriesInAssistantContext: false,
       contextPreviewAvailable: true,
       maxContextItems: MEMORY_LIMITS.contextItems,
+      maxContextChars: MEMORY_LIMITS.contextChars,
+      forgetRequiresExactSavedNote: true,
+      ambiguousForgetDeletesNothing: true,
       temporaryChatHistoryMessages: 10
     },
     runtimeStorage: runtimeStore.mode()
