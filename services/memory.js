@@ -8,13 +8,18 @@ const VALID_CATEGORIES = new Set(["preference", "goal", "fact"]);
 const SENSITIVE_MEMORY_PATTERN = /(?:\b|_)(password|passcode|pin|otp|one[- ]time code|api[_ -]?key|secret|access[_ -]?token|private key|bank account|card number|medical|health|diagnos(?:is|ed)|medicine|medication|home address|exact address|street address|phone number|email address|date of birth|birth date|race|ethnicity|religion|religious belief|political affiliation|political party|voting preference|sexual orientation|sexuality|sex life|trade union|union membership|criminal history|immigration status|biometric|mental health|disability)\b/i;
 const GOOGLE_API_KEY = /\bAIza[0-9A-Za-z_-]{30,}\b/;
 const LONG_BEARER = /\bBearer\s+[A-Za-z0-9._~+/-]{24,}/i;
-const QUERY_STOP_WORDS = new Set([
-  "a", "an", "and", "are", "as", "at", "be", "but", "by", "can", "could", "do", "does",
-  "for", "from", "how", "i", "in", "is", "it", "me", "my", "of", "on", "or", "please",
-  "should", "that", "the", "their", "this", "to", "was", "what", "when", "where", "which",
-  "who", "why", "will", "with", "would", "you", "your", "hai", "hain", "ho", "hu", "hun",
-  "ka", "kar", "karo", "karna", "ke", "ki", "kya", "ko", "mai", "mein", "mera", "meri",
-  "mere", "mujhe", "par", "se", "tha", "thi", "the", "ye", "yeh"
+const SEARCH_STOP_WORDS = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "but", "by", "can", "could",
+  "did", "do", "does", "for", "from", "had", "has", "have", "how", "i",
+  "if", "in", "into", "is", "it", "its", "me", "my", "of", "on", "or",
+  "our", "please", "the", "their", "them", "there", "these", "this", "those",
+  "to", "us", "was", "we", "were", "what", "when", "where", "which", "who",
+  "why", "will", "with", "would", "you", "your", "jarvis", "remember",
+  "hai", "hain", "ka", "ki", "ke", "ko", "mein", "me", "mai", "main",
+  "mera", "meri", "mere", "mujhe", "mujhko", "kya", "kyu", "kyon", "aur",
+  "ye", "yeh", "woh", "wo", "par", "se", "bhi", "ek", "tha", "thi", "the",
+  "है", "हैं", "का", "की", "के", "को", "में", "मैं", "मेरा", "मेरी",
+  "मुझे", "क्या", "और", "यह", "वह", "पर", "से", "भी", "एक"
 ]);
 
 function cleanText(value, maxLength) {
@@ -27,24 +32,23 @@ function normalizeTimestamp(value, fallback) {
   return Number.isFinite(date.getTime()) ? date.toISOString() : fallback;
 }
 
-function normalizedContent(value) {
-  return cleanText(value, MAX_CONTENT).normalize("NFKC").replace(/\s+/g, " ").trim();
+function normalizedSearchText(value) {
+  return String(value || "").normalize("NFKC").toLocaleLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function tokenize(value) {
+  return normalizedSearchText(value).match(/[\p{L}\p{N}]+/gu) || [];
+}
+
+function queryTerms(value) {
+  return [...new Set(tokenize(value))]
+    .filter((term) => term.length > 1 && !SEARCH_STOP_WORDS.has(term));
 }
 
 function memoryHash(content) {
   return crypto.createHash("sha256")
-    .update(normalizedContent(content).toLocaleLowerCase())
+    .update(normalizedSearchText(content))
     .digest("hex");
-}
-
-function tokenize(value) {
-  return [...new Set((String(value || "").normalize("NFKC").toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || []))];
-}
-
-function queryTerms(value) {
-  return tokenize(value).filter((term) =>
-    !QUERY_STOP_WORDS.has(term) && (term.length > 2 || term === "ai" || term === "jee" || /^\d{2,}$/.test(term))
-  );
 }
 
 export function isSafeMemoryContent(content) {
@@ -70,6 +74,9 @@ export function normalizeMemory(input = {}) {
     id: cleanText(input.id, 80) || crypto.randomUUID(),
     content,
     category,
+    // Existing records default to enabled so upgrades preserve prior behaviour.
+    // Users can pause a note without deleting it.
+    enabled: input.enabled !== false,
     contentHash: memoryHash(content),
     createdAt,
     updatedAt
@@ -94,13 +101,14 @@ export function parseExplicitForgetIntent(message) {
     normalized.match(/^(?:please\s+)?(?:bhool\s+jao|bhula\s+do|yaad\s+se\s+hatao|yaad\s+se\s+hata\s+do)\s*[:,-]?\s*(.*)$/i);
   if (!match) return null;
 
-  const content = normalizedContent(match[1]).replace(/^[\"'“”‘’]+|[\"'“”‘’]+$/gu, "").trim();
+  const content = cleanText(match[1], MAX_CONTENT).normalize("NFKC").replace(/\s+/g, " ")
+    .replace(/^["'“”‘’]+|["'“”‘’]+$/gu, "").trim();
   const broadRequest = /^(all|everything|all memories|sab|sab kuch|saari memories|sabhi memories)$/i.test(content);
   return { content, ambiguous: broadRequest || content.length < 3 };
 }
 
 export function findExactMemory(memories, content) {
-  const candidate = normalizedContent(content);
+  const candidate = cleanText(content, MAX_CONTENT);
   if (candidate.length < 3) return null;
   const hash = memoryHash(candidate);
   return (Array.isArray(memories) ? memories : []).find((item) => {
@@ -110,12 +118,16 @@ export function findExactMemory(memories, content) {
   }) || null;
 }
 
-export function searchMemories(memories, query = "", category = "", limit = 100) {
+function rankMemories(memories, query, category = "", limit = 100, includePaused = true) {
   const records = Array.isArray(memories) ? memories : [];
-  const cleanQuery = cleanText(query, 300).normalize("NFKC").toLocaleLowerCase();
+  const cleanQuery = cleanText(query, 4000);
+  const normalizedQuery = normalizedSearchText(cleanQuery);
   const allowedCategory = VALID_CATEGORIES.has(category) ? category : "";
   const boundedLimit = Number.isInteger(limit) ? Math.min(100, Math.max(1, limit)) : 50;
-  const filtered = records.filter((item) => !allowedCategory || item.category === allowedCategory);
+  const filtered = records.filter((item) =>
+    (!allowedCategory || item.category === allowedCategory) &&
+    (includePaused || item.enabled !== false)
+  );
 
   if (!cleanQuery) {
     return filtered.slice()
@@ -123,42 +135,57 @@ export function searchMemories(memories, query = "", category = "", limit = 100)
       .slice(0, boundedLimit);
   }
 
-  const terms = queryTerms(cleanQuery);
+  const terms = queryTerms(normalizedQuery);
   if (!terms.length) return [];
 
   return filtered.map((item) => {
-    const content = String(item?.content || "").normalize("NFKC").toLocaleLowerCase();
-    const contentTokens = tokenize(content);
+    const normalizedContent = normalizedSearchText(item?.content);
+    const contentTokens = [...new Set(tokenize(normalizedContent))];
     const categoryTokens = tokenize(item?.category || "");
+    const matchedTerms = [];
     let score = 0;
-    let matchedTerms = 0;
 
     for (const term of terms) {
       if (contentTokens.includes(term)) {
+        matchedTerms.push(term);
         score += 4;
-        matchedTerms += 1;
-      } else if (contentTokens.some((token) => token.length >= 4 && (token.startsWith(term) || term.startsWith(token)))) {
+      } else if (contentTokens.some((token) =>
+        token.length >= 4 && (token.startsWith(term) || term.startsWith(token))
+      )) {
+        matchedTerms.push(term);
         score += 2;
-        matchedTerms += 1;
       } else if (categoryTokens.includes(term)) {
+        matchedTerms.push(term);
         score += 1;
-        matchedTerms += 1;
       }
     }
 
-    const coverage = matchedTerms / terms.length;
-    if (content.includes(cleanQuery)) score += 4;
-    return { ...item, score, relevance: Math.round(coverage * 100), coverage };
+    const coverage = matchedTerms.length / terms.length;
+    const phraseMatch = normalizedContent.includes(normalizedQuery);
+    const scoreWithPhrase = score + (phraseMatch ? 4 : 0);
+    return {
+      ...item,
+      score: scoreWithPhrase,
+      matchedTerms,
+      relevance: Math.round(coverage * 100),
+      coverage
+    };
   }).filter((item) => item.score > 0 && item.coverage >= 0.34)
-    .sort((a, b) => b.score - a.score ||
+    .sort((a, b) =>
+      b.score - a.score ||
       b.coverage - a.coverage ||
-      String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))
+      String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt))
+    )
     .slice(0, boundedLimit);
+}
+
+export function searchMemories(memories, query = "", category = "", limit = 100) {
+  return rankMemories(memories, query, category, limit, true);
 }
 
 export function buildMemoryContext(memories, query, limit = MAX_CONTEXT_ITEMS) {
   const boundedItems = Number.isInteger(limit) ? Math.min(MAX_CONTEXT_ITEMS, Math.max(1, limit)) : MAX_CONTEXT_ITEMS;
-  const matches = searchMemories(memories, query, "", boundedItems);
+  const matches = rankMemories(memories, query, "", boundedItems, false);
   const context = [];
   let remainingChars = MAX_CONTEXT_CHARS;
 
@@ -176,6 +203,24 @@ export function buildMemoryContext(memories, query, limit = MAX_CONTEXT_ITEMS) {
     remainingChars -= content.length;
   }
   return context;
+}
+
+export function previewMemoryContext(memories, query, limit = MAX_CONTEXT_ITEMS) {
+  const boundedItems = Number.isInteger(limit) ? Math.min(MAX_CONTEXT_ITEMS, Math.max(1, limit)) : MAX_CONTEXT_ITEMS;
+  const activeMatches = rankMemories(memories, query, "", boundedItems, false);
+  const pausedMatches = rankMemories(
+    (Array.isArray(memories) ? memories : []).filter((item) => item?.enabled === false),
+    query,
+    "",
+    100,
+    true
+  );
+  return {
+    items: activeMatches.map(({ id, content, category, matchedTerms, score, relevance }) => ({
+      id, content, category, matchedTerms, score, relevance
+    })),
+    pausedCount: pausedMatches.length
+  };
 }
 
 export const MEMORY_LIMITS = Object.freeze({
