@@ -92,6 +92,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .tool-button:hover { background: #263754; }
 .speak-label { display: inline-flex; gap: 6px; align-items: center; color: #8798b5; font-size: .7rem; }
 .speak-label input { accent-color: #9db5ff; }
+.voice-language-label { display: inline-flex; align-items: center; gap: 6px; color: #8798b5; font-size: .7rem; }
+.voice-language-label select { max-width: 112px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; color: #c2d1f4; background: #172339; font-size: .72rem; }
+.voice-status { color: #8da3c8; font-size: .68rem; white-space: nowrap; }
+#voice-button[aria-pressed="true"] { border-color: #8ca8ff75; color: #dce6ff; background: #263754; }
 .send-button { min-height: 36px; padding: 7px 13px; }
 .composer-note { color: #65748e; font-size: .65rem; margin: 9px 2px 0; }
 .content-view { max-width: 900px; width: 100%; margin: 0 auto; padding: 35px 0 20px; flex: 1; }
