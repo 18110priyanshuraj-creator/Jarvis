@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
+const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
 let toastTimer;
 let activeRecognition = null;
 
@@ -60,6 +60,10 @@ async function refreshState() {
   const experience = await api("/api/experience");
   const workflowData = await api("/api/workflows");
   const integrationData = await api("/api/integrations");
+  const actionData = await api("/api/actions");
+  const actionCapabilities = await api("/api/actions/capabilities");
+  state.externalActions = actionData.actions || [];
+  state.actionCapabilities = actionCapabilities;
   state.integrations = integrationData.providers || [];
   state.googleDriveOAuth = integrationData.googleDriveOAuth || null;
   state.integrationPermissions = integrationData.permissions || [];
@@ -76,6 +80,7 @@ async function refreshState() {
   renderExperience(experience.summary);
   renderWorkflows();
   renderIntegrations();
+  renderExternalActions();
   renderSavedResearch();
   await refreshKnowledge();
 }
@@ -96,7 +101,8 @@ function setView(name) {
     knowledge: ["PERSONAL KNOWLEDGE LIBRARY", "Knowledge"],
     experience: ["EXPERIENCE & SELF-IMPROVEMENT", "Experience"],
     workflows: ["AUTOMATION & EXECUTION", "Workflows"],
-    integrations: ["CONNECTED SERVICES", "Connections"]
+    integrations: ["CONNECTED SERVICES", "Connections"],
+    actions: ["CONTROLLED ACTIONS", "Action Center"]
   };
   $("#page-kicker").textContent = titles[name][0];
   $("#page-title").textContent = titles[name][1];
@@ -105,6 +111,7 @@ function setView(name) {
   if (name === "memory") refreshMemories().catch((error) => toast(error.message, true));
   if (name === "workflows") refreshWorkflows().catch((error) => toast(error.message, true));
   if (name === "integrations") refreshIntegrations().catch((error) => toast(error.message, true));
+  if (name === "actions") refreshExternalActions().catch((error) => toast(error.message, true));
 }
 
 function makeEmpty(message) {
