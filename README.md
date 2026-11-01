@@ -414,3 +414,13 @@ Requirements: Node.js 22 or later.
 - Keep `JARVIS_PASSWORD`, `DATABASE_URL`, `JARVIS_AI_API_KEY` and any private `JARVIS_SEARCH_API_KEY` confidential.
 - Review Android permissions yourself and enable only what you understand and need.
 - Treat model outputs as fallible. Verify important claims against the linked sources or trusted people.
+
+
+## Phase 23 — Google-preferred web search and JARVIS-owned model runtime
+
+- Live search uses the configured SearXNG server and requests Google first, with DuckDuckGo and Bing as configured fallback engines (`JARVIS_SEARCH_ENGINES=google,duckduckgo,bing`). SearXNG must have those engines enabled. The JSON format must also be enabled; a public instance may disable it, so production must use a tested trusted instance or self-hosted SearXNG.
+- Google is an engine behind the search adapter, not a direct Google API integration. Google's Custom Search JSON API is closed to new customers and its existing-customer transition ends 1 January 2027; do not assume a new project can obtain that API.
+- The AI adapter supports `JARVIS_AI_RUNTIME=self-hosted` for an owner-controlled inference endpoint that speaks the OpenAI-compatible chat-completions protocol. It can connect to a compatible Ollama/vLLM server behind private HTTPS and server-side authentication. Endpoint, API key and model name remain server-only.
+- `self-hosted` means the inference server is controlled/hosted by the JARVIS owner; it does not mean the base model was trained from scratch. A genuinely JARVIS-trained foundation model requires a separate dataset, training/evaluation pipeline, model-artifact storage and compute. Saved memories and feedback do not silently train model weights.
+- Vercel hosts the web application, not a large LLM's model weights. A self-hosted model endpoint must run on a separate always-on machine/server with sufficient RAM/accelerator capacity and be exposed only through authenticated HTTPS. Never put provider keys in the browser or Git.
+- `JARVIS_AI_RUNTIME` accepts `self-hosted` or defaults safely to `external`. Existing AI enable flags remain off until a real model endpoint has been connected and explicitly tested.
