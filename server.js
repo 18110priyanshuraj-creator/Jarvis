@@ -823,10 +823,10 @@ function integrationCatalogResponse() {
   const providers = getIntegrationCatalog(process.env, store.disabledIntegrations, store.oauthConnections);
   const googleProvider = providers.find((item) => item.id === "google_drive");
   if (googleProvider) {
-    googleProvider.configured = googleProvider.configured || googleDriveOAuth.canConnect;
-    googleProvider.enabled = googleProvider.configured && !googleProvider.disabled;
     googleProvider.oauthConnected = googleDriveOAuth.connected;
     googleProvider.oauthReady = googleDriveOAuth.canConnect;
+    googleProvider.configured = googleProvider.environmentConfigured || googleDriveOAuth.connected;
+    googleProvider.enabled = googleProvider.configured && !googleProvider.disabled;
   }
   return {
     providers,
