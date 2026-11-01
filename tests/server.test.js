@@ -56,6 +56,7 @@ before(async () => {
       JARVIS_SEARCH_BASE_URL: "",
       JARVIS_SEARCH_API_KEY: "",
       JARVIS_SEARCH_ENABLED: "false",
+      JARVIS_PAGE_READ_ENABLED: "false",
       JARVIS_GITHUB_TOKEN: "",
       JARVIS_GOOGLE_DRIVE_ACCESS_TOKEN: "",
       JARVIS_TELEGRAM_BOT_TOKEN: "123456789:" + "A".repeat(32),
@@ -142,6 +143,13 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   });
   assert.equal(blockedPageRead.status, 401);
 
+  const blockedSourceAnswer = await request("/api/research/answer", {
+    method: "POST",
+    headers: {},
+    body: JSON.stringify({ question: "Explain this topic", readTokens: ["not-a-token", "not-a-token"] })
+  });
+  assert.equal(blockedSourceAnswer.status, 401);
+
   const wrongLogin = await request("/api/login", {
     method: "POST",
     body: JSON.stringify({ password: "wrong-password" })
@@ -158,6 +166,13 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.match(cookieHeader, /SameSite=Strict/i);
   cookie = cookieHeader.split(";")[0];
   assert.match(cookie, /^jarvis_session=/);
+
+  const disabledSourceAnswer = await request("/api/research/answer", {
+    method: "POST",
+    body: JSON.stringify({ question: "Explain this topic", readTokens: ["token-one", "token-two"] })
+  });
+  assert.equal(disabledSourceAnswer.status, 503);
+  assert.match((await disabledSourceAnswer.json()).error, /full-page reading is disabled/i);
 
   const blockedActionHistory = await fetch(baseUrl + "/api/actions");
   assert.equal(blockedActionHistory.status, 401);
