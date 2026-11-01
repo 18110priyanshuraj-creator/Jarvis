@@ -1,3 +1,4 @@
+import { createVoiceController } from "./voice-controller.js";
 const $ = (selector) => document.querySelector(selector);
 const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
 let toastTimer;
@@ -1712,60 +1713,77 @@ document.querySelectorAll(".prompt-card").forEach((button) => {
   });
 });
 
-function setVoiceButtonState(label, disabled = false) {
-  const button = $("#voice-button");
-  if (!button) return;
-  button.innerHTML = "🎙 <span>" + label + "</span>";
-  button.disabled = disabled;
-}
+const voiceStatusLabels = {
+  idle: "Voice ready",
+  listening: "Listening…",
+  speaking: "Speaking…"
+};
+
+const voiceController = createVoiceController({
+  SpeechRecognitionCtor: window.SpeechRecognition || window.webkitSpeechRecognition,
+  speechSynthesis: window.speechSynthesis,
+  createUtterance: (text) => new SpeechSynthesisUtterance(text),
+  onStateChange: (voiceState) => {
+    const button = $("#voice-button");
+    const status = $("#voice-status");
+    const stopButton = $("#stop-speech-button");
+    if (status) status.textContent = voiceStatusLabels[voiceState] || "Voice ready";
+    if (button) {
+      const isListening = voiceState === "listening";
+      const isSpeaking = voiceState === "speaking";
+      button.innerHTML = isListening
+        ? "⏹ <span>Stop listening</span>"
+        : isSpeaking
+          ? "🎙 <span>Interrupt</span>"
+          : "🎙 <span>Speak</span>";
+      button.title = isListening ? "Stop listening" : isSpeaking ? "Stop speaking and listen" : "Start voice input";
+      button.setAttribute("aria-label", button.title);
+      button.setAttribute("aria-pressed", String(isListening));
+    }
+    if (stopButton) {
+      stopButton.classList.toggle("hidden", voiceState !== "speaking");
+      stopButton.disabled = voiceState !== "speaking";
+    }
+  },
+  onTranscript: (transcript) => {
+    const input = $("#chat-input");
+    if (!input) return;
+    input.value = [input.value.trim(), transcript].filter(Boolean).join(" ");
+    $("#chat-form")?.requestSubmit();
+  },
+  onError: (code) => {
+    const messages = {
+      unsupported: "This browser does not support voice input. Use JARVIS Companion's Speak once or hands-free control.",
+      "not-allowed": "Microphone permission was denied. Allow it in your browser settings.",
+      "service-not-allowed": "This browser blocked microphone access.",
+      "no-speech": "No speech was detected. Try speaking closer to the microphone.",
+      network: "Speech recognition needs a working internet connection.",
+      "recognition-start-failed": "Could not start voice input. Check microphone permission.",
+      "speech-unavailable": "Spoken replies are not supported in this browser.",
+      "speech-failed": "JARVIS could not start spoken playback."
+    };
+    toast(messages[code] || "Voice interaction failed: " + String(code || "unknown error"), true);
+  }
+});
 
 $("#voice-button").addEventListener("click", () => {
-  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Recognition) {
-    toast("This browser does not support voice input. Use JARVIS Companion's Speak once or hands-free control.");
+  if (voiceController.getState() === "speaking") {
+    voiceController.startListening();
     return;
   }
-  if (activeRecognition) {
-    activeRecognition.stop();
-    return;
-  }
+  voiceController.toggleListening();
+});
 
-  try {
-    const recognition = new Recognition();
-    activeRecognition = recognition;
-    recognition.lang = "hi-IN";
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.onstart = () => setVoiceButtonState("Listening…");
-    recognition.onresult = (event) => {
-      const transcript = event.results?.[0]?.[0]?.transcript?.trim();
-      if (!transcript) {
-        toast("No speech was detected. Please try again.");
-        return;
-      }
-      $("#chat-input").value = transcript;
-      $("#chat-form").requestSubmit();
-    };
-    recognition.onerror = (event) => {
-      const messages = {
-        "not-allowed": "Microphone permission was denied. Allow it in your browser settings.",
-        "service-not-allowed": "This browser blocked microphone access.",
-        "no-speech": "No speech was detected. Try speaking closer to the microphone.",
-        "network": "Speech recognition needs a working internet connection."
-      };
-      toast(messages[event.error] || "Voice recognition failed: " + (event.error || "unknown error"), true);
-    };
-    recognition.onend = () => {
-      if (activeRecognition === recognition) activeRecognition = null;
-      setVoiceButtonState("Speak");
-    };
-    recognition.start();
-  } catch (error) {
-    activeRecognition = null;
-    setVoiceButtonState("Speak");
-    toast("Could not start voice input. Check browser microphone permission.", true);
-  }
+$("#stop-speech-button").addEventListener("click", () => {
+  voiceController.stopSpeaking();
+});
+
+$("#voice-language").addEventListener("change", (event) => {
+  voiceController.setLanguage(event.target.value);
+});
+
+$("#speak-toggle").addEventListener("change", (event) => {
+  if (!event.target.checked) voiceController.stopSpeaking();
 });
 
 $("#clear-chat-button").addEventListener("click", async () => {
@@ -1786,6 +1804,8 @@ $("#chat-form").addEventListener("submit", async (event) => {
   const button = $("#send-button");
   const message = input.value.trim();
   if (!message || button.disabled) return;
+  voiceController.stopListening();
+  voiceController.stopSpeaking();
   input.value = "";
   button.disabled = true;
   const tempId = "pending-" + Date.now();
@@ -1806,11 +1826,11 @@ $("#chat-form").addEventListener("submit", async (event) => {
   $("#chat-messages").append(waiting);
   try {
     const data = await api("/api/chat", { method: "POST", body: JSON.stringify({ message }) });
-    if ($("#speak-toggle").checked && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(data.answer);
-      utterance.lang = /[\u0900-\u097F]/.test(data.answer) ? "hi-IN" : "en-IN";
-      window.speechSynthesis.speak(utterance);
+    if ($("#speak-toggle").checked) {
+      const replyLanguage = /[\u0900-\u097F]/.test(data.answer)
+        ? "hi-IN"
+        : ($("#voice-language").value || "hi-IN");
+      voiceController.speak(data.answer, replyLanguage);
     }
     await refreshState();
   } catch (error) {
