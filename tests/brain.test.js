@@ -28,6 +28,21 @@ test("offline brain can list locally saved tasks", () => {
   assert.match(answer, /OPEN/);
 });
 
+test("offline brain can answer from relevant saved knowledge with a clear source status", () => {
+  const answer = runLocalBrain({
+    message: "Explain photovoltaic cells",
+    knowledge: [{
+      title: "Solar energy",
+      content: "Photovoltaic cells convert light into electricity.",
+      sources: [{ url: "https://energy.example/solar" }]
+    }]
+  });
+  assert.match(answer, /Saved Knowledge Library/);
+  assert.match(answer, /independently verified nahi/);
+  assert.match(answer, /Photovoltaic cells convert light into electricity/);
+  assert.match(answer, /https:\/\/energy\.example\/solar/);
+});
+
 test("unsupported requests are not fabricated", () => {
   const answer = runLocalBrain({ message: "Who won a game that happened a minute ago?" });
   assert.match(answer, /offline rule set/i);

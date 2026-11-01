@@ -50,6 +50,15 @@ before(async () => {
       GEMINI_API_KEY: "",
       GEMINI_CHAT_ENABLED: "false",
       GEMINI_WEB_RESEARCH_ENABLED: "false",
+      JARVIS_GITHUB_TOKEN: "",
+      JARVIS_GOOGLE_DRIVE_ACCESS_TOKEN: "",
+      JARVIS_TELEGRAM_BOT_TOKEN: "123456789:" + "A".repeat(32),
+      JARVIS_ELEVENLABS_API_KEY: "",
+      JARVIS_TELEGRAM_ALLOWED_CHAT_IDS: "123456789",
+      JARVIS_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 11).toString("base64"),
+      JARVIS_GOOGLE_OAUTH_CLIENT_ID: "local-test-client.apps.exampleusercontent.com",
+      JARVIS_GOOGLE_OAUTH_CLIENT_SECRET: "local-test-client-secret",
+      JARVIS_GOOGLE_OAUTH_REDIRECT_URI: "https://jarvis.example.test/api/integrations/google_drive/oauth/callback"
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -87,12 +96,30 @@ test("health endpoint is public without disclosing configuration", async () => {
   assert.equal(payload.conversationAIEnabled, false);
   assert.equal(payload.webResearchEnabled, false);
   assert.equal(payload.externalAI, false);
+  assert.equal(payload.aiProvider.provider, "gemini");
+  assert.equal(payload.aiProvider.configured, false);
+  assert.equal(payload.aiProvider.model, "gemini-3.8-flash");
+  assert.equal(Object.hasOwn(payload.aiProvider, "apiKey"), false);
   assert.equal(JSON.stringify(payload).includes("test-only-password-2026"), false);
 });
 
 test("authentication, local search, tasks, memories, and offline chat behave safely", async () => {
   const blockedState = await request("/api/state", { headers: {} });
   assert.equal(blockedState.status, 401);
+  const blockedKnowledge = await request("/api/knowledge", { headers: {} });
+  assert.equal(blockedKnowledge.status, 401);
+  const blockedMemories = await request("/api/memories", { headers: {} });
+  assert.equal(blockedMemories.status, 401);
+  const blockedSkills = await request("/api/skills", { headers: {} });
+  assert.equal(blockedSkills.status, 401);
+  const blockedExperience = await request("/api/experience", { headers: {} });
+  assert.equal(blockedExperience.status, 401);
+  const blockedWorkflows = await request("/api/workflows", { headers: {} });
+  assert.equal(blockedWorkflows.status, 401);
+  const blockedIntegrations = await request("/api/integrations", { headers: {} });
+  assert.equal(blockedIntegrations.status, 401);
+  const blockedExport = await request("/api/export", { headers: {} });
+  assert.equal(blockedExport.status, 401);
   const blockedResearch = await request("/api/research", {
     method: "POST",
     headers: {},
@@ -116,6 +143,131 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.match(cookieHeader, /SameSite=Strict/i);
   cookie = cookieHeader.split(";")[0];
   assert.match(cookie, /^jarvis_session=/);
+
+  const blockedActionHistory = await fetch(baseUrl + "/api/actions");
+  assert.equal(blockedActionHistory.status, 401);
+  const actionCapabilitiesResponse = await request("/api/actions/capabilities");
+  assert.equal(actionCapabilitiesResponse.status, 200);
+  const actionCapabilities = await actionCapabilitiesResponse.json();
+  assert.equal(actionCapabilities.telegram.enabled, true);
+  assert.deepEqual(actionCapabilities.telegram.allowedChatIds, ["123456789"]);
+  assert.equal(actionCapabilities.googleDrive.canCreateDocs, false);
+
+  const telegramPreview = await request("/api/actions", {
+    method: "POST",
+    body: JSON.stringify({
+      type: "telegram_send_message",
+      chatId: "123456789",
+      text: "This is only a preview until exact confirmation."
+    })
+  });
+  assert.equal(telegramPreview.status, 201);
+  const telegramPreviewAction = (await telegramPreview.json()).action;
+  assert.equal(telegramPreviewAction.status, "pending");
+  assert.equal(telegramPreviewAction.confirmationPhrase, "SEND MESSAGE");
+
+  const wrongActionConfirmation = await request("/api/actions/" + telegramPreviewAction.id + "/execute", {
+    method: "POST",
+    body: JSON.stringify({ confirmation: "SEND IT" })
+  });
+  assert.equal(wrongActionConfirmation.status, 400);
+  assert.match((await wrongActionConfirmation.json()).error, /no external action was performed/i);
+
+  const pendingActionList = await request("/api/actions");
+  assert.equal(pendingActionList.status, 200);
+  assert.equal((await pendingActionList.json()).actions[0].status, "pending");
+
+  const cancelTelegramPreview = await request("/api/actions/" + telegramPreviewAction.id + "/cancel", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(cancelTelegramPreview.status, 200);
+  assert.equal((await cancelTelegramPreview.json()).action.status, "cancelled");
+
+  const blockedGoogleDocPreview = await request("/api/actions", {
+    method: "POST",
+    body: JSON.stringify({
+      type: "google_drive_create_doc",
+      title: "Test document",
+      content: "This should not be created without Drive Docs consent."
+    })
+  });
+  assert.equal(blockedGoogleDocPreview.status, 409);
+  assert.match((await blockedGoogleDocPreview.json()).error, /drive.file permission/i);
+
+  const integrationCatalogueResponse = await request("/api/integrations");
+  assert.equal(integrationCatalogueResponse.status, 200);
+  const integrationCatalogue = await integrationCatalogueResponse.json();
+  assert.equal(integrationCatalogue.credentialStorage, "server-environment-or-encrypted-vault");
+  assert.equal(integrationCatalogue.supportedOperations, "read-only");
+  assert.equal(integrationCatalogue.providers.length, 4);
+  assert.equal(integrationCatalogue.providers.find((item) => item.id === "github").configured, false);
+  assert.equal(integrationCatalogue.providers.find((item) => item.id === "telegram").configured, true);
+  assert.equal(integrationCatalogue.providers.find((item) => item.id === "elevenlabs").configured, false);
+  assert.equal(integrationCatalogue.googleDriveOAuth.canConnect, true);
+  assert.equal(integrationCatalogue.googleDriveOAuth.connected, false);
+  assert.deepEqual(integrationCatalogue.googleDriveOAuth.requiredScopes, [
+    "https://www.googleapis.com/auth/drive.metadata.readonly"
+  ]);
+  assert.equal(integrationCatalogue.providers.find((item) => item.id === "google_drive").oauthReady, true);
+  assert.equal(integrationCatalogue.providers.find((item) => item.id === "google_drive").configured, true);
+  assert.equal(integrationCatalogue.providers.find((item) => item.id === "google_drive").enabled, true);
+  assert.equal(JSON.stringify(integrationCatalogue).includes("local-test-client-secret"), false);
+  assert.equal(JSON.stringify(integrationCatalogue).includes("JARVIS_PASSWORD"), false);
+
+  const startGoogleOAuth = await request("/api/integrations/google_drive/oauth/start", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(startGoogleOAuth.status, 200);
+  const startGoogleOAuthPayload = await startGoogleOAuth.json();
+  const googleAuthorizationUrl = new URL(startGoogleOAuthPayload.authorizationUrl);
+  assert.equal(googleAuthorizationUrl.origin, "https://accounts.google.com");
+  assert.equal(googleAuthorizationUrl.searchParams.get("scope"), "https://www.googleapis.com/auth/drive.metadata.readonly");
+  assert.equal(googleAuthorizationUrl.searchParams.get("code_challenge_method"), "S256");
+  assert.match(startGoogleOAuth.headers.get("set-cookie") || "", /jarvis_google_oauth=/);
+
+  const startGoogleDocsUpgrade = await request("/api/integrations/google_drive/oauth/start", {
+    method: "POST", body: JSON.stringify({ capability: "create_docs" })
+  });
+  assert.equal(startGoogleDocsUpgrade.status, 200);
+  const docsUpgradeUrl = new URL((await startGoogleDocsUpgrade.json()).authorizationUrl);
+  assert.deepEqual(docsUpgradeUrl.searchParams.get("scope").split(" ").sort(), [
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/drive.metadata.readonly"
+  ].sort());
+  assert.equal(docsUpgradeUrl.searchParams.get("code_challenge_method"), "S256");
+  assert.match(startGoogleOAuth.headers.get("set-cookie") || "", /HttpOnly/i);
+  assert.match(startGoogleOAuth.headers.get("set-cookie") || "", /SameSite=Lax/i);
+
+  const invalidGoogleCallback = await request("/api/integrations/google_drive/oauth/callback?state=not-a-real-state&code=not-a-real-code", {
+    headers: {},
+    redirect: "manual"
+  });
+  assert.equal(invalidGoogleCallback.status, 303);
+  assert.match(invalidGoogleCallback.headers.get("location") || "", /integration=google_drive_error/);
+
+  const disabledGithub = await request("/api/integrations/github/disable", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(disabledGithub.status, 200);
+  assert.equal((await disabledGithub.json()).providers.find((item) => item.id === "github").enabled, false);
+
+  const blockedIntegrationProbe = await request("/api/integrations/github/test", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(blockedIntegrationProbe.status, 409);
+
+  const enabledGithub = await request("/api/integrations/github/enable", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(enabledGithub.status, 200);
+  assert.equal((await enabledGithub.json()).providers.find((item) => item.id === "github").disabled, false);
+
+  const integrationProbe = await request("/api/integrations/github/test", {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+  assert.equal(integrationProbe.status, 502);
+  assert.match((await integrationProbe.json()).error, /JARVIS_GITHUB_TOKEN/);
 
   const crossOrigin = await request("/api/tasks", {
     method: "POST",
@@ -146,6 +298,31 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   });
   assert.equal(createMemory.status, 201);
   const memoryPayload = await createMemory.json();
+  assert.equal(memoryPayload.memory.category, "preference");
+  assert.equal(typeof memoryPayload.memory.contentHash, "string");
+
+  const duplicateMemory = await request("/api/memories", {
+    method: "POST",
+    body: JSON.stringify({ content: " prefer   step-by-step explanations ", category: "preference" })
+  });
+  assert.equal(duplicateMemory.status, 200);
+  assert.equal((await duplicateMemory.json()).duplicate, true);
+
+  const updateMemory = await request("/api/memories/" + memoryPayload.memory.id, {
+    method: "PATCH",
+    body: JSON.stringify({ content: "My goal is to practise algebra daily", category: "goal" })
+  });
+  assert.equal(updateMemory.status, 200);
+  const updatedMemoryPayload = await updateMemory.json();
+  assert.equal(updatedMemoryPayload.memory.category, "goal");
+  assert.equal(updatedMemoryPayload.memory.content, "My goal is to practise algebra daily");
+  assert.ok(updatedMemoryPayload.memory.updatedAt);
+
+  const searchMemory = await request("/api/memories?q=algebra&category=goal");
+  assert.equal(searchMemory.status, 200);
+  const searchMemoryPayload = await searchMemory.json();
+  assert.equal(searchMemoryPayload.count, 1);
+  assert.equal(searchMemoryPayload.items[0].id, memoryPayload.memory.id);
 
   const savedResearch = await request("/api/research/saved", {
     method: "POST",
@@ -163,6 +340,56 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   const savedResearchPayload = await savedResearch.json();
   assert.equal(savedResearchPayload.item.sources.length, 1);
 
+  const savedKnowledge = await request("/api/knowledge", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "Solar energy basics",
+      content: "Photovoltaic cells convert sunlight into electricity.",
+      category: "science",
+      tags: ["solar", "energy"],
+      sourceKind: "web-research",
+      sourceQuery: "How do solar panels work?",
+      sources: [{ title: "Official solar guide", url: "https://energy.example/solar" }],
+      citations: [{ claim: "Photovoltaic cells convert sunlight into electricity.", sourceUrls: ["https://energy.example/solar"] }]
+    })
+  });
+  assert.equal(savedKnowledge.status, 201);
+  const knowledgePayload = await savedKnowledge.json();
+  assert.equal(knowledgePayload.item.reviewStatus, "unreviewed");
+  assert.equal(knowledgePayload.item.sources.length, 1);
+
+  const duplicateKnowledge = await request("/api/knowledge", {
+    method: "POST",
+    body: JSON.stringify({
+      title: " solar   energy basics ",
+      content: "PHOTOVOLTAIC cells convert sunlight into electricity. ",
+      category: "science",
+      sourceKind: "web-research",
+      sources: [{ url: "https://energy.example/solar" }]
+    })
+  });
+  assert.equal(duplicateKnowledge.status, 200);
+  assert.equal((await duplicateKnowledge.json()).duplicate, true);
+
+  const knowledgeSearch = await request("/api/knowledge?q=photovoltaic");
+  assert.equal(knowledgeSearch.status, 200);
+  const knowledgeSearchPayload = await knowledgeSearch.json();
+  assert.equal(knowledgeSearchPayload.total, 1);
+  assert.equal(knowledgeSearchPayload.items[0].id, knowledgePayload.item.id);
+
+  const combinedSearch = await request("/api/search?q=photovoltaic");
+  assert.equal(combinedSearch.status, 200);
+  const combinedPayload = await combinedSearch.json();
+  assert.equal(combinedPayload.externalSearch, false);
+  assert.ok(combinedPayload.results.some((item) => item.source === "saved-knowledge"));
+
+  const markKnowledgeReviewed = await request("/api/knowledge/" + knowledgePayload.item.id, {
+    method: "PATCH",
+    body: JSON.stringify({ reviewStatus: "user-reviewed" })
+  });
+  assert.equal(markKnowledgeReviewed.status, 200);
+  assert.equal((await markKnowledgeReviewed.json()).item.reviewStatus, "user-reviewed");
+
   const currentState = await request("/api/state");
   assert.equal(currentState.status, 200);
   const snapshot = await currentState.json();
@@ -173,26 +400,307 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   const deleteSavedResearch = await request("/api/research/saved/" + savedResearchPayload.item.id, { method: "DELETE" });
   assert.equal(deleteSavedResearch.status, 200);
 
+  const deleteKnowledge = await request("/api/knowledge/" + knowledgePayload.item.id, { method: "DELETE" });
+  assert.equal(deleteKnowledge.status, 200);
+
   const deleteMemory = await request("/api/memories/" + memoryPayload.memory.id, { method: "DELETE" });
   assert.equal(deleteMemory.status, 200);
   const deleteTask = await request("/api/tasks/" + taskPayload.task.id, { method: "DELETE" });
   assert.equal(deleteTask.status, 200);
 
+  const createWorkflow = await request("/api/workflows", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "JEE study preparation",
+      description: "Prepare a safe local study session and review it before finishing.",
+      steps: [
+        { type: "create_task", title: "Revise Newton's laws", description: "Review the three laws and solve two examples." },
+        { type: "save_memory", title: "Save chemistry learning preference", content: "I prefer short worked examples for chemistry revision.", category: "preference" },
+        { type: "search_knowledge", title: "Find mole concept notes", query: "mole concept" },
+        { type: "review_checkpoint", title: "Review study plan", message: "Check the task, memory and search results before continuing." },
+        { type: "draft_text", title: "Prepare revision checklist", content: "1. Recall the laws.\n2. Solve two examples.\n3. Review your mistakes." }
+      ]
+    })
+  });
+  assert.equal(createWorkflow.status, 201);
+  const workflowPayload = await createWorkflow.json();
+  assert.equal(workflowPayload.workflow.status, "draft");
+  assert.equal(workflowPayload.workflow.steps.length, 5);
+
+  const runUnapprovedWorkflow = await request("/api/workflows/" + workflowPayload.workflow.id + "/run", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(runUnapprovedWorkflow.status, 409);
+
+  const invalidWorkflow = await request("/api/workflows", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Unsupported automation",
+      steps: [{ type: "run_shell", title: "Run a system command", command: "echo unsafe" }]
+    })
+  });
+  assert.equal(invalidWorkflow.status, 400);
+
+  const validateWorkflow = await request("/api/workflows/" + workflowPayload.workflow.id + "/validate", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(validateWorkflow.status, 200);
+  assert.equal((await validateWorkflow.json()).validation.passed, true);
+
+  const approveWorkflow = await request("/api/workflows/" + workflowPayload.workflow.id + "/approve", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(approveWorkflow.status, 200);
+  assert.equal((await approveWorkflow.json()).workflow.status, "approved");
+
+  const runWorkflow = await request("/api/workflows/" + workflowPayload.workflow.id + "/run", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(runWorkflow.status, 201);
+  const runPayload = await runWorkflow.json();
+  assert.equal(runPayload.run.status, "waiting_review");
+  assert.equal(runPayload.run.steps[0].status, "completed");
+  assert.equal(runPayload.run.steps[1].status, "completed");
+  assert.equal(runPayload.run.steps[2].status, "completed");
+  assert.equal(runPayload.run.steps[3].status, "waiting_review");
+  assert.ok(runPayload.run.steps[0].result.taskId);
+  assert.ok(runPayload.run.steps[1].result.memoryId);
+
+  const duplicateRun = await request("/api/workflows/" + workflowPayload.workflow.id + "/run", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(duplicateRun.status, 409);
+
+  const continueRun = await request("/api/workflow-runs/" + runPayload.run.id + "/continue", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(continueRun.status, 200);
+  const continuedPayload = await continueRun.json();
+  assert.equal(continuedPayload.run.status, "completed");
+  assert.equal(continuedPayload.run.steps[3].status, "completed");
+  assert.match(continuedPayload.run.steps[4].result.draft, /Recall the laws/);
+
+  const workflowState = await request("/api/workflows");
+  assert.equal(workflowState.status, 200);
+  const workflowStatePayload = await workflowState.json();
+  assert.ok(workflowStatePayload.workflows.some((item) => item.id === workflowPayload.workflow.id));
+  assert.ok(workflowStatePayload.runs.some((item) => item.id === runPayload.run.id));
+
+  const cancelledWorkflow = await request("/api/workflows", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Review and stop test",
+      steps: [
+        { type: "create_task", title: "Prepare a simple task", description: "This task can be stopped after review." },
+        { type: "review_checkpoint", title: "Wait for review", message: "Review before continuing." },
+        { type: "draft_text", title: "Prepare draft", content: "This draft should not be created after stopping the workflow." }
+      ]
+    })
+  });
+  assert.equal(cancelledWorkflow.status, 201);
+  const cancelledDraft = await cancelledWorkflow.json();
+  const cancelledValidation = await request("/api/workflows/" + cancelledDraft.workflow.id + "/validate", {
+    method: "POST", body: JSON.stringify({})
+  });
+  const cancelledValidated = await cancelledValidation.json();
+  const cancelledApproval = await request("/api/workflows/" + cancelledDraft.workflow.id + "/approve", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(cancelledApproval.status, 200);
+  const waitingRunResponse = await request("/api/workflows/" + cancelledDraft.workflow.id + "/run", {
+    method: "POST", body: JSON.stringify({})
+  });
+  const waitingRun = await waitingRunResponse.json();
+  assert.equal(waitingRun.run.status, "waiting_review");
+  const stopRunResponse = await request("/api/workflow-runs/" + waitingRun.run.id + "/stop", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(stopRunResponse.status, 200);
+  const stoppedRun = await stopRunResponse.json();
+  assert.equal(stoppedRun.run.status, "cancelled");
+  assert.equal(stoppedRun.run.steps[2].status, "skipped");
+
+  const createIntegratedWorkflow = await request("/api/workflows", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Read GitHub repositories",
+      steps: [{ type: "github_list_repositories", title: "List my repositories" }]
+    })
+  });
+  assert.equal(createIntegratedWorkflow.status, 201);
+  const integratedDraft = await createIntegratedWorkflow.json();
+  const integratedValidation = await request("/api/workflows/" + integratedDraft.workflow.id + "/validate", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal((await integratedValidation.json()).validation.passed, true);
+  const integratedApproval = await request("/api/workflows/" + integratedDraft.workflow.id + "/approve", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(integratedApproval.status, 200);
+  const disableBeforeRun = await request("/api/integrations/github/disable", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(disableBeforeRun.status, 200);
+  const blockedIntegrationRun = await request("/api/workflows/" + integratedDraft.workflow.id + "/run", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(blockedIntegrationRun.status, 201);
+  const blockedRunPayload = await blockedIntegrationRun.json();
+  assert.equal(blockedRunPayload.run.status, "failed");
+  assert.match(blockedRunPayload.run.steps[0].result.error, /disabled in JARVIS/i);
+
+  const disableGoogleOAuth = await request("/api/integrations/google_drive/disable", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(disableGoogleOAuth.status, 200);
+  const blockedOAuthStart = await request("/api/integrations/google_drive/oauth/start", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(blockedOAuthStart.status, 409);
+  const enableGoogleOAuth = await request("/api/integrations/google_drive/enable", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(enableGoogleOAuth.status, 200);
+
+  const enableBeforeRun = await request("/api/integrations/github/enable", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(enableBeforeRun.status, 200);
+  const integratedRunResponse = await request("/api/workflows/" + integratedDraft.workflow.id + "/run", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(integratedRunResponse.status, 201);
+  const integratedRun = await integratedRunResponse.json();
+  assert.equal(integratedRun.run.status, "failed");
+  assert.match(integratedRun.run.steps[0].result.error, /JARVIS_GITHUB_TOKEN/);
+  assert.equal(JSON.stringify(integratedRun).includes("demo-github-value"), false);
+
   const createFeedback = await request("/api/feedback", {
     method: "POST",
-    body: JSON.stringify({ prompt: "Explain this simply", rating: "up", note: "Helpful example" })
+    body: JSON.stringify({
+      prompt: "This user prompt must never be persisted as feedback.",
+      rating: "down",
+      category: "clarity",
+      suggestion: "Explain the main idea first, then show one small worked example.",
+      engine: "gemini-conversation",
+      note: "Legacy clients may send a note, but it is not stored."
+    })
   });
   assert.equal(createFeedback.status, 201);
   const feedbackPayload = await createFeedback.json();
-  assert.equal(feedbackPayload.feedback.rating, "up");
+  assert.equal(feedbackPayload.feedback.rating, "down");
+  assert.equal(feedbackPayload.feedback.category, "clarity");
+  assert.match(feedbackPayload.feedback.suggestion, /worked example/);
+  assert.equal(Object.hasOwn(feedbackPayload.feedback, "prompt"), false);
+  assert.equal(Object.hasOwn(feedbackPayload.feedback, "note"), false);
+
+  const experienceOverview = await request("/api/experience");
+  assert.equal(experienceOverview.status, 200);
+  const experiencePayload = await experienceOverview.json();
+  assert.equal(experiencePayload.summary.needsWork, 1);
+  assert.equal(experiencePayload.summary.pendingSuggestions, 1);
+
+  const promoteFeedback = await request("/api/feedback/" + feedbackPayload.feedback.id + "/approve", {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+  assert.equal(promoteFeedback.status, 201);
+  const promotedPayload = await promoteFeedback.json();
+  assert.equal(promotedPayload.preference.active, true);
+  assert.equal(promotedPayload.preference.category, "clarity");
+
+  const pausePreference = await request("/api/experience/preferences/" + promotedPayload.preference.id, {
+    method: "PATCH",
+    body: JSON.stringify({ active: false })
+  });
+  assert.equal(pausePreference.status, 200);
+  assert.equal((await pausePreference.json()).preference.active, false);
+
+  const enablePreference = await request("/api/experience/preferences/" + promotedPayload.preference.id, {
+    method: "PATCH",
+    body: JSON.stringify({ active: true })
+  });
+  assert.equal((await enablePreference.json()).preference.active, true);
 
   const createSkill = await request("/api/skills", {
     method: "POST",
-    body: JSON.stringify({ name: "Simple Hinglish", instructions: "Explain in simple Hinglish and use one example." })
+    body: JSON.stringify({
+      name: "Simple Hinglish",
+      instructions: "Explain matching questions in simple Hinglish, show the key steps, and check the result.",
+      triggers: ["explain in simple Hinglish", "simple Hinglish question"],
+      testCases: [
+        { input: "Please explain in simple Hinglish", shouldMatch: true },
+        { input: "What is the weather?", shouldMatch: false }
+      ]
+    })
   });
   assert.equal(createSkill.status, 201);
   const skillPayload = await createSkill.json();
   assert.equal(skillPayload.skill.name, "Simple Hinglish");
+  assert.equal(skillPayload.skill.status, "draft");
+  assert.equal(skillPayload.skill.activeVersion, null);
+
+  const validateSkill = await request("/api/skills/" + skillPayload.skill.id + "/validate", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(validateSkill.status, 200);
+  assert.equal((await validateSkill.json()).validation.passed, true);
+
+  const approveSkill = await request("/api/skills/" + skillPayload.skill.id + "/approve", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(approveSkill.status, 200);
+  const approvedSkill = await approveSkill.json();
+  assert.equal(approvedSkill.skill.status, "active");
+  assert.equal(approvedSkill.skill.activeVersion, 1);
+
+  const skillContextMatched = await request("/api/skills");
+  assert.equal(skillContextMatched.status, 200);
+  assert.ok((await skillContextMatched.json()).skills.some((item) => item.id === skillPayload.skill.id));
+
+  const updateSkill = await request("/api/skills/" + skillPayload.skill.id, {
+    method: "PATCH",
+    body: JSON.stringify({
+      name: "Simple Hinglish Plus",
+      instructions: "Explain matching questions in simple Hinglish, show each step, check units, and verify the result.",
+      triggers: ["explain in simple Hinglish", "simple Hinglish question", "check units"],
+      testCases: [
+        { input: "Please explain in simple Hinglish", shouldMatch: true },
+        { input: "What is the weather?", shouldMatch: false }
+      ]
+    })
+  });
+  assert.equal(updateSkill.status, 200);
+  const updatedSkill = await updateSkill.json();
+  assert.equal(updatedSkill.skill.currentVersion, 2);
+  assert.equal(updatedSkill.skill.activeVersion, 1);
+  assert.equal(updatedSkill.skill.status, "update-pending");
+
+  const untestedApprove = await request("/api/skills/" + skillPayload.skill.id + "/approve", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(untestedApprove.status, 409);
+
+  const validateUpdatedSkill = await request("/api/skills/" + skillPayload.skill.id + "/validate", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal((await validateUpdatedSkill.json()).validation.passed, true);
+
+  const approveUpdatedSkill = await request("/api/skills/" + skillPayload.skill.id + "/approve", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(approveUpdatedSkill.status, 200);
+  assert.equal((await approveUpdatedSkill.json()).skill.activeVersion, 2);
+
+  const versions = await request("/api/skills/" + skillPayload.skill.id + "/versions");
+  assert.equal(versions.status, 200);
+  assert.equal((await versions.json()).versions.length, 2);
+
+  const pausedSkill = await request("/api/skills/" + skillPayload.skill.id + "/pause", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(pausedSkill.status, 200);
+  assert.equal((await pausedSkill.json()).skill.status, "paused");
 
   const learningState = await request("/api/state");
   const learningSnapshot = await learningState.json();
@@ -200,6 +708,7 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(learningSnapshot.skills.some((item) => item.id === skillPayload.skill.id), true);
 
   assert.equal((await request("/api/feedback/" + feedbackPayload.feedback.id, { method: "DELETE" })).status, 200);
+  assert.equal((await request("/api/experience/preferences/" + promotedPayload.preference.id, { method: "DELETE" })).status, 200);
   assert.equal((await request("/api/skills/" + skillPayload.skill.id, { method: "DELETE" })).status, 200);
 
   const disabledWebResearch = await request("/api/research", {
@@ -243,10 +752,39 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.ok(sessionSnapshot.chats.some((item) => item.content === "What is 2 + 2?"));
   assert.ok(sessionSnapshot.memories.some((item) => item.content === "I prefer short Hinglish explanations"));
 
+  const exportResponse = await request("/api/export");
+  assert.equal(exportResponse.status, 200);
+  assert.match(exportResponse.headers.get("content-disposition") || "", /jarvis-personal-data\.json/i);
+  assert.equal(exportResponse.headers.get("cache-control"), "no-store");
+  const exportPayload = await exportResponse.json();
+  assert.equal(exportPayload.format, "jarvis-personal-data");
+  assert.ok(exportPayload.data.memories.some((item) => item.content === "I prefer short Hinglish explanations"));
+  assert.ok(Array.isArray(exportPayload.data.knowledge));
+  assert.ok(Array.isArray(exportPayload.data.research));
+  assert.ok(Array.isArray(exportPayload.data.tasks));
+  assert.ok(Array.isArray(exportPayload.data.skills));
+  assert.ok(Array.isArray(exportPayload.data.feedback));
+  assert.ok(Array.isArray(exportPayload.data.experiencePreferences));
+  assert.ok(Array.isArray(exportPayload.data.workflows));
+  assert.ok(Array.isArray(exportPayload.data.workflowRuns));
+  assert.ok(Array.isArray(exportPayload.data.disabledIntegrations));
+  assert.ok(Array.isArray(exportPayload.data.externalActions));
+  assert.equal(Object.hasOwn(exportPayload.data, "oauthConnections"), false);
+  assert.equal(JSON.stringify(exportPayload).includes("encryptedRefreshToken"), false);
+  assert.equal(Object.hasOwn(exportPayload.data, "integrations"), false);
+  assert.equal(Object.hasOwn(exportPayload.data, "credentials"), false);
+  assert.equal(Object.hasOwn(exportPayload.data, "chats"), false);
+  assert.equal(Object.hasOwn(exportPayload.data, "devices"), false);
+  assert.ok(exportPayload.excluded.includes("temporary conversation history"));
+  assert.equal(JSON.stringify(exportPayload).includes("test-only-password-2026"), false);
+
   const persistedState = await fs.readFile(path.join(tempDir, "state.json"), "utf8");
   assert.equal(persistedState.includes("What is 2 + 2?"), false);
   assert.equal(persistedState.includes("Remember that I prefer short Hinglish explanations."), false);
   assert.equal(persistedState.includes("Explain this simply"), false);
+  assert.equal(persistedState.includes("This user prompt must never be persisted as feedback."), false);
+  assert.equal(persistedState.includes("Legacy clients may send a note"), false);
+  assert.equal(persistedState.includes("Explain the main idea first, then show one small worked example."), false);
   assert.equal(persistedState.includes("do-not-save"), false);
 
   const clearChat = await request("/api/chat/history", { method: "DELETE" });

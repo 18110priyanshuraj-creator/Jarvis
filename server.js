@@ -12,6 +12,24 @@ import { createDevicesRouter } from "./routes/devices.js";
 import { createAgentPlan } from "./services/agent-planner.js";
 import { createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
 import { createGroundedResearch, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
+import { getGeminiRuntimeStatus } from "./services/gemini-client.js";
+import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
+import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, searchMemories } from "./services/memory.js";
+import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeSkill, pauseSkill, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
+import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
+import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, createWorkflowDraft, createWorkflowRun, normalizeWorkflow, pauseWorkflow, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
+import { getIntegrationCatalog, INTEGRATION_PROVIDER_IDS, probeIntegration, runIntegrationAction } from "./services/integrations.js";
+import { appendActionStatus, createPendingExternalAction, executeExternalAction, getExternalActionCapabilities, MAX_ACTION_HISTORY, MAX_PENDING_ACTIONS, normalizeExternalAction } from "./services/external-actions.js";
+import {
+  beginGoogleOAuth,
+  clearGoogleDriveTokenCache,
+  finishGoogleOAuth,
+  getGoogleDriveAccessToken,
+  getGoogleOAuthStatus,
+  getIntegrationPermissionCatalog,
+  normalizeGoogleOAuthConnection,
+  revokeGoogleOAuthConnection
+} from "./services/oauth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -66,9 +84,43 @@ const webResearchLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Web research rate limit reached. Please try again later." }
 });
+const integrationTestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 8,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Integration test limit reached. Please try again later." }
+});
+const actionPreviewLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 12,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Action preview limit reached. Try again later." }
+});
+const actionConfirmLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 6,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Action confirmation limit reached. Try again later." }
+});
+const oauthStartLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "OAuth connection attempts are temporarily limited. Try again later." }
+});
+const oauthCallbackLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 12,
+  standardHeaders: "draft-7",
+  legacyHeaders: false
+});
 app.use("/api", apiLimiter);
 
-let store = { memories: [], tasks: [], feedback: [], skills: [], devices: [], research: [] };
+let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [] };
 const sessionChats = new Map();
 const MAX_EPHEMERAL_CHAT_MESSAGES = 32;
 const EPHEMERAL_CHAT_TTL_MS = 60 * 60 * 1000;
@@ -84,20 +136,59 @@ function getNeonSql() {
 function normalizeStore(parsed = {}) {
   return {
     memories: Array.isArray(parsed.memories)
-      ? parsed.memories.filter((item) => item && ["preference", "goal", "fact"].includes(item.category) && isSafeMemoryContent(item.content)).slice(-200)
+      ? parsed.memories.slice(-MEMORY_LIMITS.items).flatMap((item) => {
+          try { return [normalizeMemory(item)]; } catch { return []; }
+        })
       : [],
     tasks: Array.isArray(parsed.tasks) ? parsed.tasks.slice(-200) : [],
-    // Keep legacy rating metadata only; strip old prompt text and free-form feedback notes.
+    // Never keep conversation prompts; retain only structured ratings and user-approved suggestions.
     feedback: Array.isArray(parsed.feedback)
-      ? parsed.feedback.slice(-300).map((item) => ({
-          id: typeof item?.id === "string" ? item.id : newId(),
-          rating: item?.rating === "up" ? "up" : item?.rating === "down" ? "down" : "",
-          createdAt: typeof item?.createdAt === "string" ? item.createdAt : ""
-        })).filter((item) => item.rating)
+      ? parsed.feedback.slice(-EXPERIENCE_LIMITS.feedback).flatMap((item) => {
+          try { return [normalizeExperienceFeedback(item)]; } catch { return []; }
+        })
       : [],
-    skills: Array.isArray(parsed.skills) ? parsed.skills.slice(-100) : [],
+    experiencePreferences: Array.isArray(parsed.experiencePreferences)
+      ? parsed.experiencePreferences.slice(-EXPERIENCE_LIMITS.preferences).flatMap((item) => {
+          try { return [normalizeExperiencePreference(item)]; } catch { return []; }
+        })
+      : [],
+    skills: Array.isArray(parsed.skills)
+      ? parsed.skills.slice(-SKILL_LIMITS.skills).flatMap((item) => {
+          try { return [normalizeSkill(item)]; } catch { return []; }
+        })
+      : [],
+    workflows: Array.isArray(parsed.workflows)
+      ? parsed.workflows.slice(-WORKFLOW_LIMITS.workflows).flatMap((item) => {
+          try { return [normalizeWorkflow(item)]; } catch { return []; }
+        })
+      : [],
+    workflowRuns: Array.isArray(parsed.workflowRuns)
+      ? parsed.workflowRuns.slice(-WORKFLOW_LIMITS.runs).filter((item) =>
+          item && typeof item.id === "string" && typeof item.workflowId === "string" &&
+          Array.isArray(item.steps) && ["running", "waiting_review", "completed", "failed", "cancelled"].includes(item.status)
+        )
+      : [],
+    disabledIntegrations: Array.isArray(parsed.disabledIntegrations)
+      ? [...new Set(parsed.disabledIntegrations.filter((item) => INTEGRATION_PROVIDER_IDS.includes(item)))]
+      : [],
+    oauthConnections: Array.isArray(parsed.oauthConnections)
+      ? parsed.oauthConnections.slice(0, 4).flatMap((item) => {
+          try { return [normalizeGoogleOAuthConnection(item)]; } catch { return []; }
+        })
+      : [],
+    externalActions: Array.isArray(parsed.externalActions)
+      ? parsed.externalActions.slice(-MAX_ACTION_HISTORY).flatMap((item) => {
+          const normalized = normalizeExternalAction(item);
+          return normalized ? [normalized] : [];
+        })
+      : [],
     devices: Array.isArray(parsed.devices) ? parsed.devices.slice(-50) : [],
-    research: Array.isArray(parsed.research) ? parsed.research.slice(-50) : []
+    research: Array.isArray(parsed.research) ? parsed.research.slice(-50) : [],
+    knowledge: Array.isArray(parsed.knowledge)
+      ? parsed.knowledge.slice(-KNOWLEDGE_LIMITS.items).flatMap((item) => {
+          try { return [normalizeKnowledgeItem(item)]; } catch { return []; }
+        })
+      : []
   };
 }
 
@@ -134,6 +225,17 @@ function setSessionCookie(res, token) {
 function clearSessionCookie(res) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   res.setHeader("Set-Cookie", "jarvis_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0" + secure);
+}
+
+function setGoogleOAuthCookie(res, value) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  res.append("Set-Cookie", "jarvis_google_oauth=" + encodeURIComponent(value) +
+    "; HttpOnly; SameSite=Lax; Path=/api/integrations/google_drive/oauth/callback; Max-Age=600" + secure);
+}
+
+function clearGoogleOAuthCookie(res) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  res.append("Set-Cookie", "jarvis_google_oauth=; HttpOnly; SameSite=Lax; Path=/api/integrations/google_drive/oauth/callback; Max-Age=0" + secure);
 }
 
 function requireAuth(req, res, next) {
@@ -256,13 +358,6 @@ function appendConversationTurn(key, message, result) {
   }
 }
 
-const SENSITIVE_MEMORY_PATTERN = /\b(password|passcode|pin|otp|one[- ]time code|api key|secret|access token|private key|bank account|card number|medical|health|diagnos(?:is|ed)|medicine|medication|home address|exact address|phone number|email address)\b/i;
-
-function isSafeMemoryContent(content) {
-  return typeof content === "string" && content.trim().length >= 3 &&
-    content.trim().length <= 500 && !SENSITIVE_MEMORY_PATTERN.test(content);
-}
-
 function parseExplicitMemoryIntent(message) {
   const normalized = cleanText(message, 4000).replace(/^jarvis[,:]?\s*/i, "");
   const match = normalized.match(/^(?:please\s+)?remember(?:\s+that)?\s*[:,-]?\s*(.+)$/i) ||
@@ -294,18 +389,14 @@ async function processAssistantTurn(message, conversationKey) {
       externalAI: false
     };
   } else if (memoryIntent) {
-    const existing = store.memories.find((item) => item.content.toLowerCase() === memoryIntent.content.toLowerCase());
+    const candidate = normalizeMemory({ content: memoryIntent.content, category: memoryIntent.category });
+    const existing = store.memories.find((item) => isDuplicateMemory([item], candidate));
     if (existing) {
       result = { answer: "That preference or fact is already in your saved memory.", engine: "memory", externalAI: false };
     } else if (store.memories.length >= 200) {
       result = { answer: "Your memory list is full. Delete an old note before saving another.", engine: "memory", externalAI: false };
     } else {
-      const memory = {
-        id: newId(),
-        content: memoryIntent.content,
-        category: memoryIntent.category,
-        createdAt: new Date().toISOString()
-      };
+      const memory = candidate;
       store.memories.push(memory);
       await saveStore();
       result = { answer: "I’ll remember this preference or fact because you explicitly asked me to. You can review or delete it in Memory.", engine: "memory", externalAI: false };
@@ -347,7 +438,11 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
   const conversationAIEnabled = isConversationAIEnabled();
   if (conversationAIEnabled) {
     try {
-      const answer = await createConversationReply(message, history, memories);
+      const knowledgeContext = buildKnowledgeContext(store.knowledge, message, 3);
+      const approvedMemoryContext = buildMemoryContext(memories, message, 5);
+      const activeSkillContext = getActiveSkillContext(store.skills, message, 3);
+      const approvedExperienceContext = getActiveExperienceContext(store.experiencePreferences, 5);
+      const answer = await createConversationReply(message, history, approvedMemoryContext, knowledgeContext, activeSkillContext, approvedExperienceContext);
       return {
         answer: webNotice ? webNotice + "\n\n" + answer : answer,
         engine: "gemini-conversation",
@@ -363,8 +458,9 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
     message,
     memories: store.memories,
     tasks: store.tasks,
-    skills: store.skills,
-    feedback: store.feedback
+    skills: getActiveSkillContext(store.skills, message, 3),
+    feedback: store.feedback,
+    knowledge: buildKnowledgeContext(store.knowledge, message, 3)
   });
   return {
     answer: webNotice ? webNotice + "\n\n" + answer : answer,
@@ -375,18 +471,27 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
 }
 
 app.get("/api/health", (_req, res) => {
-  const conversationAIEnabled = isConversationAIEnabled();
-  const plannerAIEnabled = Boolean(process.env.GEMINI_API_KEY);
-  const webResearchEnabled = isWebResearchEnabled();
+  const gemini = getGeminiRuntimeStatus();
+  const conversationAIEnabled = gemini.conversationEnabled;
+  const plannerAIEnabled = gemini.plannerEnabled;
+  const webResearchEnabled = gemini.webResearchEnabled;
   res.json({
     ok: true,
     service: "jarvis",
-    version: "0.5.0-selective-memory-voice-web",
+    version: "1.6.0-controlled-actions",
     brain: conversationAIEnabled ? "gemini-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
     webResearchEnabled,
-    externalAI: plannerAIEnabled || conversationAIEnabled || webResearchEnabled
+    externalAI: plannerAIEnabled || conversationAIEnabled || webResearchEnabled,
+    aiProvider: {
+      provider: gemini.provider,
+      configured: gemini.configured,
+      model: gemini.model,
+      modelValid: gemini.modelValid,
+      requestTimeoutMs: gemini.requestTimeoutMs,
+      retryAttempts: gemini.retryAttempts
+    }
   });
 });
 
@@ -421,7 +526,10 @@ app.get("/api/state", requireAuth, (req, res) => {
     memories: store.memories,
     tasks: store.tasks.slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))),
     feedback: store.feedback.slice(-100),
+    experiencePreferences: store.experiencePreferences,
     skills: store.skills,
+    workflows: store.workflows,
+    workflowRuns: store.workflowRuns.slice().reverse().slice(0, 50),
     research: store.research.slice().reverse()
   });
 });
@@ -429,6 +537,36 @@ app.get("/api/state", requireAuth, (req, res) => {
 app.delete("/api/chat/history", requireAuth, (req, res) => {
   sessionChats.delete("session:" + req.sessionToken);
   res.json({ ok: true });
+});
+
+app.get("/api/export", requireAuth, (req, res) => {
+  const payload = {
+    format: "jarvis-personal-data",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    data: {
+      memories: store.memories,
+      knowledge: store.knowledge,
+      research: store.research,
+      tasks: store.tasks,
+      feedback: store.feedback,
+      experiencePreferences: store.experiencePreferences,
+      skills: store.skills,
+      workflows: store.workflows,
+      workflowRuns: store.workflowRuns,
+      disabledIntegrations: store.disabledIntegrations,
+      externalActions: store.externalActions
+    },
+    excluded: [
+      "temporary conversation history",
+      "device credentials and pairing records",
+      "server environment variables and API credentials",
+      "chat prompts and assistant replies are not stored as feedback records"
+    ]
+  };
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Disposition", 'attachment; filename="jarvis-personal-data.json"');
+  res.json(payload);
 });
 
 app.post("/api/chat", requireAuth, async (req, res) => {
@@ -443,57 +581,221 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   }
 });
 
+app.get("/api/memories", requireAuth, (req, res) => {
+  const query = cleanText(req.query.q, 300);
+  const category = cleanText(req.query.category, 30);
+  const requestedLimit = Number.parseInt(String(req.query.limit || "100"), 10);
+  const limit = Number.isFinite(requestedLimit) ? Math.min(100, Math.max(1, requestedLimit)) : 100;
+  const items = searchMemories(store.memories, query, category, limit);
+  res.json({ query, category, total: store.memories.length, count: items.length, items });
+});
+
 app.post("/api/memories", requireAuth, async (req, res) => {
-  const content = cleanText(req.body?.content, 1000);
-  const allowed = ["preference", "goal", "fact"];
-  const category = allowed.includes(req.body?.category) ? req.body.category : "fact";
-  if (!content) return res.status(400).json({ error: "Memory text cannot be empty." });
-  if (!isSafeMemoryContent(content)) return res.status(400).json({ error: "For privacy, JARVIS does not save secrets or sensitive personal information as memory." });
-  if (store.memories.length >= 200) return res.status(409).json({ error: "Memory limit reached. Delete an old note first." });
-  const memory = { id: newId(), content, category, createdAt: new Date().toISOString() };
+  let memory;
+  try {
+    memory = normalizeMemory(req.body);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Memory is invalid." });
+  }
+
+  const duplicate = store.memories.find((item) => isDuplicateMemory([item], memory));
+  if (duplicate) return res.status(200).json({ memory: duplicate, duplicate: true });
+  if (store.memories.length >= MEMORY_LIMITS.items) {
+    return res.status(409).json({ error: "Memory limit reached. Delete an old note first." });
+  }
+
   store.memories.push(memory);
   await saveStore();
-  res.status(201).json({ memory });
+  res.status(201).json({ memory, duplicate: false });
+});
+
+app.patch("/api/memories/:id", requireAuth, async (req, res) => {
+  const existing = store.memories.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Memory not found." });
+
+  let updated;
+  try {
+    updated = normalizeMemory({
+      ...existing,
+      content: typeof req.body?.content === "string" ? req.body.content : existing.content,
+      category: typeof req.body?.category === "string" ? req.body.category : existing.category,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Memory is invalid." });
+  }
+
+  const duplicate = store.memories.find((item) =>
+    item.id !== existing.id && isDuplicateMemory([item], updated)
+  );
+  if (duplicate) return res.status(409).json({ error: "Another saved memory already contains the same note." });
+
+  store.memories = store.memories.map((item) => item.id === existing.id ? updated : item);
+  await saveStore();
+  res.json({ memory: updated });
 });
 
 app.delete("/api/memories/:id", requireAuth, async (req, res) => {
   const before = store.memories.length;
-  store.memories = store.memories.filter((m) => m.id !== req.params.id);
+  store.memories = store.memories.filter((item) => item.id !== req.params.id);
   if (store.memories.length === before) return res.status(404).json({ error: "Memory not found." });
   await saveStore();
   res.json({ ok: true });
 });
 
+app.get("/api/experience", requireAuth, (_req, res) => {
+  res.json({
+    summary: summarizeExperience(store.feedback, store.experiencePreferences),
+    feedback: store.feedback.slice().reverse(),
+    preferences: store.experiencePreferences.slice().reverse()
+  });
+});
+
 app.post("/api/feedback", requireAuth, async (req, res) => {
-  const prompt = cleanText(req.body?.prompt, 1000);
-  const rating = req.body?.rating === "up" ? "up" : req.body?.rating === "down" ? "down" : "";
-  const note = cleanText(req.body?.note, 500);
-  if (!prompt || !rating) return res.status(400).json({ error: "Feedback needs a prompt and an up/down rating." });
-  if (store.feedback.length >= 300) store.feedback = store.feedback.slice(-250);
-  // Keep only the rating: never persist the prompt or free-text note as training data.
-  const item = { id: newId(), rating, createdAt: new Date().toISOString() };
+  let item;
+  try {
+    // The legacy prompt field is accepted for client compatibility but is never persisted.
+    item = normalizeExperienceFeedback({
+      rating: req.body?.rating,
+      category: req.body?.category,
+      suggestion: req.body?.suggestion,
+      engine: req.body?.engine,
+      createdAt: new Date().toISOString()
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Feedback is invalid." });
+  }
+  if (store.feedback.length >= EXPERIENCE_LIMITS.feedback) {
+    store.feedback = store.feedback.slice(-(EXPERIENCE_LIMITS.feedback - 1));
+  }
   store.feedback.push(item);
   await saveStore();
   res.status(201).json({ feedback: item });
 });
 
-app.delete("/api/feedback/:id", requireAuth, async (req, res) => {
-  const before = store.feedback.length;
-  store.feedback = store.feedback.filter((item) => item.id !== req.params.id);
-  if (before === store.feedback.length) return res.status(404).json({ error: "Feedback entry not found." });
+app.post("/api/feedback/:id/approve", requireAuth, async (req, res) => {
+  const existing = store.feedback.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Feedback entry not found." });
+  try {
+    const result = promoteFeedbackToPreference(existing, store.experiencePreferences);
+    store.experiencePreferences.push(result.preference);
+    store.feedback = store.feedback.map((item) => item.id === existing.id ? result.feedback : item);
+    await saveStore();
+    res.status(201).json({ preference: result.preference, feedback: result.feedback });
+  } catch (error) {
+    res.status(409).json({ error: error.message || "Feedback cannot be approved as a preference." });
+  }
+});
+
+app.patch("/api/experience/preferences/:id", requireAuth, async (req, res) => {
+  const existing = store.experiencePreferences.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Response preference not found." });
+  let updated;
+  try {
+    updated = setExperiencePreferenceActive(existing, req.body?.active);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Preference update is invalid." });
+  }
+  store.experiencePreferences = store.experiencePreferences.map((item) => item.id === existing.id ? updated : item);
+  await saveStore();
+  res.json({ preference: updated });
+});
+
+app.delete("/api/experience/preferences/:id", requireAuth, async (req, res) => {
+  const before = store.experiencePreferences.length;
+  store.experiencePreferences = store.experiencePreferences.filter((item) => item.id !== req.params.id);
+  if (before === store.experiencePreferences.length) return res.status(404).json({ error: "Response preference not found." });
+  // Keep its source feedback as a reviewed record; deleting a preference does not delete feedback.
   await saveStore();
   res.json({ ok: true });
 });
 
+app.delete("/api/feedback/:id", requireAuth, async (req, res) => {
+  const before = store.feedback.length;
+  const existing = store.feedback.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Feedback entry not found." });
+  store.feedback = store.feedback.filter((item) => item.id !== req.params.id);
+  // The user may delete feedback independently; an already approved preference remains separate.
+  await saveStore();
+  res.json({ ok: true });
+});
+
+app.get("/api/skills", requireAuth, (_req, res) => {
+  res.json({ skills: store.skills, total: store.skills.length });
+});
+
+app.get("/api/skills/:id/versions", requireAuth, (req, res) => {
+  const skill = store.skills.find((item) => item.id === req.params.id);
+  if (!skill) return res.status(404).json({ error: "Skill not found." });
+  res.json({
+    id: skill.id,
+    currentVersion: skill.currentVersion,
+    activeVersion: skill.activeVersion,
+    versions: skill.versions
+  });
+});
+
 app.post("/api/skills", requireAuth, async (req, res) => {
-  const name = cleanText(req.body?.name, 80);
-  const instructions = cleanText(req.body?.instructions, 1200);
-  if (!name || !instructions) return res.status(400).json({ error: "Skill name and instructions are required." });
-  if (store.skills.length >= 100) return res.status(409).json({ error: "Skill limit reached. Remove an old skill first." });
-  const skill = { id: newId(), name, instructions, createdAt: new Date().toISOString() };
+  let skill;
+  try {
+    skill = createSkillCandidate(req.body);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Skill candidate is invalid." });
+  }
+  if (store.skills.length >= SKILL_LIMITS.skills) {
+    return res.status(409).json({ error: "Skill limit reached. Remove an old skill first." });
+  }
+  const duplicate = store.skills.find((item) => item.name.toLocaleLowerCase() === skill.name.toLocaleLowerCase());
+  if (duplicate) return res.status(409).json({ error: "A skill with this name already exists. Edit the existing skill to create a new version." });
   store.skills.push(skill);
   await saveStore();
   res.status(201).json({ skill });
+});
+
+app.patch("/api/skills/:id", requireAuth, async (req, res) => {
+  const existing = store.skills.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Skill not found." });
+  let updated;
+  try {
+    updated = createSkillVersion(existing, req.body);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Skill version is invalid." });
+  }
+  store.skills = store.skills.map((item) => item.id === existing.id ? updated : item);
+  await saveStore();
+  res.json({ skill: updated });
+});
+
+app.post("/api/skills/:id/validate", requireAuth, async (req, res) => {
+  const existing = store.skills.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Skill not found." });
+  const result = validateSkill(existing);
+  store.skills = store.skills.map((item) => item.id === existing.id ? result.skill : item);
+  await saveStore();
+  res.json({ skill: result.skill, validation: result.validation });
+});
+
+app.post("/api/skills/:id/approve", requireAuth, async (req, res) => {
+  const existing = store.skills.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Skill not found." });
+  let approved;
+  try {
+    approved = approveSkill(existing);
+  } catch (error) {
+    return res.status(409).json({ error: error.message || "Skill cannot be approved." });
+  }
+  store.skills = store.skills.map((item) => item.id === existing.id ? approved : item);
+  await saveStore();
+  res.json({ skill: approved });
+});
+
+app.post("/api/skills/:id/pause", requireAuth, async (req, res) => {
+  const existing = store.skills.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Skill not found." });
+  const paused = pauseSkill(existing);
+  store.skills = store.skills.map((item) => item.id === existing.id ? paused : item);
+  await saveStore();
+  res.json({ skill: paused });
 });
 
 app.delete("/api/skills/:id", requireAuth, async (req, res) => {
@@ -533,15 +835,536 @@ app.delete("/api/tasks/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+function getGoogleDriveOAuthConnection() {
+  return store.oauthConnections.find((item) => item.provider === "google_drive") || null;
+}
+
+function integrationCatalogResponse() {
+  const googleConnection = getGoogleDriveOAuthConnection();
+  const googleDriveOAuth = getGoogleOAuthStatus(googleConnection, process.env);
+  const providers = getIntegrationCatalog(process.env, store.disabledIntegrations, store.oauthConnections);
+  const googleProvider = providers.find((item) => item.id === "google_drive");
+  if (googleProvider) {
+    googleProvider.oauthConnected = googleDriveOAuth.connected;
+    googleProvider.oauthReady = googleDriveOAuth.canConnect;
+    googleProvider.configured = googleProvider.environmentConfigured || googleDriveOAuth.connected || googleDriveOAuth.canConnect;
+    googleProvider.enabled = googleProvider.configured && !googleProvider.disabled;
+  }
+  return {
+    providers,
+    googleDriveOAuth,
+    permissions: getIntegrationPermissionCatalog(googleConnection, process.env),
+    credentialStorage: "server-environment-or-encrypted-vault",
+    supportedOperations: "read-only"
+  };
+}
+
+async function getGoogleDriveTokenForIntegration() {
+  const connection = getGoogleDriveOAuthConnection();
+  if (!connection) return "";
+  return getGoogleDriveAccessToken(connection, {
+    onRefresh: async (updatedConnection) => {
+      store.oauthConnections = store.oauthConnections.map((item) =>
+        item.provider === "google_drive" ? updatedConnection : item
+      );
+      await saveStore();
+    }
+  });
+}
+
+function googleDriveIntegrationOptions() {
+  return getGoogleDriveOAuthConnection()
+    ? { getGoogleDriveAccessToken: getGoogleDriveTokenForIntegration }
+    : {};
+}
+
+function getActionCapabilities() {
+  return getExternalActionCapabilities({
+    env: process.env,
+    googleDriveOAuth: getGoogleOAuthStatus(getGoogleDriveOAuthConnection(), process.env),
+    disabledProviders: store.disabledIntegrations
+  });
+}
+
+function replaceExternalAction(action) {
+  store.externalActions = store.externalActions.map((item) => item.id === action.id ? action : item);
+}
+
+app.get("/api/actions/capabilities", requireAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json(getActionCapabilities());
+});
+
+app.get("/api/actions", requireAuth, async (_req, res) => {
+  let changed = false;
+  const now = Date.now();
+  store.externalActions = store.externalActions.map((action) => {
+    if (action.status === "pending" && Date.parse(action.expiresAt) <= now) {
+      changed = true;
+      return appendActionStatus(action, "expired", "Preview expired before confirmation. Nothing was sent or created.");
+    }
+    return action;
+  });
+  if (changed) await saveStore();
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ actions: store.externalActions.slice().reverse().slice(0, MAX_ACTION_HISTORY) });
+});
+
+app.post("/api/actions", requireAuth, actionPreviewLimiter, async (req, res) => {
+  const pendingCount = store.externalActions.filter((action) =>
+    action.status === "pending" && Date.parse(action.expiresAt) > Date.now()
+  ).length;
+  if (pendingCount >= MAX_PENDING_ACTIONS) {
+    return res.status(409).json({ error: "There are already 20 unconfirmed previews. Cancel or review one before creating another." });
+  }
+  let action;
+  try {
+    action = createPendingExternalAction(req.body, { capabilities: getActionCapabilities(), env: process.env });
+  } catch (error) {
+    return res.status(error instanceof TypeError ? 400 : 409).json({ error: error.message || "Action preview could not be created." });
+  }
+  store.externalActions.push(action);
+  store.externalActions = store.externalActions.slice(-MAX_ACTION_HISTORY);
+  await saveStore();
+  res.status(201).json({ action });
+});
+
+app.post("/api/actions/:id/execute", requireAuth, actionConfirmLimiter, async (req, res) => {
+  const action = store.externalActions.find((item) => item.id === req.params.id);
+  if (!action) return res.status(404).json({ error: "Action preview not found." });
+  if (action.status !== "pending") return res.status(409).json({ error: "This preview is no longer pending. It cannot be executed again." });
+  if (Date.parse(action.expiresAt) <= Date.now()) {
+    const expired = appendActionStatus(action, "expired", "Preview expired before confirmation. Nothing was sent or created.");
+    replaceExternalAction(expired);
+    await saveStore();
+    return res.status(410).json({ error: "This preview expired. Create a new preview after reviewing the details." });
+  }
+  const confirmation = cleanText(req.body?.confirmation, 40);
+  if (confirmation !== action.confirmationPhrase) {
+    return res.status(400).json({ error: "Confirmation text does not match. No external action was performed." });
+  }
+
+  const capabilities = getActionCapabilities();
+  if (action.provider === "telegram" && !capabilities.telegram.enabled) {
+    return res.status(409).json({ error: "Telegram is disabled or no longer configured. Nothing was sent." });
+  }
+  if (action.provider === "telegram" && !capabilities.telegram.allowedChatIds.includes(action.chatId)) {
+    return res.status(409).json({ error: "The Telegram destination is no longer allow-listed. Nothing was sent." });
+  }
+  if (action.provider === "google_drive" && !capabilities.googleDrive.canCreateDocs) {
+    return res.status(409).json({ error: "Google Docs creation permission is not active. Nothing was created." });
+  }
+
+  const executing = appendActionStatus(action, "executing", "Exact confirmation received. The selected provider is processing this one action.");
+  replaceExternalAction(executing);
+  await saveStore();
+
+  try {
+    const result = await executeExternalAction(executing, {
+      env: process.env,
+      getGoogleDriveAccessToken: getGoogleDriveTokenForIntegration
+    });
+    const completed = appendActionStatus(executing, "completed", result.summary, result);
+    replaceExternalAction(completed);
+    await saveStore();
+    return res.json({ action: completed });
+  } catch (error) {
+    const failed = appendActionStatus(
+      executing,
+      "failed",
+      error?.message || "Provider did not confirm the action. Check the provider before trying again.",
+      error?.partialResult || null
+    );
+    replaceExternalAction(failed);
+    await saveStore();
+    return res.status(502).json({ error: error?.message || "The provider did not confirm the action. Check the provider before trying again.", action: failed });
+  }
+});
+
+app.post("/api/actions/:id/cancel", requireAuth, async (req, res) => {
+  const action = store.externalActions.find((item) => item.id === req.params.id);
+  if (!action) return res.status(404).json({ error: "Action preview not found." });
+  if (action.status !== "pending") return res.status(409).json({ error: "Only a pending preview can be cancelled." });
+  const cancelled = appendActionStatus(action, "cancelled", "Cancelled by the user. No external action was performed.");
+  replaceExternalAction(cancelled);
+  await saveStore();
+  res.json({ action: cancelled });
+});
+
+app.get("/api/integrations", requireAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json(integrationCatalogResponse());
+});
+
+app.post("/api/integrations/google_drive/oauth/start", requireAuth, oauthStartLimiter, (req, res) => {
+  if (store.disabledIntegrations.includes("google_drive")) {
+    return res.status(409).json({ error: "Enable Google Drive in JARVIS before starting OAuth." });
+  }
+  try {
+    const capability = req.body?.capability === "create_docs" ? "create_docs" : "read";
+    const result = beginGoogleOAuth({ sessionToken: req.sessionToken, capability });
+    setGoogleOAuthCookie(res, result.browserBinding);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ authorizationUrl: result.authorizationUrl });
+  } catch (error) {
+    res.status(503).json({ error: error.message || "Google OAuth could not start." });
+  }
+});
+
+app.get("/api/integrations/google_drive/oauth/callback", oauthCallbackLimiter, async (req, res) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const browserBinding = cookies.jarvis_google_oauth || "";
+  const state = cleanText(req.query?.state, 200);
+  const code = cleanText(req.query?.code, 4000);
+  const oauthError = cleanText(req.query?.error, 100);
+  const existingConnection = getGoogleDriveOAuthConnection();
+  try {
+    const connection = await finishGoogleOAuth({
+      state,
+      code,
+      oauthError,
+      browserBinding,
+      existingConnection,
+      isSessionValid: (sessionToken) => {
+        const session = sessions.get(sessionToken);
+        if (!session || session.expiresAt <= Date.now()) return false;
+        session.expiresAt = Date.now() + SESSION_TTL_MS;
+        return true;
+      }
+    });
+    store.oauthConnections = store.oauthConnections.filter((item) => item.provider !== "google_drive");
+    store.oauthConnections.push(connection);
+    await saveStore();
+    clearGoogleOAuthCookie(res);
+    res.setHeader("Cache-Control", "no-store");
+    const docsEnabled = connection.grantedScopes.includes("https://www.googleapis.com/auth/drive.file");
+    return res.redirect(303, "/?integration=google_drive_connected" + (docsEnabled ? "&capability=create_docs" : ""));
+  } catch (error) {
+    clearGoogleOAuthCookie(res);
+    console.warn("Google Drive OAuth callback was not completed:", error?.message || "OAuth error");
+    res.setHeader("Cache-Control", "no-store");
+    return res.redirect(303, "/?integration=google_drive_error");
+  }
+});
+
+app.post("/api/integrations/google_drive/oauth/revoke", requireAuth, integrationTestLimiter, async (_req, res) => {
+  const connection = getGoogleDriveOAuthConnection();
+  if (!connection) return res.status(404).json({ error: "No Google Drive OAuth connection is stored in JARVIS." });
+  try {
+    await revokeGoogleOAuthConnection(connection);
+    store.oauthConnections = store.oauthConnections.filter((item) => item.provider !== "google_drive");
+    clearGoogleDriveTokenCache();
+    await saveStore();
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ ok: true, message: "Google Drive OAuth permission was revoked and its encrypted token was removed from JARVIS.", ...integrationCatalogResponse() });
+  } catch (error) {
+    res.status(502).json({ error: error.message || "Google Drive access could not be revoked." });
+  }
+});
+
+app.post("/api/integrations/:provider/test", requireAuth, integrationTestLimiter, async (req, res) => {
+  const provider = req.params.provider;
+  if (!INTEGRATION_PROVIDER_IDS.includes(provider)) return res.status(404).json({ error: "Integration provider not found." });
+  if (store.disabledIntegrations.includes(provider)) return res.status(409).json({ error: "This connection is disabled in JARVIS. Enable it before testing." });
+  try {
+    const result = await probeIntegration(provider, provider === "google_drive" ? googleDriveIntegrationOptions() : {});
+    res.json(result);
+  } catch (error) {
+    const status = error instanceof TypeError ? 400 : 502;
+    res.status(status).json({ error: error.message || "Integration test failed." });
+  }
+});
+
+app.post("/api/integrations/:provider/disable", requireAuth, async (req, res) => {
+  const provider = req.params.provider;
+  if (!INTEGRATION_PROVIDER_IDS.includes(provider)) return res.status(404).json({ error: "Integration provider not found." });
+  if (!store.disabledIntegrations.includes(provider)) {
+    store.disabledIntegrations.push(provider);
+    await saveStore();
+  }
+  res.json({ ok: true, ...integrationCatalogResponse() });
+});
+
+app.post("/api/integrations/:provider/enable", requireAuth, async (req, res) => {
+  const provider = req.params.provider;
+  if (!INTEGRATION_PROVIDER_IDS.includes(provider)) return res.status(404).json({ error: "Integration provider not found." });
+  store.disabledIntegrations = store.disabledIntegrations.filter((item) => item !== provider);
+  await saveStore();
+  res.json({ ok: true, ...integrationCatalogResponse() });
+});
+
+app.get("/api/workflows", requireAuth, (_req, res) => {
+  res.json({
+    workflows: store.workflows.slice().reverse(),
+    runs: store.workflowRuns.slice().reverse().slice(0, 50),
+    limits: WORKFLOW_LIMITS
+  });
+});
+
+app.post("/api/workflows", requireAuth, async (req, res) => {
+  let workflow;
+  try {
+    workflow = createWorkflowDraft(req.body);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Workflow draft is invalid." });
+  }
+  if (store.workflows.length >= WORKFLOW_LIMITS.workflows) {
+    return res.status(409).json({ error: "Workflow limit reached. Delete an older workflow first." });
+  }
+  if (store.workflows.some((item) => item.name.toLocaleLowerCase() === workflow.name.toLocaleLowerCase())) {
+    return res.status(409).json({ error: "A workflow with this name already exists. Edit it to create a new version." });
+  }
+  store.workflows.push(workflow);
+  await saveStore();
+  res.status(201).json({ workflow });
+});
+
+app.patch("/api/workflows/:id", requireAuth, async (req, res) => {
+  const existing = store.workflows.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow not found." });
+  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["running", "waiting_review"].includes(run.status))) {
+    return res.status(409).json({ error: "Stop or finish the active run before editing this workflow." });
+  }
+  let updated;
+  try {
+    updated = updateWorkflowDraft(existing, req.body);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Workflow update is invalid." });
+  }
+  store.workflows = store.workflows.map((item) => item.id === existing.id ? updated : item);
+  await saveStore();
+  res.json({ workflow: updated });
+});
+
+app.post("/api/workflows/:id/validate", requireAuth, async (req, res) => {
+  const existing = store.workflows.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow not found." });
+  const result = validateWorkflow(existing);
+  store.workflows = store.workflows.map((item) => item.id === existing.id ? result.workflow : item);
+  await saveStore();
+  res.json({ workflow: result.workflow, validation: result.validation });
+});
+
+app.post("/api/workflows/:id/approve", requireAuth, async (req, res) => {
+  const existing = store.workflows.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow not found." });
+  let approved;
+  try {
+    approved = approveWorkflow(existing);
+  } catch (error) {
+    return res.status(409).json({ error: error.message || "Workflow cannot be approved." });
+  }
+  store.workflows = store.workflows.map((item) => item.id === existing.id ? approved : item);
+  await saveStore();
+  res.json({ workflow: approved });
+});
+
+app.post("/api/workflows/:id/pause", requireAuth, async (req, res) => {
+  const existing = store.workflows.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow not found." });
+  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["running", "waiting_review"].includes(run.status))) {
+    return res.status(409).json({ error: "Stop the active run before pausing this workflow." });
+  }
+  let paused;
+  try {
+    paused = pauseWorkflow(existing);
+  } catch (error) {
+    return res.status(409).json({ error: error.message || "Workflow cannot be paused." });
+  }
+  store.workflows = store.workflows.map((item) => item.id === existing.id ? paused : item);
+  await saveStore();
+  res.json({ workflow: paused });
+});
+
+app.delete("/api/workflows/:id", requireAuth, async (req, res) => {
+  const existing = store.workflows.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow not found." });
+  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["running", "waiting_review"].includes(run.status))) {
+    return res.status(409).json({ error: "Stop the active run before deleting this workflow." });
+  }
+  store.workflows = store.workflows.filter((item) => item.id !== existing.id);
+  await saveStore();
+  res.json({ ok: true });
+});
+
+async function runEnabledIntegration(provider, action) {
+  if (store.disabledIntegrations.includes(provider)) {
+    throw new Error(provider.replaceAll("_", " ") + " connection is disabled in JARVIS.");
+  }
+  return runIntegrationAction(action, provider === "google_drive" ? googleDriveIntegrationOptions() : {});
+}
+
+function workflowStepHandlers() {
+  return {
+    create_task: async (step) => {
+      if (store.tasks.length >= 200) throw new Error("Task limit reached. Remove an old task first.");
+      const task = {
+        id: newId(),
+        title: step.title,
+        description: step.description || "",
+        dueAt: "",
+        done: false,
+        createdAt: new Date().toISOString()
+      };
+      store.tasks.push(task);
+      return { taskId: task.id, summary: "Task created: " + task.title };
+    },
+    save_memory: async (step) => {
+      const memory = normalizeMemory({ content: step.content, category: step.category });
+      if (isDuplicateMemory(store.memories, memory)) {
+        return { duplicate: true, summary: "That memory is already saved." };
+      }
+      if (store.memories.length >= MEMORY_LIMITS.items) throw new Error("Memory limit reached.");
+      store.memories.push(memory);
+      return { memoryId: memory.id, summary: "Memory saved: " + memory.content.slice(0, 120) };
+    },
+    search_knowledge: async (step) => {
+      const results = searchKnowledgeItems(store.knowledge, step.query, 5).map((item) => ({
+        id: item.id,
+        title: item.title,
+        category: item.category,
+        reviewStatus: item.reviewStatus,
+        snippet: item.content.slice(0, 350)
+      }));
+      return { results, summary: results.length + " saved knowledge result(s) found." };
+    },
+    draft_text: async (step) => ({
+      draft: step.content,
+      summary: "Draft prepared locally. Nothing was sent or published."
+    }),
+    github_list_repositories: async () => runEnabledIntegration("github", "github_list_repositories"),
+    google_drive_list_files: async () => runEnabledIntegration("google_drive", "google_drive_list_files"),
+    telegram_get_bot_profile: async () => runEnabledIntegration("telegram", "telegram_get_bot_profile"),
+    elevenlabs_get_account: async () => runEnabledIntegration("elevenlabs", "elevenlabs_get_account")
+  };
+}
+
+app.post("/api/workflows/:id/run", requireAuth, async (req, res) => {
+  const workflow = store.workflows.find((item) => item.id === req.params.id);
+  if (!workflow) return res.status(404).json({ error: "Workflow not found." });
+  if (workflow.status !== "approved" || !workflow.approvedAt) {
+    return res.status(409).json({ error: "Validate and approve this workflow before running it." });
+  }
+  if (store.workflowRuns.some((run) => run.workflowId === workflow.id && ["running", "waiting_review"].includes(run.status))) {
+    return res.status(409).json({ error: "This workflow already has an active run. Continue or stop it first." });
+  }
+  if (store.workflowRuns.length >= WORKFLOW_LIMITS.runs) {
+    store.workflowRuns = store.workflowRuns.filter((run) => ["running", "waiting_review"].includes(run.status))
+      .concat(store.workflowRuns.filter((run) => !["running", "waiting_review"].includes(run.status)).slice(-(WORKFLOW_LIMITS.runs - 1)));
+  }
+  const run = createWorkflowRun(workflow);
+  store.workflowRuns.push(run);
+  const result = await advanceWorkflowRun(run, workflowStepHandlers());
+  store.workflowRuns = store.workflowRuns.map((item) => item.id === run.id ? result : item);
+  await saveStore();
+  res.status(201).json({ run: result });
+});
+
+app.post("/api/workflow-runs/:id/continue", requireAuth, async (req, res) => {
+  const existing = store.workflowRuns.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow run not found." });
+  if (existing.status !== "waiting_review") {
+    return res.status(409).json({ error: "This run is not waiting for your review." });
+  }
+  const continued = { ...existing, status: "running", updatedAt: new Date().toISOString() };
+  const result = await advanceWorkflowRun(continued, workflowStepHandlers());
+  store.workflowRuns = store.workflowRuns.map((item) => item.id === existing.id ? result : item);
+  await saveStore();
+  res.json({ run: result });
+});
+
+app.post("/api/workflow-runs/:id/stop", requireAuth, async (req, res) => {
+  const existing = store.workflowRuns.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow run not found." });
+  let cancelled;
+  try {
+    cancelled = cancelWorkflowRun(existing);
+  } catch (error) {
+    return res.status(409).json({ error: error.message || "Workflow run cannot be stopped." });
+  }
+  store.workflowRuns = store.workflowRuns.map((item) => item.id === existing.id ? cancelled : item);
+  await saveStore();
+  res.json({ run: cancelled });
+});
+
 app.get("/api/search", requireAuth, (req, res) => {
   const query = cleanText(req.query.q, 300);
   if (!query) return res.status(400).json({ error: "Enter a search query." });
-  const results = searchLocalKnowledge(query, 8).map((item) => ({
+
+  const savedResults = searchKnowledgeItems(store.knowledge, query, 8).map((item) => ({
+    id: item.id,
+    title: item.title,
+    snippet: item.content.slice(0, 700),
+    category: item.category,
+    source: "saved-knowledge",
+    reviewStatus: item.reviewStatus,
+    sources: item.sources
+  }));
+  const offlineResults = searchLocalKnowledge(query, 8).map((item) => ({
     title: item.title,
     snippet: item.snippet,
-    url: ""
+    source: "embedded-local-knowledge",
+    score: item.score,
+    sources: []
   }));
-  res.json({ query, results, source: "embedded-local-knowledge", externalSearch: false });
+  const results = [...savedResults, ...offlineResults]
+    .sort((a, b) => (b.score || (b.source === "saved-knowledge" ? 10 : 0)) - (a.score || (a.source === "saved-knowledge" ? 10 : 0)))
+    .slice(0, 10);
+
+  res.json({ query, results, source: "saved-and-embedded-knowledge", externalSearch: false });
+});
+
+app.get("/api/knowledge", requireAuth, (req, res) => {
+  const query = cleanText(req.query.q, 300);
+  const requestedLimit = Number.parseInt(String(req.query.limit || "100"), 10);
+  const limit = Number.isFinite(requestedLimit) ? Math.min(100, Math.max(1, requestedLimit)) : 100;
+  const items = searchKnowledgeItems(store.knowledge, query, limit);
+  res.json({ query, total: store.knowledge.length, count: items.length, items });
+});
+
+app.post("/api/knowledge", requireAuth, async (req, res) => {
+  let item;
+  try {
+    item = normalizeKnowledgeItem(req.body);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Knowledge entry is invalid." });
+  }
+
+  const duplicate = store.knowledge.find((existing) => isDuplicateKnowledge([existing], item));
+  if (duplicate) return res.status(200).json({ item: duplicate, duplicate: true });
+
+  if (store.knowledge.length >= KNOWLEDGE_LIMITS.items) {
+    return res.status(409).json({ error: "Knowledge library is full. Delete an old entry before adding another." });
+  }
+
+  store.knowledge.push(item);
+  await saveStore();
+  res.status(201).json({ item, duplicate: false });
+});
+
+app.patch("/api/knowledge/:id", requireAuth, async (req, res) => {
+  const item = store.knowledge.find((entry) => entry.id === req.params.id);
+  if (!item) return res.status(404).json({ error: "Knowledge entry not found." });
+  if (item.sourceKind !== "web-research" || req.body?.reviewStatus !== "user-reviewed") {
+    return res.status(400).json({ error: "Only saved web research can be marked as reviewed after you check its sources." });
+  }
+
+  const updated = normalizeKnowledgeItem({
+    ...item,
+    reviewStatus: "user-reviewed",
+    updatedAt: new Date().toISOString()
+  });
+  store.knowledge = store.knowledge.map((entry) => entry.id === item.id ? updated : entry);
+  await saveStore();
+  res.json({ item: updated });
+});
+
+app.delete("/api/knowledge/:id", requireAuth, async (req, res) => {
+  const before = store.knowledge.length;
+  store.knowledge = store.knowledge.filter((entry) => entry.id !== req.params.id);
+  if (store.knowledge.length === before) return res.status(404).json({ error: "Knowledge entry not found." });
+  await saveStore();
+  res.json({ ok: true });
 });
 
 app.post("/api/research", requireAuth, webResearchLimiter, async (req, res) => {

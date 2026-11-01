@@ -38,8 +38,13 @@
         <button class="nav-item active" data-view="chat"><span class="nav-icon">✳</span> Assistant</button>
         <button class="nav-item" data-view="devices"><span class="nav-icon">▣</span> Device Control</button>
         <button class="nav-item" data-view="research"><span class="nav-icon">⌕</span> Research</button>
+        <button class="nav-item" data-view="knowledge"><span class="nav-icon">▤</span> Knowledge</button>
         <button class="nav-item" data-view="tasks"><span class="nav-icon">☷</span> Tasks <span id="task-count" class="nav-count">0</span></button>
         <button class="nav-item" data-view="memory"><span class="nav-icon">◈</span> Memory</button>
+        <button class="nav-item" data-view="experience"><span class="nav-icon">✧</span> Experience</button>
+        <button class="nav-item" data-view="workflows"><span class="nav-icon">↻</span> Workflows</button>
+        <button class="nav-item" data-view="integrations"><span class="nav-icon">⛓</span> Connections</button>
+        <button class="nav-item" data-view="actions"><span class="nav-icon">✓</span> Action Center</button>
       </nav>
       <div class="sidebar-foot">
         <div class="connection"><span class="status-dot"></span><span><strong>Private workspace</strong><small>Session protected</small></span></div>
@@ -87,22 +92,58 @@
       </section>
 
       <section id="view-memory" class="view content-view hidden">
-        <div class="section-heading"><div><p class="eyebrow">PERSONAL CONTEXT</p><h1>Memory</h1><p class="muted">Save useful preferences, goals, or facts. Review and delete them anytime.</p></div><span class="counter" id="memory-count">0 saved</span></div>
+        <div class="section-heading">
+          <div><p class="eyebrow">PERSONAL CONTEXT</p><h1>Memory</h1><p class="muted">Only explicitly approved preferences, goals and useful facts are kept here.</p></div>
+          <div class="memory-header-actions">
+            <span class="counter" id="memory-count">0 saved</span>
+            <button type="button" class="item-action" id="export-data-button">Export my data</button>
+          </div>
+        </div>
+        <div class="research-hint" id="storage-overview">
+          <strong>Storage and privacy overview</strong>
+          <p id="storage-overview-text">Temporary chats are not part of long-term storage. Personal memories, knowledge, saved research, tasks and skills are kept separately.</p>
+        </div>
         <form id="memory-form" class="form-card">
           <label for="memory-content">What should JARVIS remember?</label>
-          <textarea id="memory-content" rows="3" maxlength="1000" required placeholder="Example: I prefer explanations in simple Hinglish, with examples."></textarea>
+          <textarea id="memory-content" rows="3" maxlength="500" required placeholder="Example: I prefer explanations in simple Hinglish, with examples."></textarea>
           <div class="form-row"><label class="field-label" for="memory-category">Category<select id="memory-category"><option value="preference">Preference</option><option value="goal">Goal</option><option value="fact">Fact</option></select></label><button class="primary" type="submit">Save memory</button></div>
-          <p class="small muted">Do not save passwords, API keys, private tokens, or other secrets.</p>
+          <p class="small muted">Saving is explicit. Passwords, API keys, OTPs and sensitive personal details are rejected. Normal chats are never saved as memories automatically.</p>
         </form>
-        <div class="list-heading"><h2>Saved notes</h2><span class="muted small">You stay in control</span></div>
+        <form id="memory-search-form" class="search-form">
+          <span aria-hidden="true">⌕</span>
+          <input id="memory-search-input" maxlength="300" placeholder="Search your saved memories…">
+          <select id="memory-category-filter" aria-label="Filter memories by category">
+            <option value="">All categories</option>
+            <option value="preference">Preferences</option>
+            <option value="goal">Goals</option>
+            <option value="fact">Facts</option>
+          </select>
+          <button class="primary" type="submit">Search</button>
+        </form>
+        <div class="list-heading"><h2>Saved memories</h2><span class="muted small">Edit, review or delete anytime</span></div>
         <div id="memory-list" class="item-list"></div>
-        <div class="list-heading"><h2>Custom skills</h2><span class="muted small">Saved guidance, not executable code</span></div>
+        <div class="list-heading"><h2>Learning & Skills</h2><span class="muted small">Draft → Test → Approve → Activate</span></div>
+        <div class="research-hint">
+          <strong>Safe skill learning</strong>
+          <p>Skills are reusable instruction profiles, not executable code. Tests only check whether trigger phrases match example requests; they do not run device actions or arbitrary scripts. A skill affects Gemini replies only after you approve it and only when a trigger matches.</p>
+        </div>
         <form id="skill-form" class="form-card">
+          <h2 id="skill-form-title">Create a skill draft</h2>
           <label for="skill-name">Skill name</label>
-          <input id="skill-name" maxlength="80" required placeholder="Example: JEE tutor">
+          <input id="skill-name" maxlength="80" required placeholder="Example: JEE physics tutor">
           <label for="skill-instructions">Instructions for JARVIS</label>
-          <textarea id="skill-instructions" rows="3" maxlength="1200" required placeholder="Example: Explain concepts step by step, use simple Hinglish, then give one practice question."></textarea>
-          <div class="form-row"><span class="small muted">Never add passwords, tokens, or dangerous commands.</span><button class="primary" type="submit">Save skill</button></div>
+          <textarea id="skill-instructions" rows="3" maxlength="2500" required placeholder="Explain the user's JEE physics question step by step, state assumptions, and check units and the final answer."></textarea>
+          <label for="skill-triggers">Trigger phrases <span class="muted">(comma separated)</span></label>
+          <input id="skill-triggers" maxlength="700" required placeholder="explain JEE physics, solve physics question">
+          <label for="skill-positive-test">Example that SHOULD match a trigger</label>
+          <input id="skill-positive-test" maxlength="300" required placeholder="Please explain this JEE physics question">
+          <label for="skill-negative-test">Example that should NOT match</label>
+          <input id="skill-negative-test" maxlength="300" required placeholder="What is the weather today?">
+          <div class="form-row">
+            <span class="small muted">New and edited versions start as drafts. No commands or scripts are executed.</span>
+            <button type="button" class="item-action hidden" id="skill-cancel-edit">Cancel edit</button>
+            <button class="primary" type="submit" id="skill-submit-button">Save draft</button>
+          </div>
         </form>
         <div id="skill-list" class="item-list"></div>
       </section>
@@ -135,6 +176,211 @@
       </section>
 
       
+      <section id="view-knowledge" class="view content-view hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">PERSONAL KNOWLEDGE LIBRARY</p>
+            <h1>Knowledge</h1>
+            <p class="muted">Keep useful notes and research summaries here. Nothing from the internet is saved unless you choose to add it.</p>
+          </div>
+          <span class="counter" id="knowledge-count">0 saved</span>
+        </div>
+        <form id="knowledge-search-form" class="search-form">
+          <span aria-hidden="true">⌕</span>
+          <input id="knowledge-search-input" maxlength="300" placeholder="Search saved knowledge by topic or keyword…">
+          <button class="primary" type="submit">Search library</button>
+        </form>
+        <form id="knowledge-form" class="form-card">
+          <h2>Add your own knowledge note</h2>
+          <label for="knowledge-title">Title</label>
+          <input id="knowledge-title" maxlength="180" required placeholder="Example: JavaScript debugging checklist">
+          <label for="knowledge-content">Note or explanation</label>
+          <textarea id="knowledge-content" rows="4" maxlength="8000" required placeholder="Write a useful explanation, summary, or project note…"></textarea>
+          <div class="form-row">
+            <label class="field-label" for="knowledge-category">Category
+              <select id="knowledge-category">
+                <option value="general">General</option>
+                <option value="education">Education</option>
+                <option value="science">Science</option>
+                <option value="technology">Technology</option>
+                <option value="project">Project</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label class="field-label" for="knowledge-tags">Tags <span class="muted">(comma separated)</span>
+              <input id="knowledge-tags" maxlength="400" placeholder="physics, JEE, formulas">
+            </label>
+            <button class="primary" type="submit">Save note</button>
+          </div>
+          <p class="small muted">Saved web research is labelled unreviewed until you check its sources. Knowledge retrieval is not model training. Do not save passwords, API keys, OTPs, or private tokens.</p>
+        </form>
+        <div class="list-heading"><h2>Saved knowledge</h2><span class="muted small">Search, review and delete entries</span></div>
+        <div id="knowledge-list" class="item-list"></div>
+      </section>
+
+      <section id="view-experience" class="view content-view hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">EXPERIENCE & SELF-IMPROVEMENT</p>
+            <h1>Experience</h1>
+            <p class="muted">Review feedback, spot recurring issues, and approve response preferences. JARVIS never changes its guidance automatically from ratings.</p>
+          </div>
+        </div>
+        <div class="experience-privacy">
+          <strong>Privacy & control</strong>
+          <p>Feedback stores only your rating, issue category, optional improvement suggestion and assistant engine. Chat prompts and assistant replies are not saved as feedback or training data. Approved preferences guide Gemini replies only; they do not train model weights or enable external actions.</p>
+        </div>
+        <div id="experience-metrics" class="experience-metrics"></div>
+        <div id="experience-categories" class="experience-categories"></div>
+        <div class="experience-columns">
+          <div class="experience-panel">
+            <div class="list-heading"><h2>Approved response preferences</h2><span class="muted small">You control these</span></div>
+            <div id="experience-preferences" class="item-list"></div>
+          </div>
+          <div class="experience-panel">
+            <div class="list-heading"><h2>Feedback review</h2><span class="muted small">Recent feedback and suggestions</span></div>
+            <div id="experience-feedback" class="item-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-workflows" class="view content-view hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">AUTOMATION & EXECUTION</p>
+            <h1>Workflows</h1>
+            <p class="muted">Build reusable local workflows, validate them, approve them and run them only when you choose.</p>
+          </div>
+        </div>
+        <div class="workflow-safety">
+          <strong>Approval and execution boundaries</strong>
+          <p>Only the five listed local step types are supported. Every workflow starts as a draft; validation does not execute it. You must explicitly approve the workflow and press Run. Review checkpoints pause execution. No shell/code execution, message sending, publishing, payments, purchases, or security-sensitive actions are supported.</p>
+        </div>
+        <form id="workflow-form" class="form-card">
+          <h2 id="workflow-form-title">Create a workflow draft</h2>
+          <label for="workflow-name">Workflow name</label>
+          <input id="workflow-name" maxlength="100" required placeholder="Example: Prepare a JEE study session">
+          <label for="workflow-description">Description <span class="muted">(optional)</span></label>
+          <textarea id="workflow-description" rows="2" maxlength="600" placeholder="What should this workflow help you organise?"></textarea>
+          <div class="workflow-builder">
+            <h3>Add a step</h3>
+            <label for="workflow-step-type">Step action</label>
+            <select id="workflow-step-type">
+              <option value="create_task">Create a local task</option>
+              <option value="save_memory">Save a personal memory</option>
+              <option value="search_knowledge">Search saved Knowledge</option>
+              <option value="draft_text">Prepare a text draft</option>
+              <option value="review_checkpoint">Pause for my review</option>
+              <option value="github_list_repositories">Read GitHub repositories</option>
+              <option value="google_drive_list_files">Read recent Google Drive files</option>
+              <option value="telegram_get_bot_profile">Check Telegram bot profile</option>
+              <option value="elevenlabs_get_account">Read ElevenLabs account summary</option>
+            </select>
+            <label for="workflow-step-title">Step title</label>
+            <input id="workflow-step-title" maxlength="100" placeholder="Example: Revise mole concept" required>
+            <label id="workflow-step-value-label" for="workflow-step-value">Task details <span class="muted">(optional)</span></label>
+            <textarea id="workflow-step-value" rows="3" maxlength="2000" placeholder="Add context for this step…"></textarea>
+            <label for="workflow-step-category">Memory category <span class="muted">(used for Save a personal memory)</span></label>
+            <select id="workflow-step-category">
+              <option value="fact">Fact</option>
+              <option value="preference">Preference</option>
+              <option value="goal">Goal</option>
+            </select>
+            <div class="form-row">
+              <span class="small muted">Maximum 10 steps per workflow.</span>
+              <button type="button" class="item-action" id="workflow-add-step">Add step</button>
+            </div>
+          </div>
+          <div class="list-heading"><h3>Workflow steps</h3><span class="muted small" id="workflow-step-count">0 / 10</span></div>
+          <div id="workflow-builder-steps" class="item-list"></div>
+          <div class="form-row">
+            <button type="button" class="item-action hidden" id="workflow-cancel-edit">Cancel edit</button>
+            <button type="submit" class="primary" id="workflow-save-button">Save workflow draft</button>
+          </div>
+        </form>
+        <div class="list-heading"><h2>Saved workflows</h2><span class="muted small">Validate · approve · run</span></div>
+        <div id="workflow-list" class="item-list"></div>
+        <div class="list-heading"><h2>Execution history</h2><span class="muted small">Step results and review checkpoints</span></div>
+        <div id="workflow-runs" class="item-list"></div>
+      </section>
+
+      <section id="view-actions" class="view content-view hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">CONTROLLED EXTERNAL ACTIONS</p>
+            <h1>Action Center</h1>
+            <p class="muted">Prepare an external action, review its exact destination and content, then confirm it separately.</p>
+          </div>
+        </div>
+        <div class="workflow-safety action-safety">
+          <strong>Preview first. Confirm only what you intend.</strong>
+          <p>Every preview expires after 15 minutes. Sending a Telegram message requires an exact confirmation phrase and a server allow-listed numeric chat ID. Creating a Google Doc requires a separate drive.file permission and an exact confirmation phrase. Actions are never triggered just by creating a preview or running a workflow.</p>
+          <p>Do not include passwords, API keys, private information or other secrets in messages or documents. A failed network request may have reached the provider; check the provider before attempting the same action again.</p>
+        </div>
+        <div id="action-capability-summary" class="action-capability-summary"></div>
+        <form id="external-action-form" class="form-card">
+          <h2>Create an action preview</h2>
+          <label for="external-action-type">Action</label>
+          <select id="external-action-type">
+            <option value="telegram_send_message">Prepare Telegram message</option>
+            <option value="google_drive_create_doc">Prepare Google Doc</option>
+          </select>
+          <div id="action-telegram-fields">
+            <label for="action-telegram-chat">Allowed Telegram destination</label>
+            <select id="action-telegram-chat" required></select>
+            <label for="action-telegram-text">Message text</label>
+            <textarea id="action-telegram-text" rows="4" maxlength="3000" placeholder="Write the exact text to preview. Nothing will be sent yet."></textarea>
+          </div>
+          <div id="action-google-fields" class="hidden">
+            <label for="action-google-title">Google Doc title</label>
+            <input id="action-google-title" maxlength="100" placeholder="Example: JEE Physics revision notes">
+            <label for="action-google-content">Document content</label>
+            <textarea id="action-google-content" rows="7" maxlength="12000" placeholder="Write the content to save in a new Google Doc. Nothing will be created yet."></textarea>
+            <button type="button" class="item-action" id="action-google-permission">Enable Google Docs creation permission</button>
+          </div>
+          <p class="small muted">A preview is saved in JARVIS only. No external request happens until you type the confirmation phrase on that preview.</p>
+          <div class="form-row">
+            <button type="submit" class="primary" id="external-action-submit">Create message preview</button>
+          </div>
+        </form>
+        <div class="list-heading">
+          <h2>Action history</h2>
+          <span class="muted small">Pending · completed · failed · cancelled</span>
+        </div>
+        <div id="external-action-list" class="item-list"></div>
+      </section>
+
+      <section id="view-integrations" class="view content-view hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">CONNECTED SERVICES</p>
+            <h1>Connections</h1>
+            <p class="muted">Connect read-only services to JARVIS workflows. You control which server credentials are configured.</p>
+          </div>
+        </div>
+        <div class="integration-safety">
+          <strong>Credential privacy</strong>
+          <p>GitHub, Telegram and ElevenLabs credentials are read only from server environment variables. Google Drive refresh tokens are encrypted with AES-256-GCM before being saved; access tokens stay in server memory. Secrets are never entered in the browser or included in workflow logs and data exports.</p>
+          <p>Connect Google Drive with the button below. JARVIS requests only read-only Drive metadata permission and refreshes access tokens on the server. Keep the encryption key and OAuth client secret in your hosting provider's private environment settings.</p>
+          <p>Important: Google revocation removes OAuth scopes previously granted to the same Google Cloud project and can invalidate tokens for other clients registered in that project. Use a dedicated Google Cloud project for JARVIS if you need isolation.</p>
+        </div>
+        <div class="integration-help">
+          <strong>Supported server variables</strong>
+          <ul>
+            <li><code>JARVIS_GOOGLE_OAUTH_CLIENT_ID</code> and <code>JARVIS_GOOGLE_OAUTH_CLIENT_SECRET</code> — server-side OAuth client</li>
+            <li><code>JARVIS_GOOGLE_OAUTH_REDIRECT_URI</code> — exact HTTPS callback URL ending in <code>/api/integrations/google_drive/oauth/callback</code></li>
+            <li><code>JARVIS_TOKEN_ENCRYPTION_KEY</code> — 32-byte key used to encrypt stored OAuth refresh tokens</li>
+            <li><code>JARVIS_GITHUB_TOKEN</code> — optional fine-grained token with Metadata: read, or a GitHub App installation</li>
+            <li><code>JARVIS_TELEGRAM_BOT_TOKEN</code> — bot identity check only; no message sending</li>
+            <li><code>JARVIS_ELEVENLABS_API_KEY</code> — restricted API key for account summary only</li>
+            <li><code>JARVIS_GOOGLE_DRIVE_ACCESS_TOKEN</code> — optional legacy short-lived token fallback</li>
+          </ul>
+          <p class="small muted">Generate the 32-byte encryption key on your own device and save it privately. Never commit it or paste it into chat. The same key must remain available to decrypt the saved connection after a restart.</p>
+        </div>
+        <div id="integration-provider-list" class="integration-provider-list"></div>
+        <div id="integration-permission-summary" class="integration-permission-summary"></div>
+      </section>
+
       <section id="view-devices" class="view content-view hidden">
         <div class="section-heading">
           <div>
@@ -163,7 +409,7 @@
         <div id="device-list" class="item-list"></div>
       </section>
 
-<footer class="page-footer"><span>JARVIS PERSONAL SYSTEM · v0.5.0</span><span>Built for one user, with safety boundaries</span></footer>
+<footer class="page-footer"><span>JARVIS PERSONAL SYSTEM · v1.6.0</span><span>Built for one user, with safety boundaries</span></footer>
     </main>
   </div>
 </body>

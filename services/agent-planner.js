@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { getGeminiClient, getGeminiModel, getGeminiRuntimeStatus } from "./gemini-client.js";
 
 const ALLOWED_ACTIONS = new Set([
   "open_app",
@@ -106,28 +106,18 @@ const SYSTEM_INSTRUCTIONS = [
   "Use no more than six actions. If the task is outside the allowed capabilities, choose clarification and explain that it must be completed manually."
 ].join("\n");
 
-let client;
-function getClient() {
-  if (!process.env.GEMINI_API_KEY) return null;
-  if (!client) client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  return client;
-}
-
 export function isAgentPlannerConfigured() {
-  return Boolean(process.env.GEMINI_API_KEY);
+  return getGeminiRuntimeStatus().plannerEnabled;
 }
 
 export async function createAgentPlan(message) {
-  const ai = getClient();
-  if (!ai) {
-    const error = new Error("Gemini is not configured. Add GEMINI_API_KEY and GEMINI_MODEL to the server environment.");
+  const runtime = getGeminiRuntimeStatus();
+  const model = getGeminiModel();
+  const ai = getGeminiClient();
+  if (!runtime.plannerEnabled || !ai) {
+    const error = new Error("Gemini is not configured. Add GEMINI_API_KEY and check GEMINI_MODEL in the server environment.");
     error.code = "AI_NOT_CONFIGURED";
     throw error;
-  }
-
-  const model = (process.env.GEMINI_MODEL || "gemini-3.8-flash").trim();
-  if (!/^[a-zA-Z0-9._-]{3,100}$/.test(model)) {
-    throw new Error("GEMINI_MODEL contains an invalid model name.");
   }
 
   const response = await ai.models.generateContent({

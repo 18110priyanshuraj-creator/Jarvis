@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { getGeminiClient, getGeminiModel, getGeminiRuntimeStatus } from "./gemini-client.js";
 
 const MAX_QUERY_LENGTH = 1200;
 const MAX_ANSWER_LENGTH = 8000;
@@ -17,7 +17,6 @@ const SYSTEM_INSTRUCTIONS = [
   "Do not claim that you opened a website, downloaded a file, contacted a person or completed an external action."
 ].join("\n");
 
-let client;
 
 function cleanText(value, maxLength) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
@@ -41,7 +40,7 @@ export function shouldUseLiveWebResearch(message) {
 }
 
 export function isWebResearchEnabled() {
-  return process.env.GEMINI_WEB_RESEARCH_ENABLED === "true" && Boolean(process.env.GEMINI_API_KEY);
+  return getGeminiRuntimeStatus().webResearchEnabled;
 }
 
 export function normalizeGroundedResearchResponse(response) {
@@ -114,11 +113,13 @@ export async function createGroundedResearch(query) {
     throw error;
   }
 
-  const model = (process.env.GEMINI_MODEL || "gemini-3.8-flash").trim();
-  if (!/^[a-zA-Z0-9._-]{3,100}$/.test(model)) {
-    throw new Error("GEMINI_MODEL contains an invalid model name.");
+  const model = getGeminiModel();
+  const client = getGeminiClient();
+  if (!client) {
+    const error = new Error("Live web research is not configured.");
+    error.code = "WEB_RESEARCH_NOT_CONFIGURED";
+    throw error;
   }
-  if (!client) client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
   const response = await client.models.generateContent({
     model,
