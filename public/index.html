@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0b1020">
-  <meta name="description" content="Private JARVIS personal assistant dashboard">
-  <title>JARVIS — Personal Assistant</title>
+  <meta name="theme-color" content="#050403">
+  <meta name="description" content="JARVIS orbital voice assistant">
+  <title>JARVIS</title>
   <link rel="stylesheet" href="/style.css">
   <script type="module" src="/app.js"></script>
 </head>
@@ -64,94 +64,40 @@
       </header>
 
       <section id="view-chat" class="view chat-view">
-        <div class="assistant-layout">
-          <div class="assistant-primary">
-            <div class="chat-intro">
-              <div class="hero-core">
-                <div class="orb" aria-hidden="true"><span>J</span></div>
-                <div class="core-caption"><span class="core-pulse"></span> J.A.R.V.I.S CORE</div>
-                <small>PERSONAL ASSISTANT SYSTEM</small>
-              </div>
-              <div class="hero-copy">
-                <p class="eyebrow">PERSONAL COMMAND INTERFACE / 01</p>
-                <h1>At your command.</h1>
-                <p class="muted intro-copy">Talk naturally, ask questions, research topics, plan your work, or open a JARVIS workspace. Choose text or voice whenever you are ready.</p>
-                <p class="intro-privacy">PRIVATE SESSION <span>•</span> CHAT HISTORY IS TEMPORARY <span>•</span> SAVED MEMORY REQUIRES YOUR ACTION</p>
-              </div>
-              <div class="intro-readouts" aria-label="JARVIS feature status">
-                <div class="readout"><span class="readout-symbol">◈</span><span><strong>LOCAL CORE</strong><small>AVAILABLE</small></span></div>
-                <div class="readout"><span class="readout-symbol">◉</span><span><strong>LIVE VOICE</strong><small>OPT-IN ONLY</small></span></div>
-                <div class="readout"><span class="readout-symbol">▣</span><span><strong>ANDROID LINK</strong><small>PAIR TO CONNECT</small></span></div>
-              </div>
-              <div class="prompt-grid">
-                <button class="prompt-card" data-prompt="Help me make a realistic plan for today."><span>↗</span><strong>Plan my day</strong><small>Turn priorities into steps</small></button>
-                <button class="prompt-card" data-prompt="Explain a difficult concept step by step and give me a quick check question at the end."><span>◉</span><strong>Help me learn</strong><small>Understand, then practise</small></button>
-                <button class="prompt-card" data-prompt="Help me research this topic. Tell me what evidence and sources I should verify."><span>⌕</span><strong>Explore a topic</strong><small>Research with caution</small></button>
-              </div>
-            </div>
-            <div class="live-voice-panel" aria-label="Real-time voice conversation">
-              <div class="live-voice-controls">
-                <div class="live-voice-heading"><span class="core-pulse"></span><strong>NEURAL VOICE LINK</strong><small>REAL-TIME AUDIO</small></div>
-                <button type="button" id="live-voice-button" class="tool-button" aria-pressed="false">Start live voice</button>
-                <span id="live-voice-status" class="live-voice-status" role="status" aria-live="polite">Live voice off</span>
-              </div>
-              <p class="small muted">Live voice sends microphone audio to Google Gemini only while the session is active. Transcripts are not saved in JARVIS chat history. Stop live voice to end microphone access.</p>
-              <div id="live-voice-transcript" class="live-voice-transcript" role="log" aria-live="polite" aria-relevant="additions text"></div>
-            </div>
-            <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
-            <form id="chat-form" class="composer">
-              <textarea id="chat-input" rows="1" maxlength="4000" placeholder="Give JARVIS an instruction…" aria-label="Message JARVIS"></textarea>
-              <div class="composer-bottom">
-                <div class="composer-tools">
-                  <button type="button" id="voice-button" class="tool-button" title="Start voice input" aria-label="Start voice input" aria-pressed="false">🎙 <span>Speak</span></button>
-                  <label class="voice-language-label" for="voice-language">Input
-                    <select id="voice-language" aria-label="Voice input language">
-                      <option value="hi-IN" selected>Hindi</option>
-                      <option value="en-IN">English (India)</option>
-                    </select>
-                  </label>
-                  <span id="voice-status" class="voice-status" role="status" aria-live="polite">Voice ready</span>
-                  <button type="button" id="stop-speech-button" class="tool-button hidden" title="Stop spoken reply" aria-label="Stop spoken reply" disabled>Stop speaking</button>
-                  <button type="button" id="clear-chat-button" class="tool-button" title="Clear temporary conversation">Clear chat</button>
-                  <label class="speak-label"><input id="speak-toggle" type="checkbox"> Read replies aloud</label>
-                </div>
-                <button id="send-button" type="submit" class="primary send-button">Send <span aria-hidden="true">↑</span></button>
-              </div>
-              <p class="composer-note">JARVIS can make mistakes. Verify important information. Connected actions still require the relevant permission and confirmation.</p>
-            </form>
+        <div class="orbital-experience">
+          <div class="orbital-stage">
+            <canvas id="orbital-canvas" aria-hidden="true"></canvas>
+            <button type="button" id="voice-button" class="orbital-trigger" aria-label="Start voice conversation" aria-pressed="false">
+              <span class="sr-only">Tap to speak with JARVIS. Tap again to stop listening.</span>
+            </button>
           </div>
 
-          <aside class="command-rail" aria-label="JARVIS command deck">
-            <section class="rail-card reactor-card">
-              <div class="rail-card-heading"><span>CORE TELEMETRY</span><span class="rail-live">● READY</span></div>
-              <div class="reactor-visual" aria-hidden="true">
-                <div class="reactor-ring ring-a"></div>
-                <div class="reactor-ring ring-b"></div>
-                <div class="reactor-ring ring-c"></div>
-                <div class="reactor-center">J</div>
-                <span class="reactor-node node-a"></span><span class="reactor-node node-b"></span>
-              </div>
-              <div class="reactor-caption"><strong>J.A.R.V.I.S</strong><span>PERSONAL AI INTERFACE</span></div>
-              <div class="rail-divider"></div>
-              <div class="core-facts"><span>OFFLINE CORE</span><strong>AVAILABLE</strong></div>
-              <div class="core-facts"><span>GEMINI LIVE</span><strong>SERVER OPT-IN</strong></div>
-              <div class="core-facts"><span>DEVICE BRIDGE</span><strong>PAIRING REQUIRED</strong></div>
-            </section>
+          <div class="orbital-status-wrap">
+            <span id="orbital-state-dot" class="orbital-state-dot"></span>
+            <p id="orbital-status" class="orbital-status" role="status" aria-live="polite">Tap the orb to speak</p>
+            <span id="voice-status" class="voice-status sr-only" role="status" aria-live="polite">Voice ready</span>
+          </div>
 
-            <section class="rail-card quick-access-card">
-              <div class="rail-card-heading"><span>QUICK ACCESS</span><span>01—05</span></div>
-              <button type="button" class="rail-action" data-view-shortcut="devices"><span>▣</span><strong>Device Control</strong><small>Android companion</small><b>↗</b></button>
-              <button type="button" class="rail-action" data-view-shortcut="research"><span>⌕</span><strong>Research</strong><small>Grounded web discovery</small><b>↗</b></button>
-              <button type="button" class="rail-action" data-view-shortcut="tasks"><span>☷</span><strong>Tasks</strong><small>Personal task list</small><b>↗</b></button>
-              <button type="button" class="rail-action" data-view-shortcut="knowledge"><span>▤</span><strong>Knowledge</strong><small>Your saved library</small><b>↗</b></button>
-              <button type="button" class="rail-action" data-view-shortcut="memory"><span>◈</span><strong>Memory</strong><small>Review saved context</small><b>↗</b></button>
-            </section>
+          <div id="chat-messages" class="chat-messages orbital-messages" aria-live="polite"></div>
 
-            <section class="rail-note">
-              <span class="rail-note-icon">⌁</span>
-              <div><strong>CONTROL POLICY</strong><p>JARVIS does not silently send, publish, purchase, or change device settings. Supported external actions show a preview and require your confirmation.</p></div>
-            </section>
-          </aside>
+          <form id="chat-form" class="composer orbital-composer">
+            <textarea id="chat-input" rows="1" maxlength="4000" placeholder="Or type a message…" aria-label="Type a message to JARVIS"></textarea>
+            <button id="send-button" class="orbital-send" type="submit" aria-label="Send message">↑</button>
+          </form>
+
+          <div class="orbital-footer">
+            <span>MICROPHONE OFF</span>
+            <span class="orbital-footer-separator">·</span>
+            <span>Tap orb to begin, tap again to stop</span>
+          </div>
+          <div class="orbital-preferences hidden" aria-hidden="true">
+            <select id="voice-language" aria-label="Voice input language">
+              <option value="hi-IN" selected>Hindi / Hinglish</option>
+              <option value="en-IN">English (India)</option>
+            </select>
+            <input id="speak-toggle" type="checkbox" checked>
+            <button type="button" id="stop-speech-button" disabled>Stop speaking</button>
+          </div>
         </div>
       </section>
 
@@ -189,7 +135,7 @@
         <div class="list-heading"><h2>Learning & Skills</h2><span class="muted small">Draft → Test → Approve → Activate</span></div>
         <div class="research-hint">
           <strong>Safe skill learning</strong>
-          <p>Skills are reusable instruction profiles, not executable code. Tests only check whether trigger phrases match example requests; they do not run device actions or arbitrary scripts. A skill affects Gemini replies only after you approve it and only when a trigger matches.</p>
+          <p>Skills are reusable instruction profiles, not executable code. Tests only check whether trigger phrases match example requests; they do not run device actions or arbitrary scripts. A skill affects online AI replies only after you approve it and only when a trigger matches.</p>
         </div>
         <form id="skill-form" class="form-card">
           <h2 id="skill-form-title">Create a skill draft</h2>
@@ -233,7 +179,7 @@
           <button class="primary" id="search-button" type="submit">Search offline</button>
           <button class="item-action web-search-button" id="web-research-button" type="submit">Search live web</button>
         </form>
-        <div class="research-hint"><strong>Live research privacy and cost</strong><p>Live mode is disabled by default; availability depends on server settings. When enabled, your question is sent to Google Gemini with Google Search grounding. Results show source links and are not saved automatically; use “Save research” to keep one in your private JARVIS history. Google’s Search grounding has a free monthly allowance and may incur usage charges after that. Do not enable paid billing without a parent or guardian reviewing it.</p></div>
+        <div class="research-hint"><strong>Live research privacy and cost</strong><p>Live mode is disabled by default; availability depends on server settings. When enabled, your question is sent to online AI service with Google Search grounding. Results show source links and are not saved automatically; use “Save research” to keep one in your private JARVIS history. Google’s Search grounding has a free monthly allowance and may incur usage charges after that. Do not enable paid billing without a parent or guardian reviewing it.</p></div>
         <div id="search-results" class="search-results" aria-live="polite"></div>
         <div class="list-heading"><h2>Saved research</h2></div>
         <div id="saved-research-list" class="item-list"></div>
@@ -292,7 +238,7 @@
         </div>
         <div class="experience-privacy">
           <strong>Privacy & control</strong>
-          <p>Feedback stores only your rating, issue category, optional improvement suggestion and assistant engine. Chat prompts and assistant replies are not saved as feedback or training data. Approved preferences guide Gemini replies only; they do not train model weights or enable external actions.</p>
+          <p>Feedback stores only your rating, issue category, optional improvement suggestion and assistant engine. Chat prompts and assistant replies are not saved as feedback or training data. Approved preferences guide online AI replies only; they do not train model weights or enable external actions.</p>
         </div>
         <div id="experience-metrics" class="experience-metrics"></div>
         <div id="experience-categories" class="experience-categories"></div>
