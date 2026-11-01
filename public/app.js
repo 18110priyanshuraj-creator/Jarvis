@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, integrations: [], integrationResults: {}, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
+const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
 let toastTimer;
 let activeRecognition = null;
 
@@ -54,6 +54,8 @@ async function refreshState() {
   const workflowData = await api("/api/workflows");
   const integrationData = await api("/api/integrations");
   state.integrations = integrationData.providers || [];
+  state.googleDriveOAuth = integrationData.googleDriveOAuth || null;
+  state.integrationPermissions = integrationData.permissions || [];
   state.feedback = experience.feedback || data.feedback || [];
   state.experiencePreferences = experience.preferences || data.experiencePreferences || [];
   state.workflows = workflowData.workflows || data.workflows || [];
@@ -800,11 +802,16 @@ function renderExperience(summary = null) {
 async function refreshIntegrations() {
   const data = await api("/api/integrations");
   state.integrations = data.providers || [];
+  state.googleDriveOAuth = data.googleDriveOAuth || null;
+  state.integrationPermissions = data.permissions || [];
   renderIntegrations();
 }
 
 function integrationDetailText(provider, result) {
   const details = result?.details || {};
+  if (provider === "google_drive" && state.googleDriveOAuth?.connected) {
+    return "Google OAuth connected · Read-only metadata scope · Token refresh is handled by JARVIS.";
+  }
   if (provider === "github") {
     return details.latestRepository
       ? "Repository metadata access verified · Latest: " + details.latestRepository
