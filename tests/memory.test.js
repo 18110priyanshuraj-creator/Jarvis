@@ -137,3 +137,13 @@ test("memory privacy filter blocks additional sensitive personal categories", ()
   assert.equal(isSafeMemoryContent("My sexual orientation is ..."), false);
   assert.equal(isSafeMemoryContent("My exact street address is ..."), false);
 });
+
+
+test("memory context preview mirrors the same 1,800-character prompt cap", () => {
+  const records = Array.from({ length: 5 }, (_, index) =>
+    normalizeMemory({ content: "JEE physics " + index + " " + "x".repeat(470), category: "goal" })
+  );
+  const preview = previewMemoryContext(records, "JEE physics", 5);
+  assert.equal(preview.items.length, 5);
+  assert.ok(preview.items.reduce((total, item) => total + item.content.length, 0) <= 1800);
+});
