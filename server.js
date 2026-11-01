@@ -106,6 +106,14 @@ const integrationTestLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Integration test limit reached. Please try again later." }
 });
+
+const diagnosticsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 12,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "System diagnostics are temporarily rate limited. Try again later." }
+});
 const actionPreviewLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 12,
@@ -617,7 +625,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     service: "jarvis",
-    version: "1.11.0-intelligent-memory-context",
+    version: "1.12.0-system-readiness",
     brain: conversationAIEnabled ? "online-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
@@ -674,6 +682,175 @@ app.get("/api/health", (_req, res) => {
       temporaryChatHistoryMessages: 10
     },
     runtimeStorage: runtimeStore.mode()
+  });
+});
+
+app.get("/api/diagnostics", requireAuth, diagnosticsLimiter, async (_req, res) => {
+  const checks = [];
+  const warnings = [];
+  const addCheck = (id, label, status, summary, details = {}) => {
+    checks.push({ id, label, status, summary, details });
+    if (status === "warning") warnings.push(summary);
+  };
+
+  let primaryStorage;
+  try {
+    if (process.env.DATABASE_URL) {
+      const sql = getNeonSql();
+      const rows = await sql`SELECT revision FROM jarvis_app_state WHERE id = 1 LIMIT 1`;
+      if (!rows.length) throw new Error("Persistent application state is missing.");
+      primaryStorage = {
+        mode: "neon-postgresql",
+        status: "ready",
+        summary: "Neon PostgreSQL is reachable and the JARVIS application-state record is available.",
+        revision: Number(rows[0].revision) || 1
+      };
+    } else {
+      await fs.access(STORE_FILE);
+      primaryStorage = {
+        mode: "local-json-file",
+        status: "warning",
+        summary: "JARVIS is using its local JSON state file. Confirm that the hosting platform provides persistent storage."
+      };
+    }
+  } catch {
+    primaryStorage = {
+      mode: process.env.DATABASE_URL ? "neon-postgresql" : "local-json-file",
+      status: "error",
+      summary: "The primary JARVIS state store could not be verified. Avoid relying on new writes until storage is checked."
+    };
+  }
+
+  const ai = getAIProviderStatus();
+  const search = getWebResearchStatus();
+  const pageReader = getWebPageReadStatus();
+  const googleConnection = store.oauthConnections.find((item) => item?.provider === "google_drive") || null;
+  const googleOAuth = getGoogleOAuthStatus(googleConnection, process.env);
+  const integrations = getIntegrationCatalog(process.env, store.disabledIntegrations, store.oauthConnections);
+
+  addCheck("service", "JARVIS service", "ready", "The authenticated diagnostics endpoint is responding.");
+  addCheck(
+    "primary-storage",
+    "Primary data storage",
+    primaryStorage.status,
+    primaryStorage.summary,
+    { mode: primaryStorage.mode }
+  );
+  addCheck(
+    "temporary-chat-storage",
+    "Temporary chat storage",
+    process.env.DATABASE_URL ? "ready" : "warning",
+    process.env.DATABASE_URL
+      ? "Temporary chat history uses the shared Neon runtime tables."
+      : "Temporary chat history uses process memory and is cleared when the server process restarts.",
+    { mode: runtimeStore.mode(), messageLimit: 32, inactivityTtlMinutes: 60 }
+  );
+  addCheck(
+    "ai-conversation",
+    "AI conversation provider",
+    ai.conversationEnabled ? "ready" : "warning",
+    ai.conversationEnabled
+      ? "The server AI provider is configured and enabled for conversation."
+      : ai.configured
+        ? "The AI provider is configured, but conversation is not enabled."
+        : "No server AI provider is configured. JARVIS will use its built-in offline brain where supported.",
+    { configured: ai.configured, enabled: ai.enabled, conversationEnabled: ai.conversationEnabled, provider: ai.provider, modelConfigured: ai.modelValid }
+  );
+  addCheck(
+    "ai-device-planner",
+    "AI device planner",
+    ai.plannerEnabled ? "ready" : "warning",
+    ai.plannerEnabled
+      ? "The optional server AI planner is enabled."
+      : "The remote AI planner is unavailable; supported built-in device commands remain available.",
+    { configured: ai.configured, plannerEnabled: ai.plannerEnabled }
+  );
+  addCheck(
+    "live-web-search",
+    "Live web search",
+    search.enabled ? "ready" : "warning",
+    search.enabled
+      ? "The configured SearXNG search provider is enabled."
+      : "Live web search is not enabled. Current information may not be verified against the internet.",
+    { configured: search.configured, enabled: search.enabled, provider: search.provider }
+  );
+  addCheck(
+    "full-page-reading",
+    "Full-page reading",
+    pageReader.enabled ? "ready" : "warning",
+    pageReader.enabled
+      ? "The secure HTTPS full-page reader is enabled."
+      : "Full-page reading is disabled in the server configuration.",
+    { enabled: pageReader.enabled }
+  );
+  addCheck(
+    "source-based-answers",
+    "Source-based answers",
+    pageReader.enabled && search.enabled ? "ready" : "warning",
+    pageReader.enabled && search.enabled
+      ? "Live search and secure page reading are both enabled."
+      : "Source-based answers need both live web search and full-page reading enabled.",
+    { enabled: pageReader.enabled && search.enabled, minimumSources: SOURCE_ANSWER_LIMITS.minimumSources, maximumSources: SOURCE_ANSWER_LIMITS.maximumSources }
+  );
+  addCheck(
+    "google-drive",
+    "Google Drive OAuth",
+    googleOAuth.connected ? "ready" : "warning",
+    googleOAuth.connected
+      ? "Google Drive has a valid encrypted refresh-token record."
+      : googleOAuth.canConnect
+        ? "Google OAuth and the encrypted token vault are configured; Drive is not connected yet."
+        : "Google Drive connection setup is incomplete. Review the server OAuth and encryption-key configuration.",
+    { canConnect: googleOAuth.canConnect, connected: googleOAuth.connected, canCreateDocs: googleOAuth.canCreateDocs, grantedScopes: googleOAuth.grantedScopes }
+  );
+
+  const configuredIntegrations = integrations.filter((item) => item.configured).length;
+  const enabledIntegrations = integrations.filter((item) => item.enabled).length;
+  addCheck(
+    "external-integrations",
+    "External integrations",
+    configuredIntegrations > 0 ? "ready" : "warning",
+    configuredIntegrations > 0
+      ? configuredIntegrations + " of " + integrations.length + " integration providers are configured; " + enabledIntegrations + " are enabled. Configuration does not mean a live connection test has passed."
+      : "No external integration credentials or OAuth connection are configured.",
+    { providers: integrations.map((item) => ({ id: item.id, name: item.name, configured: item.configured, enabled: item.enabled, disabled: item.disabled })) }
+  );
+
+  const activeDevices = store.devices.filter((item) => !item.revokedAt);
+  const accessibilityDevices = activeDevices.filter((item) => item.accessibilityEnabled);
+  addCheck(
+    "android-companion",
+    "Android Companion",
+    activeDevices.length > 0 ? "ready" : "warning",
+    activeDevices.length > 0
+      ? activeDevices.length + " active paired device(s); " + accessibilityDevices.length + " report Accessibility enabled."
+      : "No active Android Companion is paired with this JARVIS workspace.",
+    { pairedDevices: activeDevices.length, accessibilityEnabledDevices: accessibilityDevices.length, deviceLimit: 5 }
+  );
+
+  const criticalFailure = primaryStorage.status === "error";
+  const overallStatus = criticalFailure ? "degraded" : warnings.length ? "attention" : "ready";
+  res.json({
+    ok: !criticalFailure,
+    status: overallStatus,
+    generatedAt: new Date().toISOString(),
+    version: "1.12.0-system-readiness",
+    summary: criticalFailure
+      ? "JARVIS is responding, but primary data storage needs attention."
+      : warnings.length
+        ? "JARVIS core storage is available. Some optional services or connections are not enabled."
+        : "JARVIS core storage and configured capabilities are ready.",
+    warningCount: warnings.length,
+    errorCount: criticalFailure ? 1 : 0,
+    checks,
+    inventory: {
+      tasks: store.tasks.length,
+      memories: store.memories.length,
+      knowledgeItems: store.knowledge.length,
+      savedResearchItems: store.research.length,
+      workflows: store.workflows.length,
+      pairedDevices: activeDevices.length
+    }
   });
 });
 
