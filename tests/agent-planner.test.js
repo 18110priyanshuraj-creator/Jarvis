@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateAgentPlan } from "../services/agent-planner.js";
+import { createLocalAgentPlan, validateAgentPlan } from "../services/agent-planner.js";
 
 test("agent planner accepts only a short allow-listed action plan", () => {
   const plan = validateAgentPlan({
@@ -75,4 +75,41 @@ test("agent planner rejects arbitrary action names and oversized plans", () => {
       type: "scroll_down", value: "", purpose: "scroll"
     }))
   }), /one and six/i);
+});
+
+
+test("offline device planner builds a bounded English app-search workflow", () => {
+  const plan = createLocalAgentPlan("Open YouTube and search for JEE Physics");
+  assert.ok(plan);
+  assert.equal(plan.mode, "device_action");
+  assert.deepEqual(plan.actions.map((item) => item.type), [
+    "open_app", "tap_label", "type_text", "ask_user"
+  ]);
+  assert.equal(plan.actions[0].value, "YouTube");
+  assert.equal(plan.actions[1].value, "Search");
+  assert.equal(plan.actions[2].value, "JEE Physics");
+  assert.match(plan.actions[3].value, /choose the result/i);
+});
+
+test("offline device planner supports Hindi and Hinglish search phrasing", () => {
+  const hindi = createLocalAgentPlan("YouTube kholo aur JEE Physics search karo");
+  assert.ok(hindi);
+  assert.equal(hindi.actions[0].value, "YouTube");
+  assert.equal(hindi.actions[2].value, "JEE Physics");
+
+  const reversed = createLocalAgentPlan("Search for circular motion on YouTube");
+  assert.ok(reversed);
+  assert.equal(reversed.actions[0].value, "YouTube");
+  assert.equal(reversed.actions[2].value, "circular motion");
+
+  const hinglish = createLocalAgentPlan("YouTube par mole concept search karo");
+  assert.ok(hinglish);
+  assert.equal(hinglish.actions[2].value, "mole concept");
+});
+
+test("offline planner declines ambiguous, secret-like, and restricted searches", () => {
+  assert.equal(createLocalAgentPlan("Open YouTube and do something"), null);
+  assert.equal(createLocalAgentPlan("Open YouTube and search for 123456"), null);
+  assert.equal(createLocalAgentPlan("Open YouTube and search for how to make a bomb"), null);
+  assert.equal(createLocalAgentPlan("Open YouTube and search for adult content"), null);
 });
