@@ -91,6 +91,20 @@ const integrationTestLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Integration test limit reached. Please try again later." }
 });
+const actionPreviewLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 12,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Action preview limit reached. Try again later." }
+});
+const actionConfirmLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 6,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Action confirmation limit reached. Try again later." }
+});
 const oauthStartLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 5,
