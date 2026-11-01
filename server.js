@@ -14,7 +14,6 @@ import { createAgentPlan } from "./services/agent-planner.js";
 import { createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
 import { createGroundedResearch, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
 import { getGeminiRuntimeStatus } from "./services/gemini-client.js";
-import { createLiveVoiceToken, getLiveVoiceConfiguration } from "./services/live-voice.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, searchMemories } from "./services/memory.js";
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeSkill, pauseSkill, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
@@ -55,7 +54,6 @@ app.use(helmet({
       scriptSrc: ["'self'"],
       styleSrc: ["'self'"],
       imgSrc: ["'self'", "data:"],
-      connectSrc: ["'self'", "wss://generativelanguage.googleapis.com"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       frameAncestors: ["'none'"]
@@ -119,13 +117,7 @@ const oauthCallbackLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false
 });
-const liveVoiceLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 5,
-  standardHeaders: "draft-7",
-  legacyHeaders: false,
-  message: { error: "Live voice start limit reached. Please wait before starting another session." }
-});
+
 
 app.use("/api", apiLimiter);
 
@@ -527,7 +519,7 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
     if (isWebResearchEnabled()) {
       try {
         const research = await createGroundedResearch(message);
-        return { ...research, engine: "gemini-google-search", externalAI: true };
+        return { ...research, engine: "online-web-research", externalAI: true };
       } catch (error) {
         if (error?.code === "RESTRICTED_RESEARCH_QUERY") {
           return { answer: error.message, engine: "safety-filter", externalAI: false };
@@ -550,12 +542,12 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
       const answer = await createConversationReply(message, history, approvedMemoryContext, knowledgeContext, activeSkillContext, approvedExperienceContext);
       return {
         answer: webNotice ? webNotice + "\n\n" + answer : answer,
-        engine: "gemini-conversation",
+        engine: "online-conversation",
         externalAI: true,
         liveWebChecked: false
       };
     } catch (error) {
-      console.error("Gemini conversation failed; using the offline brain:", safeErrorMetadata(error));
+      console.error("Online AI request failed; using the offline brain:", safeErrorMetadata(error));
     }
   }
 
@@ -576,28 +568,26 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
 }
 
 app.get("/api/health", (_req, res) => {
-  const gemini = getGeminiRuntimeStatus();
-  const conversationAIEnabled = gemini.conversationEnabled;
-  const plannerAIEnabled = gemini.plannerEnabled;
-  const webResearchEnabled = gemini.webResearchEnabled;
-  const liveVoiceEnabled = getLiveVoiceConfiguration().enabled;
+  const modelRuntime = getGeminiRuntimeStatus();
+  const conversationAIEnabled = modelRuntime.conversationEnabled;
+  const plannerAIEnabled = modelRuntime.plannerEnabled;
+  const webResearchEnabled = modelRuntime.webResearchEnabled;
   res.json({
     ok: true,
     service: "jarvis",
     version: "1.6.0-controlled-actions",
-    brain: conversationAIEnabled ? "gemini-conversation-with-offline-fallback" : "built-in-offline-rules",
+    brain: conversationAIEnabled ? "online-conversation-with-offline-fallback" : "built-in-offline-rules",
     plannerAIEnabled,
     conversationAIEnabled,
     webResearchEnabled,
-    liveVoiceEnabled,
-    externalAI: plannerAIEnabled || conversationAIEnabled || webResearchEnabled || liveVoiceEnabled,
+    externalAI: plannerAIEnabled || conversationAIEnabled || webResearchEnabled,
     aiProvider: {
-      provider: gemini.provider,
-      configured: gemini.configured,
-      model: gemini.model,
-      modelValid: gemini.modelValid,
-      requestTimeoutMs: gemini.requestTimeoutMs,
-      retryAttempts: gemini.retryAttempts
+      provider: "external-llm",
+      configured: modelRuntime.configured,
+      model: modelRuntime.configured ? "configured-model" : "not-configured",
+      modelValid: modelRuntime.modelValid,
+      requestTimeoutMs: modelRuntime.requestTimeoutMs,
+      retryAttempts: modelRuntime.retryAttempts
     },
     runtimeStorage: runtimeStore.mode()
   });
@@ -632,30 +622,6 @@ app.post("/api/logout", requireAuth, async (req, res) => {
 
 app.get("/api/session", requireAuth, (_req, res) => {
   res.json({ authenticated: true });
-});
-
-app.post("/api/live-voice/token", requireAuth, liveVoiceLimiter, async (_req, res) => {
-  const configuration = getLiveVoiceConfiguration();
-  if (!configuration.enabled) {
-    res.setHeader("Cache-Control", "no-store");
-    return res.status(503).json({ error: "Live voice is disabled or not configured on the server." });
-  }
-
-  try {
-    const result = await createLiveVoiceToken({
-      apiKey: process.env.GEMINI_API_KEY,
-      model: configuration.model
-    });
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Pragma", "no-cache");
-    return res.json(result);
-  } catch (error) {
-    console.error("Live voice token provisioning failed:", safeErrorMetadata(error));
-    res.setHeader("Cache-Control", "no-store");
-    return res.status(503).json({
-      error: "Live voice could not be started. Check the server Live API configuration."
-    });
-  }
 });
 
 app.get("/api/state", requireAuth, async (req, res, next) => {

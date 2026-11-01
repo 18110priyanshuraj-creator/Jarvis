@@ -2,11 +2,11 @@
   "name": "jarvis-personal-assistant",
   "version": "0.1.0",
   "private": true,
-  "description": "Private JARVIS assistant with offline core, optional Gemini planning, and Android Companion.",
+  "description": "Private JARVIS assistant with an orbital voice interface, offline core, and Android Companion.",
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check brain.js && node --check public/app.js && node --test"
+    "check": "node --check server.js && node --check brain.js && node --check public/app.js && node --check public/orbital-visual.js && node --test"
   },
   "engines": {
     "node": ">=22"

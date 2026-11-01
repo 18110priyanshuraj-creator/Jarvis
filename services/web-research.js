@@ -108,7 +108,7 @@ export async function createGroundedResearch(query) {
     throw error;
   }
   if (!isWebResearchEnabled()) {
-    const error = new Error("Live web research is disabled. Configure GEMINI_API_KEY and set GEMINI_WEB_RESEARCH_ENABLED=true on the server.");
+    const error = new Error("Live web research is unavailable because an online AI/search provider is not configured on the server.");
     error.code = "WEB_RESEARCH_NOT_CONFIGURED";
     throw error;
   }
@@ -135,7 +135,7 @@ export async function createGroundedResearch(query) {
   return {
     query: cleanQuery,
     ...normalizeGroundedResearchResponse(response),
-    engine: "gemini-google-search",
+    engine: "online-web-research",
     externalSearch: true,
     searchedAt: new Date().toISOString(),
     model
