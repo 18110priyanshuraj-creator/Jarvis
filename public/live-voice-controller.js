@@ -382,6 +382,8 @@ export function createLiveVoiceController(options = {}) {
 
       const url = LIVE_ENDPOINT + "?access_token=" + encodeURIComponent(credentials.token);
       socket = new WebSocketCtor(url);
+      // Cover both the WebSocket handshake and the initial setup acknowledgement.
+      setupTimer = setTimer(() => fail(token, "setup-timeout"), 15000);
 
       workletNode.port.onmessage = (event) => {
         if (token !== generation || !ready || !socket || socket.readyState !== 1) return;
@@ -401,7 +403,6 @@ export function createLiveVoiceController(options = {}) {
         if (token !== generation || !socket || socket.readyState !== 1) return;
         try {
           socket.send(JSON.stringify({ setup: buildLiveVoiceSetup(credentials.model) }));
-          setupTimer = setTimer(() => fail(token, "setup-timeout"), 15000);
         } catch {
           fail(token, "connection-failed");
         }
