@@ -76,6 +76,14 @@
             <button class="prompt-card" data-prompt="Help me research this topic. Tell me what evidence and sources I should verify."><span>⌕</span><strong>Explore a topic</strong><small>Research with caution</small></button>
           </div>
         </div>
+        <div class="live-voice-panel" aria-label="Real-time voice conversation">
+          <div class="live-voice-controls">
+            <button type="button" id="live-voice-button" class="tool-button" aria-pressed="false">Start live voice</button>
+            <span id="live-voice-status" class="live-voice-status" role="status" aria-live="polite">Live voice off</span>
+          </div>
+          <p class="small muted">Live voice streams microphone audio to Google Gemini during this call. JARVIS does not save these transcripts in your chat history. Use Stop live voice to end microphone access.</p>
+          <div id="live-voice-transcript" class="live-voice-transcript" role="log" aria-live="polite" aria-relevant="additions text"></div>
+        </div>
         <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
         <form id="chat-form" class="composer">
           <textarea id="chat-input" rows="1" maxlength="4000" placeholder="Message JARVIS…" aria-label="Message JARVIS"></textarea>
