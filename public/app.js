@@ -338,7 +338,7 @@ function renderMemories() {
     const updated = item.updatedAt && item.updatedAt !== item.createdAt
       ? " · Updated " + new Date(item.updatedAt).toLocaleDateString()
       : "";
-    meta.textContent = (item.category || "fact") + " · Saved " + created + updated;
+    meta.textContent = (item.category || "fact") + " · Saved " + created + updated + (item.enabled === false ? " · Paused in chat" : "");
     main.append(title, meta);
 
     const actions = document.createElement("div");
@@ -404,6 +404,26 @@ function renderMemories() {
       });
     });
 
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "item-action";
+    toggle.textContent = item.enabled === false ? "Resume in chat" : "Pause in chat";
+    toggle.setAttribute("aria-pressed", item.enabled === false ? "true" : "false");
+    toggle.addEventListener("click", async () => {
+      toggle.disabled = true;
+      try {
+        await api("/api/memories/" + encodeURIComponent(item.id), {
+          method: "PATCH",
+          body: JSON.stringify({ enabled: item.enabled === false })
+        });
+        await refreshMemories(state.memoryQuery, state.memoryCategory);
+        toast(item.enabled === false ? "Memory resumed in chat context." : "Memory paused; it remains saved.");
+      } catch (error) {
+        toast(error.message, true);
+        toggle.disabled = false;
+      }
+    });
+
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "item-action";
@@ -423,11 +443,43 @@ function renderMemories() {
       }
     });
 
-    actions.append(edit, remove);
+    actions.append(edit, toggle, remove);
     row.append(main, actions);
     target.append(row);
   }
   renderStorageOverview();
+}
+
+function renderMemoryContextPreview(preview) {
+  const target = $("#memory-preview-results");
+  const status = $("#memory-preview-status");
+  if (!target || !status) return;
+  target.replaceChildren();
+  const items = Array.isArray(preview?.items) ? preview.items : [];
+  const pausedCount = Number(preview?.pausedCount) || 0;
+  if (items.length) {
+    status.textContent = items.length + " enabled note" + (items.length === 1 ? "" : "s") + " would be included, ranked by relevance.";
+  } else {
+    status.textContent = "No enabled memory matched this prompt.";
+  }
+  if (pausedCount > 0) {
+    status.textContent += " " + pausedCount + " matching paused note" + (pausedCount === 1 ? " was" : "s were") + " excluded.";
+  }
+  for (const item of items) {
+    const row = document.createElement("article");
+    row.className = "list-item";
+    const main = document.createElement("div");
+    main.className = "list-item-main";
+    const title = document.createElement("strong");
+    title.textContent = item.content || "";
+    const meta = document.createElement("div");
+    meta.className = "list-item-meta";
+    const matched = Array.isArray(item.matchedTerms) ? item.matchedTerms.join(", ") : "";
+    meta.textContent = (item.category || "fact") + (matched ? " · Matched: " + matched : "");
+    main.append(title, meta);
+    row.append(main);
+    target.append(row);
+  }
 }
 
 async function refreshMemories(query = state.memoryQuery, category = state.memoryCategory) {
@@ -2006,6 +2058,26 @@ $("#memory-form").addEventListener("submit", async (event) => {
     toast(data.duplicate ? "That memory is already saved." : "Memory saved.");
   } catch (error) { toast(error.message, true); }
   finally { button.disabled = false; }
+});
+
+$("#memory-preview-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = event.submitter;
+  button.disabled = true;
+  $("#memory-preview-status").textContent = "Checking saved memory relevance…";
+  try {
+    const preview = await api("/api/memories/preview", {
+      method: "POST",
+      body: JSON.stringify({ query: $("#memory-preview-query").value })
+    });
+    renderMemoryContextPreview(preview);
+  } catch (error) {
+    $("#memory-preview-status").textContent = error.message;
+    $("#memory-preview-results").replaceChildren();
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
 });
 
 $("#memory-search-form").addEventListener("submit", async (event) => {

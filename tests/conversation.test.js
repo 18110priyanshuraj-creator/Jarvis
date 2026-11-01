@@ -5,16 +5,16 @@ import { buildConversationContents, buildConversationSystemInstruction, isConver
 test("conversation context is bounded and only includes user and assistant text", () => {
   const history = [
     { role: "system", content: "must not be forwarded" },
-    ...Array.from({ length: 12 }, (_, index) => ({
+    ...Array.from({ length: 14 }, (_, index) => ({
       role: index % 2 === 0 ? "user" : "assistant",
-      content: "turn-" + index + "-".repeat(1400)
+      content: "turn-" + index + "-".repeat(1800)
     }))
   ];
   const contents = buildConversationContents("Follow-up question", history);
-  assert.equal(contents.length, 9);
+  assert.equal(contents.length, 11);
   assert.equal(contents[0].role, "user");
   assert.equal(contents[0].content.startsWith("turn-4"), true);
-  assert.equal(contents[0].content.length, 1200);
+  assert.equal(contents[0].content.length, 1400);
   assert.equal(contents.at(-1).content, "Follow-up question");
   assert.equal(contents.some((item) => item.content.includes("must not be forwarded")), false);
 });
@@ -81,14 +81,24 @@ test("approved response preferences are optional guidance and cannot override sy
   assert.match(instruction, /one small worked example/);
 });
 
-test("only supplied, user-approved memories are included as bounded context", () => {
+test("only enabled, user-approved memories are included as bounded context", () => {
   const instruction = buildConversationSystemInstruction([
     { category: "preference", content: "Prefer simple Hinglish explanations." },
     { category: "task", content: "This category must be ignored." },
-    { category: "goal", content: "Learn algebra step by step." }
+    { category: "goal", content: "Learn algebra step by step." },
+    { category: "fact", enabled: false, content: "This paused note must be excluded." }
   ]);
   assert.match(instruction, /Prefer simple Hinglish explanations/);
   assert.match(instruction, /Learn algebra step by step/);
   assert.doesNotMatch(instruction, /This category must be ignored/);
+  assert.doesNotMatch(instruction, /This paused note must be excluded/);
   assert.match(instruction, /Do not automatically save questions/);
+  assert.match(instruction, /may be outdated/i);
+});
+
+
+test("conversation instructions require server confirmation before claiming memory deletion", () => {
+  const instruction = buildConversationSystemInstruction([]);
+  assert.match(instruction, /exact match to the saved note/i);
+  assert.match(instruction, /Never claim a memory was deleted unless JARVIS has confirmed/i);
 });

@@ -140,7 +140,16 @@
           <label for="memory-content">What should JARVIS remember?</label>
           <textarea id="memory-content" rows="3" maxlength="500" required placeholder="Example: I prefer explanations in simple Hinglish, with examples."></textarea>
           <div class="form-row"><label class="field-label" for="memory-category">Category<select id="memory-category"><option value="preference">Preference</option><option value="goal">Goal</option><option value="fact">Fact</option></select></label><button class="primary" type="submit">Save memory</button></div>
-          <p class="small muted">Saving is explicit. Passwords, API keys, OTPs and sensitive personal details are rejected. Normal chats are never saved as memories automatically.</p>
+          <p class="small muted">Saving is explicit. Secrets and sensitive personal details are rejected. Normal chats are never saved automatically. When Online AI is active, up to 5 relevant, enabled notes (1,800 characters total) may be included. To forget one from chat, send <code>Forget: [paste the exact saved note]</code>; vague requests never delete anything.</p>
+        </form>
+        <form id="memory-preview-form" class="form-card">
+          <h2>Preview memory context</h2>
+          <p class="small muted">Preview the enabled notes that match a prompt, ranked by relevance. Paused notes stay saved but are excluded. The preview is temporary and is not saved.</p>
+          <label for="memory-preview-query">Prompt to preview</label>
+          <textarea id="memory-preview-query" rows="2" maxlength="4000" required placeholder="Example: Explain a JEE physics question in Hinglish."></textarea>
+          <div class="form-row"><span class="small muted">Maximum 5 relevant notes</span><button class="primary" type="submit">Preview context</button></div>
+          <p id="memory-preview-status" class="small muted" aria-live="polite">No prompt previewed yet.</p>
+          <div id="memory-preview-results" class="item-list"></div>
         </form>
         <form id="memory-search-form" class="search-form">
           <span aria-hidden="true">⌕</span>
