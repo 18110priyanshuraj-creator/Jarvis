@@ -27,9 +27,12 @@ function getEncryptionKey(env = process.env) {
   const raw = cleanString(env.JARVIS_TOKEN_ENCRYPTION_KEY, 256);
   if (!raw) throw new Error("Encrypted token storage is not configured. Set JARVIS_TOKEN_ENCRYPTION_KEY on the server.");
   let key;
-  if (/^[a-f0-9]{64}$/i.test(raw)) key = Buffer.from(raw, "hex");
-  else {
-    try { key = Buffer.from(raw, "base64"); } catch { key = Buffer.alloc(0); }
+  if (/^[a-f0-9]{64}$/i.test(raw)) {
+    key = Buffer.from(raw, "hex");
+  } else if (/^[A-Za-z0-9+/]{43}=$/.test(raw)) {
+    key = Buffer.from(raw, "base64");
+  } else {
+    key = Buffer.alloc(0);
   }
   if (key.length !== 32) {
     throw new Error("JARVIS_TOKEN_ENCRYPTION_KEY must decode to exactly 32 bytes.");
