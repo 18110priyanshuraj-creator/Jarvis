@@ -106,7 +106,7 @@ const oauthCallbackLimiter = rateLimit({
 });
 app.use("/api", apiLimiter);
 
-let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], disabledIntegrations: [], oauthConnections: [], devices: [], research: [], knowledge: [] };
+let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [] };
 const sessionChats = new Map();
 const MAX_EPHEMERAL_CHAT_MESSAGES = 32;
 const EPHEMERAL_CHAT_TTL_MS = 60 * 60 * 1000;
