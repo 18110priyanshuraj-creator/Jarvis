@@ -206,6 +206,17 @@ function clearSessionCookie(res) {
   res.setHeader("Set-Cookie", "jarvis_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0" + secure);
 }
 
+function setGoogleOAuthCookie(res, value) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  res.append("Set-Cookie", "jarvis_google_oauth=" + encodeURIComponent(value) +
+    "; HttpOnly; SameSite=Lax; Path=/api/integrations/google_drive/oauth/callback; Max-Age=600" + secure);
+}
+
+function clearGoogleOAuthCookie(res) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  res.append("Set-Cookie", "jarvis_google_oauth=; HttpOnly; SameSite=Lax; Path=/api/integrations/google_drive/oauth/callback; Max-Age=0" + secure);
+}
+
 function requireAuth(req, res, next) {
   const token = parseCookies(req.headers.cookie).jarvis_session;
   const session = token ? sessions.get(token) : null;
