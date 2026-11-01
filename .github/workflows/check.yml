@@ -19,46 +19,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  npm-lockfile-bootstrap:
-    name: Commit npm lockfile on Phase 11 branch
-    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/phase11-release-gates' && github.actor == '18110priyanshuraj-creator'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - name: Check out Phase 11 branch
-        uses: actions/checkout@v4
-        with:
-          ref: feat/phase11-release-gates
-
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Generate npm lockfile without running package scripts
-        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-
-      - name: Commit lockfile if missing or changed
-        shell: bash
-        run: |
-          set -euo pipefail
-          # A newly generated lockfile is untracked, so git diff alone will miss it.
-          if git ls-files --error-unmatch package-lock.json >/dev/null 2>&1 && git diff --quiet -- package-lock.json; then
-            echo "The npm lockfile is already tracked and current."
-            exit 0
-          fi
-          git add package-lock.json
-          if git diff --cached --quiet -- package-lock.json; then
-            echo "No lockfile change to commit."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: commit npm dependency lockfile"
-          git push origin HEAD:feat/phase11-release-gates
-
   node-quality:
     name: Node.js tests and dependency audit
     runs-on: ubuntu-latest
@@ -72,27 +32,16 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: package.json
+          cache-dependency-path: package-lock.json
 
-      - name: Generate temporary dependency lock
-        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-
-      - name: Install from generated lock
-        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
 
       - name: Run syntax checks and test suite
         run: npm run check
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
-
-      - name: Upload dependency lock bootstrap
-        uses: actions/upload-artifact@v4
-        with:
-          name: jarvis-npm-lock-bootstrap
-          path: package-lock.json
-          if-no-files-found: error
-          retention-days: 3
 
   android-build:
     name: Android Companion build and APK verification
