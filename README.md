@@ -382,6 +382,17 @@ The read controls appear only on live search source cards after page reading is 
 - The Android CI now runs JVM unit tests for sequential completion, queued-step cancellation, cancellation before first dispatch, user checkpoints and failed-step stopping before building the APK.
 - Full behavior and limitations: `docs/PHASE21_INTERRUPTIBLE_ANDROID_TASKS.md`.
 
+## System Readiness & Final Integration (Phase 22)
+
+- The authenticated **System Status** dashboard calls `GET /api/diagnostics` to inspect the primary data store, temporary chat storage mode, AI conversation and planner capabilities, live search, full-page reading, source-based answers, Google Drive OAuth readiness, external integration configuration and Android Companion pairing.
+- The diagnostics report distinguishes a ready, warning or error state. A configured provider is not described as connected unless a stored connection is actually present; integration configuration is not treated as a successful live provider test.
+- When Neon is configured, the endpoint performs a small read-only check of the JARVIS application-state record. Without Neon, it checks that the local JSON state file is accessible and warns that persistence depends on the host filesystem.
+- Temporary chat history is reported separately because the no-Neon fallback uses process memory and is cleared when the server restarts.
+- Diagnostics never performs live web searches, sends Telegram messages, reads Google Drive files, generates ElevenLabs audio, creates external documents or changes Android settings. Use the existing Connections test buttons when you explicitly want to contact a provider.
+- The response contains capability flags and aggregate counts only. It does not reveal credentials, tokens, encryption keys, database URLs, raw server paths or environment-variable values.
+- The endpoint requires an authenticated JARVIS session and is rate limited. The public `/api/health` endpoint remains separate and does not expose the detailed private workspace inventory.
+- Full behavior and limitations: `docs/PHASE22_SYSTEM_READINESS.md`.
+
 ## Built-in offline mode
 
 The offline brain is not a general-purpose language model. It contains a safe arithmetic parser, deterministic rules and a curated knowledge pack for selected topics such as Newton's laws, units and dimensions, mole concept, sets, circular motion and Ohm's law. It cannot answer arbitrary questions. Live web retrieval requires a trusted SearXNG endpoint configured on the server.
