@@ -133,16 +133,23 @@ export function getGoogleOAuthStatus(connection, env = process.env) {
   try { getGoogleConfig(env); oauthClientConfigured = true; } catch { /* report status only */ }
   const vaultConfigured = isTokenVaultConfigured(env);
   let normalized = null;
-  try { normalized = connection ? normalizeGoogleOAuthConnection(connection) : null; } catch { /* invalid stored record */ }
+  let credentialHealthy = false;
+  try {
+    normalized = connection ? normalizeGoogleOAuthConnection(connection) : null;
+    if (normalized && vaultConfigured) {
+      decryptSecret(normalized.encryptedRefreshToken, { env, purpose: "google-drive-refresh-token" });
+      credentialHealthy = true;
+    }
+  } catch { /* invalid record or the configured key does not match */ }
   return {
     provider: "google_drive",
-    connected: Boolean(normalized && vaultConfigured),
+    connected: credentialHealthy,
     oauthClientConfigured,
     vaultConfigured,
     canConnect: oauthClientConfigured && vaultConfigured,
     requiredScopes: [GOOGLE_DRIVE_METADATA_SCOPE],
     grantedScopes: normalized && vaultConfigured ? normalized.grantedScopes : [],
-    connectedAt: normalized && vaultConfigured ? normalized.connectedAt : null,
+    connectedAt: credentialHealthy ? normalized.connectedAt : null,
     redirectPath: GOOGLE_CALLBACK_PATH,
     tokenStorage: "AES-256-GCM encrypted refresh token; access tokens held in process memory"
   };
@@ -333,7 +340,6 @@ export async function getGoogleDriveAccessToken(connectionInput, options = {}) {
 export async function revokeGoogleOAuthConnection(connectionInput, options = {}) {
   const env = options.env || process.env;
   const connection = normalizeGoogleOAuthConnection(connectionInput);
-  const config = getGoogleConfig(env);
   const refreshToken = decryptSecret(connection.encryptedRefreshToken, {
     env,
     purpose: "google-drive-refresh-token"
@@ -343,7 +349,7 @@ export async function revokeGoogleOAuthConnection(connectionInput, options = {})
     response = await (options.fetchImpl || fetch)("https://oauth2.googleapis.com/revoke", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ token: refreshToken, client_id: config.clientId, client_secret: config.clientSecret }),
+      body: new URLSearchParams({ token: refreshToken }),
       redirect: "error",
       signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS)
     });
@@ -353,8 +359,12 @@ export async function revokeGoogleOAuthConnection(connectionInput, options = {})
     }
     throw new Error("Could not contact Google to revoke access. The JARVIS connection was kept.");
   }
-  if (!response.ok && response.status !== 400) {
-    throw new Error("Google did not confirm permission revocation. The JARVIS connection was kept.");
+  if (!response.ok) {
+    let payload = {};
+    try { payload = await response.json(); } catch { /* safe generic fallback */ }
+    if (payload.error !== "invalid_token") {
+      throw new Error("Google did not confirm permission revocation. The JARVIS connection was kept.");
+    }
   }
   clearGoogleDriveTokenCache();
   return { revoked: true };
