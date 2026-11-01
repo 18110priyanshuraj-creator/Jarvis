@@ -911,6 +911,29 @@ function renderIntegrations() {
       window.location.href = data.authorizationUrl;
     });
     if (provider.id === "google_drive" && state.googleDriveOAuth?.canConnect) actions.append(connect);
+    if (provider.id === "google_drive" && state.googleDriveOAuth?.connected) {
+      const revoke = document.createElement("button");
+      revoke.type = "button";
+      revoke.className = "item-action";
+      revoke.textContent = "Revoke Google access";
+      revoke.addEventListener("click", async () => {
+        if (!confirm("Revoke Google Drive permission and remove the stored JARVIS credential?")) return;
+        revoke.disabled = true;
+        try {
+          const data = await api("/api/integrations/google_drive/oauth/revoke", { method: "POST", body: JSON.stringify({}) });
+          state.integrations = data.providers || [];
+          state.googleDriveOAuth = data.googleDriveOAuth || null;
+          state.integrationPermissions = data.permissions || [];
+          delete state.integrationResults.google_drive;
+          renderIntegrations();
+          toast("Google Drive access revoked.");
+        } catch (error) {
+          toast(error.message, true);
+          revoke.disabled = false;
+        }
+      });
+      actions.append(revoke);
+    }
     row.append(main, actions);
     target.append(row);
 
