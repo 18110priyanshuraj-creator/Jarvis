@@ -17,7 +17,7 @@ import { createPageReadToken, createWebPageRead, getWebPageReadStatus, verifyPag
 import { createSourceBasedAnswer, SOURCE_ANSWER_LIMITS } from "./services/source-answer.js";
 import { getAIProviderStatus } from "./services/ai-provider.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, mergeDuplicateKnowledge, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
-import { buildMemoryContext, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, previewMemoryContext, searchMemories } from "./services/memory.js";
+import { buildMemoryContext, findExactMemory, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, parseExplicitForgetIntent, previewMemoryContext, searchMemories } from "./services/memory.js";
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeSkill, pauseSkill, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
 import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, createWorkflowDraft, createWorkflowRun, normalizeWorkflow, pauseWorkflow, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
@@ -494,8 +494,32 @@ async function processAssistantTurn(message, conversationKey) {
     .map(({ role, content }) => ({ role, content }));
 
   const memoryIntent = parseExplicitMemoryIntent(message);
+  const forgetIntent = parseExplicitForgetIntent(message);
   let result;
-  if (memoryIntent?.blocked) {
+  if (forgetIntent?.ambiguous) {
+    result = {
+      answer: "I haven't deleted anything. Send the exact saved note after “Forget:” or “Bhool jao:” so I can identify only that one memory.",
+      engine: "memory",
+      externalAI: false
+    };
+  } else if (forgetIntent) {
+    const matchedMemory = findExactMemory(store.memories, forgetIntent.content);
+    if (!matchedMemory) {
+      result = {
+        answer: "I couldn't find an exact match, so nothing was deleted. Open Memory to review your saved notes, then copy the exact note after “Forget:”.",
+        engine: "memory",
+        externalAI: false
+      };
+    } else {
+      store.memories = store.memories.filter((item) => item.id !== matchedMemory.id);
+      await saveStore();
+      result = {
+        answer: "Deleted that exact saved memory. Other memories and your temporary chat history were left unchanged.",
+        engine: "memory",
+        externalAI: false
+      };
+    }
+  } else if (memoryIntent?.blocked) {
     result = {
       answer: "I won't save that because it may contain a secret or sensitive personal information. Use the secure service directly instead.",
       engine: "privacy-guard",
