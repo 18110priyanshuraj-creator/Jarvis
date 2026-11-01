@@ -302,7 +302,7 @@ test("Google refresh failures do not return provider response bodies", async () 
     env,
     fetchImpl: async () => response({ error: "invalid_grant", error_description: "private detail must not surface" }, 400)
   }), (error) => {
-    assert.match(error.message, /rejected the configured credential/i);
+    assert.match(error.message, /rejected the OAuth exchange/i);
     assert.equal(error.message.includes("private detail"), false);
     return true;
   });
