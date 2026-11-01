@@ -2223,6 +2223,89 @@ function renderGroundedResearch(item, canSave = true) {
       const domain = document.createElement("span");
       domain.textContent = source.domain || new URL(url).hostname;
       row.append(anchor, domain);
+      if (source.readToken) {
+        const readButton = document.createElement("button");
+        readButton.type = "button";
+        readButton.className = "item-action";
+        readButton.textContent = "Read full page";
+        const pagePanel = document.createElement("section");
+        pagePanel.className = "research-page-panel";
+        pagePanel.hidden = true;
+        readButton.addEventListener("click", async () => {
+          if (!pagePanel.hidden) {
+            pagePanel.hidden = true;
+            readButton.textContent = "Read full page";
+            return;
+          }
+          readButton.disabled = true;
+          readButton.textContent = "Reading…";
+          pagePanel.hidden = false;
+          pagePanel.replaceChildren(makeEmpty("Fetching and safely extracting this source webpage…"));
+          try {
+            const pageData = await api("/api/research/read", {
+              method: "POST",
+              body: JSON.stringify({ readToken: source.readToken, question: item.query || "" })
+            });
+            pagePanel.replaceChildren();
+            const pageTitle = document.createElement("strong");
+            pageTitle.textContent = pageData.page.title || source.title || "Source webpage";
+            const pageMeta = document.createElement("div");
+            pageMeta.className = "research-meta";
+            pageMeta.textContent = "Retrieved " + new Date(pageData.page.retrievedAt).toLocaleString() +
+              " · " + (pageData.aiSynthesized ? "AI summary from full page" : "full-page text extraction") +
+              (pageData.page.truncated ? " · text shortened to fit the safe limit" : "");
+            const pageAnswer = document.createElement("p");
+            pageAnswer.className = "research-answer";
+            pageAnswer.textContent = pageData.answer || "No summary was returned.";
+            const textHeading = document.createElement("div");
+            textHeading.className = "research-citations";
+            textHeading.textContent = "Extracted source text";
+            const extracted = document.createElement("div");
+            extracted.className = "research-page-text";
+            extracted.textContent = pageData.page.text || "";
+            const savePage = document.createElement("button");
+            savePage.type = "button";
+            savePage.className = "item-action";
+            savePage.textContent = "Save page to Knowledge";
+            savePage.addEventListener("click", async () => {
+              savePage.disabled = true;
+              try {
+                const content = (pageData.aiSynthesized ? pageData.answer : pageData.page.text).slice(0, 8000);
+                await api("/api/knowledge", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    title: pageData.page.title || source.title || "Saved webpage",
+                    content,
+                    category: "general",
+                    sourceKind: "web-research",
+                    sourceQuery: item.query || "",
+                    sources: [{
+                      title: pageData.page.title || source.title || "Source webpage",
+                      url: pageData.page.url,
+                      snippet: pageData.page.description || pageData.page.text.slice(0, 500)
+                    }],
+                    citations: pageData.citations || []
+                  })
+                });
+                await refreshKnowledge(state.knowledgeQuery);
+                savePage.textContent = "Saved to Knowledge";
+                toast("The page summary was saved to your Knowledge Library.");
+              } catch (error) {
+                savePage.disabled = false;
+                toast(error.message, true);
+              }
+            });
+            pagePanel.append(pageTitle, pageMeta, pageAnswer, textHeading, extracted, savePage);
+            readButton.textContent = "Hide page";
+          } catch (error) {
+            pagePanel.replaceChildren(makeEmpty(error.message));
+            readButton.textContent = "Retry page read";
+          } finally {
+            readButton.disabled = false;
+          }
+        });
+        row.append(readButton, pagePanel);
+      }
       sourceList.append(row);
     }
     card.append(sourceHeading, sourceList);
