@@ -336,9 +336,11 @@ export async function getGoogleDriveAccessToken(connectionInput, options = {}) {
       grant_type: "refresh_token"
     }, options.fetchImpl || fetch);
 
-    if (typeof tokens.scope === "string" &&
-        !tokens.scope.split(/\s+/).includes(GOOGLE_DRIVE_METADATA_SCOPE)) {
-      throw new Error("Google Drive metadata permission is no longer granted. Reconnect the service.");
+    if (typeof tokens.scope === "string") {
+      const refreshedScopes = new Set(tokens.scope.split(/\s+/).filter(Boolean));
+      if (!connection.grantedScopes.every((scope) => refreshedScopes.has(scope))) {
+        throw new Error("A Google Drive permission is no longer granted. Reconnect and review the requested access.");
+      }
     }
     if (typeof tokens.refresh_token === "string" && tokens.refresh_token) {
       const updated = normalizeGoogleOAuthConnection({
