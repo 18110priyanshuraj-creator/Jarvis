@@ -819,13 +819,41 @@ function getGoogleDriveOAuthConnection() {
 
 function integrationCatalogResponse() {
   const googleConnection = getGoogleDriveOAuthConnection();
+  const googleDriveOAuth = getGoogleOAuthStatus(googleConnection, process.env);
+  const providers = getIntegrationCatalog(process.env, store.disabledIntegrations, store.oauthConnections);
+  const googleProvider = providers.find((item) => item.id === "google_drive");
+  if (googleProvider) {
+    googleProvider.configured = googleProvider.configured || googleDriveOAuth.canConnect;
+    googleProvider.enabled = googleProvider.configured && !googleProvider.disabled;
+    googleProvider.oauthConnected = googleDriveOAuth.connected;
+    googleProvider.oauthReady = googleDriveOAuth.canConnect;
+  }
   return {
-    providers: getIntegrationCatalog(process.env, store.disabledIntegrations, store.oauthConnections),
-    googleDriveOAuth: getGoogleOAuthStatus(googleConnection, process.env),
+    providers,
+    googleDriveOAuth,
     permissions: getIntegrationPermissionCatalog(googleConnection, process.env),
     credentialStorage: "server-environment-or-encrypted-vault",
     supportedOperations: "read-only"
   };
+}
+
+async function getGoogleDriveTokenForIntegration() {
+  const connection = getGoogleDriveOAuthConnection();
+  if (!connection) return "";
+  return getGoogleDriveAccessToken(connection, {
+    onRefresh: async (updatedConnection) => {
+      store.oauthConnections = store.oauthConnections.map((item) =>
+        item.provider === "google_drive" ? updatedConnection : item
+      );
+      await saveStore();
+    }
+  });
+}
+
+function googleDriveIntegrationOptions() {
+  return getGoogleDriveOAuthConnection()
+    ? { getGoogleDriveAccessToken: getGoogleDriveTokenForIntegration }
+    : {};
 }
 
 app.get("/api/integrations", requireAuth, (_req, res) => {
@@ -902,7 +930,7 @@ app.post("/api/integrations/:provider/test", requireAuth, integrationTestLimiter
   if (!INTEGRATION_PROVIDER_IDS.includes(provider)) return res.status(404).json({ error: "Integration provider not found." });
   if (store.disabledIntegrations.includes(provider)) return res.status(409).json({ error: "This connection is disabled in JARVIS. Enable it before testing." });
   try {
-    const result = await probeIntegration(provider);
+    const result = await probeIntegration(provider, provider === "google_drive" ? googleDriveIntegrationOptions() : {});
     res.json(result);
   } catch (error) {
     const status = error instanceof TypeError ? 400 : 502;
@@ -1026,7 +1054,7 @@ async function runEnabledIntegration(provider, action) {
   if (store.disabledIntegrations.includes(provider)) {
     throw new Error(provider.replaceAll("_", " ") + " connection is disabled in JARVIS.");
   }
-  return runIntegrationAction(action);
+  return runIntegrationAction(action, provider === "google_drive" ? googleDriveIntegrationOptions() : {});
 }
 
 function workflowStepHandlers() {
