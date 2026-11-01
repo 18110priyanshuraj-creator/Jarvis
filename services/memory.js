@@ -5,9 +5,9 @@ const MAX_MEMORIES = 200;
 const MAX_CONTEXT_ITEMS = 5;
 const MAX_CONTEXT_CHARS = 1800;
 const VALID_CATEGORIES = new Set(["preference", "goal", "fact"]);
-const SENSITIVE_MEMORY_PATTERN = /(?:\\b|_)(password|passcode|pin|otp|one[- ]time code|api[_ -]?key|secret|access[_ -]?token|private key|bank account|card number|medical|health|diagnos(?:is|ed)|medicine|medication|home address|exact address|street address|phone number|email address|date of birth|birth date|race|ethnicity|religion|religious belief|political affiliation|political party|voting preference|sexual orientation|sexuality|sex life|trade union|union membership|criminal history|immigration status|biometric|mental health|disability)\\b/i;
-const GOOGLE_API_KEY = /\\bAIza[0-9A-Za-z_-]{30,}\\b/;
-const LONG_BEARER = /\\bBearer\\s+[A-Za-z0-9._~+/-]{24,}/i;
+const SENSITIVE_MEMORY_PATTERN = /(?:\b|_)(password|passcode|pin|otp|one[- ]time code|api[_ -]?key|secret|access[_ -]?token|private key|bank account|card number|medical|health|diagnos(?:is|ed)|medicine|medication|home address|exact address|street address|phone number|email address|date of birth|birth date|race|ethnicity|religion|religious belief|political affiliation|political party|voting preference|sexual orientation|sexuality|sex life|trade union|union membership|criminal history|immigration status|biometric|mental health|disability)\b/i;
+const GOOGLE_API_KEY = /\bAIza[0-9A-Za-z_-]{30,}\b/;
+const LONG_BEARER = /\bBearer\s+[A-Za-z0-9._~+/-]{24,}/i;
 const QUERY_STOP_WORDS = new Set([
   "a", "an", "and", "are", "as", "at", "be", "but", "by", "can", "could", "do", "does",
   "for", "from", "how", "i", "in", "is", "it", "me", "my", "of", "on", "or", "please",
@@ -28,7 +28,7 @@ function normalizeTimestamp(value, fallback) {
 }
 
 function normalizedContent(value) {
-  return cleanText(value, MAX_CONTENT).normalize("NFKC").replace(/\\s+/g, " ").trim();
+  return cleanText(value, MAX_CONTENT).normalize("NFKC").replace(/\s+/g, " ").trim();
 }
 
 function memoryHash(content) {
@@ -38,12 +38,12 @@ function memoryHash(content) {
 }
 
 function tokenize(value) {
-  return [...new Set((String(value || "").normalize("NFKC").toLocaleLowerCase().match(/[\\p{L}\\p{N}]+/gu) || []))];
+  return [...new Set((String(value || "").normalize("NFKC").toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || []))];
 }
 
 function queryTerms(value) {
   return tokenize(value).filter((term) =>
-    !QUERY_STOP_WORDS.has(term) && (term.length > 2 || term === "ai" || term === "jee" || /^\\d{2,}$/.test(term))
+    !QUERY_STOP_WORDS.has(term) && (term.length > 2 || term === "ai" || term === "jee" || /^\d{2,}$/.test(term))
   );
 }
 
@@ -56,7 +56,7 @@ export function isSafeMemoryContent(content) {
 }
 
 export function normalizeMemory(input = {}) {
-  const content = cleanText(input.content, MAX_CONTENT).replace(/\\s+/g, " ");
+  const content = cleanText(input.content, MAX_CONTENT).replace(/\s+/g, " ");
   if (!isSafeMemoryContent(content)) {
     throw new TypeError("For privacy, JARVIS does not save secrets or sensitive personal information as memory.");
   }
@@ -89,12 +89,12 @@ export function isDuplicateMemory(memories, candidate) {
  * never deletes records; the caller can ask the user to provide the saved note.
  */
 export function parseExplicitForgetIntent(message) {
-  const normalized = cleanText(message, 4000).replace(/^jarvis[,:]?\\s*/i, "");
-  const match = normalized.match(/^(?:please\\s+)?forget(?:\\s+(?:that|this))?\\s*[:,-]?\\s*(.*)$/i) ||
-    normalized.match(/^(?:please\\s+)?(?:bhool\\s+jao|bhula\\s+do|yaad\\s+se\\s+hatao|yaad\\s+se\\s+hata\\s+do)\\s*[:,-]?\\s*(.*)$/i);
+  const normalized = cleanText(message, 4000).replace(/^jarvis[,:]?\s*/i, "");
+  const match = normalized.match(/^(?:please\s+)?forget(?:\s+(?:that|this))?\s*[:,-]?\s*(.*)$/i) ||
+    normalized.match(/^(?:please\s+)?(?:bhool\s+jao|bhula\s+do|yaad\s+se\s+hatao|yaad\s+se\s+hata\s+do)\s*[:,-]?\s*(.*)$/i);
   if (!match) return null;
 
-  const content = normalizedContent(match[1]).replace(/^[\\"'“”‘’]+|[\\"'“”‘’]+$/gu, "").trim();
+  const content = normalizedContent(match[1]).replace(/^[\"'“”‘’]+|[\"'“”‘’]+$/gu, "").trim();
   const broadRequest = /^(all|everything|all memories|sab|sab kuch|saari memories|sabhi memories)$/i.test(content);
   return { content, ambiguous: broadRequest || content.length < 3 };
 }
