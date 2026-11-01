@@ -2,9 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildMemoryContext,
+  findExactMemory,
   isDuplicateMemory,
   isSafeMemoryContent,
   normalizeMemory,
+  parseExplicitForgetIntent,
   previewMemoryContext,
   searchMemories
 } from "../services/memory.js";
@@ -85,4 +87,53 @@ test("context retrieval remains bounded to the configured item limit", () => {
   const context = buildMemoryContext(records, "concise examples", 3);
   assert.equal(context.length, 3);
   assert.ok(context.every((item) => item.enabled !== false));
+});
+
+
+test("memory matching ignores query filler words and tolerates inflection", () => {
+  const preference = normalizeMemory({ content: "I prefer concise Hinglish explanations", category: "preference" });
+  const unrelated = normalizeMemory({ content: "I enjoy science documentaries", category: "preference" });
+  const results = searchMemories(
+    [unrelated, preference],
+    "Jarvis, can you explain in Hinglish?",
+    "",
+    10
+  );
+  assert.equal(results.length, 1);
+  assert.equal(results[0].id, preference.id);
+  assert.ok(results[0].relevance >= 50);
+});
+
+test("memory context is capped by both note count and total prompt characters", () => {
+  const records = Array.from({ length: 8 }, (_, index) =>
+    normalizeMemory({ content: "JEE physics " + String(index) + " " + "x".repeat(470), category: "goal" })
+  );
+  const context = buildMemoryContext(records, "JEE physics", 8);
+  assert.equal(context.length, 5);
+  assert.ok(context.reduce((total, item) => total + item.content.length, 0) <= 1800);
+});
+
+test("explicit forget accepts English and Hinglish but refuses vague or bulk requests", () => {
+  const english = parseExplicitForgetIntent("Forget: I prefer concise explanations");
+  assert.deepEqual(english, { content: "I prefer concise explanations", ambiguous: false });
+
+  const hinglish = parseExplicitForgetIntent("Jarvis, bhool jao: I prefer concise explanations");
+  assert.deepEqual(hinglish, { content: "I prefer concise explanations", ambiguous: false });
+
+  assert.equal(parseExplicitForgetIntent("Forget everything").ambiguous, true);
+  assert.equal(parseExplicitForgetIntent("Forget that").ambiguous, true);
+  assert.equal(parseExplicitForgetIntent("I forgot my notebook"), null);
+});
+
+test("forget lookup deletes only an exact normalized saved note", () => {
+  const saved = normalizeMemory({ content: "I prefer concise explanations", category: "preference" });
+  assert.equal(findExactMemory([saved], "  I   prefer concise explanations  ")?.id, saved.id);
+  assert.equal(findExactMemory([saved], "I prefer concise"), null);
+  assert.equal(findExactMemory([saved], "another note"), null);
+});
+
+test("memory privacy filter blocks additional sensitive personal categories", () => {
+  assert.equal(isSafeMemoryContent("My political party is ..."), false);
+  assert.equal(isSafeMemoryContent("My sexual orientation is ..."), false);
+  assert.equal(isSafeMemoryContent("My exact street address is ..."), false);
 });
