@@ -877,6 +877,119 @@ function googleDriveIntegrationOptions() {
     : {};
 }
 
+function getActionCapabilities() {
+  return getExternalActionCapabilities({
+    env: process.env,
+    googleDriveOAuth: getGoogleOAuthStatus(getGoogleDriveOAuthConnection(), process.env),
+    disabledProviders: store.disabledIntegrations
+  });
+}
+
+function replaceExternalAction(action) {
+  store.externalActions = store.externalActions.map((item) => item.id === action.id ? action : item);
+}
+
+app.get("/api/actions/capabilities", requireAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json(getActionCapabilities());
+});
+
+app.get("/api/actions", requireAuth, async (_req, res) => {
+  let changed = false;
+  const now = Date.now();
+  store.externalActions = store.externalActions.map((action) => {
+    if (action.status === "pending" && Date.parse(action.expiresAt) <= now) {
+      changed = true;
+      return appendActionStatus(action, "expired", "Preview expired before confirmation. Nothing was sent or created.");
+    }
+    return action;
+  });
+  if (changed) await saveStore();
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ actions: store.externalActions.slice().reverse().slice(0, MAX_ACTION_HISTORY) });
+});
+
+app.post("/api/actions", requireAuth, actionPreviewLimiter, async (req, res) => {
+  const pendingCount = store.externalActions.filter((action) =>
+    action.status === "pending" && Date.parse(action.expiresAt) > Date.now()
+  ).length;
+  if (pendingCount >= MAX_PENDING_ACTIONS) {
+    return res.status(409).json({ error: "There are already 20 unconfirmed previews. Cancel or review one before creating another." });
+  }
+  let action;
+  try {
+    action = createPendingExternalAction(req.body, { capabilities: getActionCapabilities(), env: process.env });
+  } catch (error) {
+    return res.status(error instanceof TypeError ? 400 : 409).json({ error: error.message || "Action preview could not be created." });
+  }
+  store.externalActions.push(action);
+  store.externalActions = store.externalActions.slice(-MAX_ACTION_HISTORY);
+  await saveStore();
+  res.status(201).json({ action });
+});
+
+app.post("/api/actions/:id/execute", requireAuth, actionConfirmLimiter, async (req, res) => {
+  const action = store.externalActions.find((item) => item.id === req.params.id);
+  if (!action) return res.status(404).json({ error: "Action preview not found." });
+  if (action.status !== "pending") return res.status(409).json({ error: "This preview is no longer pending. It cannot be executed again." });
+  if (Date.parse(action.expiresAt) <= Date.now()) {
+    const expired = appendActionStatus(action, "expired", "Preview expired before confirmation. Nothing was sent or created.");
+    replaceExternalAction(expired);
+    await saveStore();
+    return res.status(410).json({ error: "This preview expired. Create a new preview after reviewing the details." });
+  }
+  const confirmation = cleanText(req.body?.confirmation, 40);
+  if (confirmation !== action.confirmationPhrase) {
+    return res.status(400).json({ error: "Confirmation text does not match. No external action was performed." });
+  }
+
+  const capabilities = getActionCapabilities();
+  if (action.provider === "telegram" && !capabilities.telegram.enabled) {
+    return res.status(409).json({ error: "Telegram is disabled or no longer configured. Nothing was sent." });
+  }
+  if (action.provider === "telegram" && !capabilities.telegram.allowedChatIds.includes(action.chatId)) {
+    return res.status(409).json({ error: "The Telegram destination is no longer allow-listed. Nothing was sent." });
+  }
+  if (action.provider === "google_drive" && !capabilities.googleDrive.canCreateDocs) {
+    return res.status(409).json({ error: "Google Docs creation permission is not active. Nothing was created." });
+  }
+
+  const executing = appendActionStatus(action, "executing", "Exact confirmation received. The selected provider is processing this one action.");
+  replaceExternalAction(executing);
+  await saveStore();
+
+  try {
+    const result = await executeExternalAction(executing, {
+      env: process.env,
+      getGoogleDriveAccessToken: getGoogleDriveTokenForIntegration
+    });
+    const completed = appendActionStatus(executing, "completed", result.summary, result);
+    replaceExternalAction(completed);
+    await saveStore();
+    return res.json({ action: completed });
+  } catch (error) {
+    const failed = appendActionStatus(
+      executing,
+      "failed",
+      error?.message || "Provider did not confirm the action. Check the provider before trying again.",
+      error?.partialResult || null
+    );
+    replaceExternalAction(failed);
+    await saveStore();
+    return res.status(502).json({ error: error?.message || "The provider did not confirm the action. Check the provider before trying again.", action: failed });
+  }
+});
+
+app.post("/api/actions/:id/cancel", requireAuth, async (req, res) => {
+  const action = store.externalActions.find((item) => item.id === req.params.id);
+  if (!action) return res.status(404).json({ error: "Action preview not found." });
+  if (action.status !== "pending") return res.status(409).json({ error: "Only a pending preview can be cancelled." });
+  const cancelled = appendActionStatus(action, "cancelled", "Cancelled by the user. No external action was performed.");
+  replaceExternalAction(cancelled);
+  await saveStore();
+  res.json({ action: cancelled });
+});
+
 app.get("/api/integrations", requireAuth, (_req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.json(integrationCatalogResponse());
