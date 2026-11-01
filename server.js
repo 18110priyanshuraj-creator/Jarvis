@@ -813,12 +813,88 @@ app.delete("/api/tasks/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/integrations", requireAuth, (_req, res) => {
-  res.json({
-    providers: getIntegrationCatalog(process.env, store.disabledIntegrations),
-    credentialStorage: "server-environment-only",
+function getGoogleDriveOAuthConnection() {
+  return store.oauthConnections.find((item) => item.provider === "google_drive") || null;
+}
+
+function integrationCatalogResponse() {
+  const googleConnection = getGoogleDriveOAuthConnection();
+  return {
+    providers: getIntegrationCatalog(process.env, store.disabledIntegrations, store.oauthConnections),
+    googleDriveOAuth: getGoogleOAuthStatus(googleConnection, process.env),
+    permissions: getIntegrationPermissionCatalog(googleConnection, process.env),
+    credentialStorage: "server-environment-or-encrypted-vault",
     supportedOperations: "read-only"
-  });
+  };
+}
+
+app.get("/api/integrations", requireAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json(integrationCatalogResponse());
+});
+
+app.post("/api/integrations/google_drive/oauth/start", requireAuth, oauthStartLimiter, (req, res) => {
+  if (store.disabledIntegrations.includes("google_drive")) {
+    return res.status(409).json({ error: "Enable Google Drive in JARVIS before starting OAuth." });
+  }
+  try {
+    const result = beginGoogleOAuth({ sessionToken: req.sessionToken });
+    setGoogleOAuthCookie(res, result.browserBinding);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ authorizationUrl: result.authorizationUrl });
+  } catch (error) {
+    res.status(503).json({ error: error.message || "Google OAuth could not start." });
+  }
+});
+
+app.get("/api/integrations/google_drive/oauth/callback", oauthCallbackLimiter, async (req, res) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const browserBinding = cookies.jarvis_google_oauth || "";
+  const state = cleanText(req.query?.state, 200);
+  const code = cleanText(req.query?.code, 4000);
+  const oauthError = cleanText(req.query?.error, 100);
+  const existingConnection = getGoogleDriveOAuthConnection();
+  try {
+    const connection = await finishGoogleOAuth({
+      state,
+      code,
+      oauthError,
+      browserBinding,
+      existingConnection,
+      isSessionValid: (sessionToken) => {
+        const session = sessions.get(sessionToken);
+        if (!session || session.expiresAt <= Date.now()) return false;
+        session.expiresAt = Date.now() + SESSION_TTL_MS;
+        return true;
+      }
+    });
+    store.oauthConnections = store.oauthConnections.filter((item) => item.provider !== "google_drive");
+    store.oauthConnections.push(connection);
+    await saveStore();
+    clearGoogleOAuthCookie(res);
+    res.setHeader("Cache-Control", "no-store");
+    return res.redirect(303, "/?integration=google_drive_connected");
+  } catch (error) {
+    clearGoogleOAuthCookie(res);
+    console.warn("Google Drive OAuth callback was not completed:", error?.message || "OAuth error");
+    res.setHeader("Cache-Control", "no-store");
+    return res.redirect(303, "/?integration=google_drive_error");
+  }
+});
+
+app.post("/api/integrations/google_drive/oauth/revoke", requireAuth, integrationTestLimiter, async (_req, res) => {
+  const connection = getGoogleDriveOAuthConnection();
+  if (!connection) return res.status(404).json({ error: "No Google Drive OAuth connection is stored in JARVIS." });
+  try {
+    await revokeGoogleOAuthConnection(connection);
+    store.oauthConnections = store.oauthConnections.filter((item) => item.provider !== "google_drive");
+    clearGoogleDriveTokenCache();
+    await saveStore();
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ ok: true, message: "Google Drive OAuth permission was revoked and its encrypted token was removed from JARVIS.", ...integrationCatalogResponse() });
+  } catch (error) {
+    res.status(502).json({ error: error.message || "Google Drive access could not be revoked." });
+  }
 });
 
 app.post("/api/integrations/:provider/test", requireAuth, integrationTestLimiter, async (req, res) => {
