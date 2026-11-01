@@ -51,6 +51,7 @@ export function normalizePublicPageUrl(value) {
       !hostname ||
       url.username ||
       url.password ||
+      hostname.startsWith("[") ||
       isIP(hostname) !== 0 ||
       (url.port && url.port !== "443") ||
       hostname === "localhost" ||
