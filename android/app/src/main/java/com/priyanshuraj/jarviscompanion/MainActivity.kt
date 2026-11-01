@@ -402,7 +402,7 @@ class MainActivity : Activity() {
             refreshStatus("Android text-to-speech is not ready yet.")
             return
         }
-        val replyLanguage = if (text.any { it in '\\u0900'..'\\u097F' }) "hi-IN" else "en-IN"
+        val replyLanguage = if (text.any { it.code in 0x0900..0x097F }) "hi-IN" else "en-IN"
         val selection = VoiceOutput.configure(engine, replyLanguage)
         if (!selection.message.isBlank()) refreshStatus(selection.message)
         try {
