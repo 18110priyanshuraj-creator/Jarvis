@@ -47,19 +47,21 @@
         <button class="nav-item" data-view="actions"><span class="nav-icon">✓</span> Action Center</button>
       </nav>
       <div class="sidebar-foot">
+        <button id="clear-chat-button" class="logout-button" type="button">Clear conversation</button>
         <div class="connection"><span class="status-dot"></span><span><strong>Private workspace</strong><small>Session protected</small></span></div>
         <button id="logout-button" class="logout-button">↪ Sign out</button>
       </div>
     </aside>
+    <button id="menu-backdrop" class="menu-backdrop" type="button" aria-label="Close menu" tabindex="-1"></button>
 
     <main class="main-area">
-      <header class="topbar">
-        <div>
-          <div class="eyebrow" id="page-kicker">PERSONAL ASSISTANT</div>
-          <h2 id="page-title">Assistant</h2>
-        </div>
+      <header class="topbar orbital-header">
+        <a class="orbital-brand" href="/" aria-label="JARVIS home"><span class="orbital-brand-mark">J</span><span>JARVIS</span></a>
         <div class="topbar-actions">
-          <span class="model-chip"><span class="status-dot"></span><span>Built-in offline core</span></span>
+          <span id="page-kicker" class="hidden">PERSONAL ASSISTANT</span>
+          <h2 id="page-title" class="sr-only">Assistant</h2>
+          <span id="orbital-header-state" class="orbital-header-state"><i></i> READY</span>
+          <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Open JARVIS menu" aria-expanded="false"><span></span><span></span></button>
         </div>
       </header>
 
