@@ -2,7 +2,6 @@ import { createVoiceController } from "./voice-controller.js";
 const $ = (selector) => document.querySelector(selector);
 const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", activeView: "chat" };
 let toastTimer;
-let activeRecognition = null;
 
 function toast(message, isError = false) {
   const el = $("#toast");
