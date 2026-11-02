@@ -36,7 +36,7 @@ See:
 |---|---|---|---|
 | 1 | Central Orb Interface | CODE_COMPLETE | Native Android orb home is responsive, keyboard-send enabled and accessibility-aware; CI verifies code/build. Physical Galaxy Tab A9 acceptance remains scheduled under Phase 31. |
 | 2 | Unified All-in-One Application Shell | CODE_COMPLETE | Existing authenticated dashboard is integrated in the Android shell; origin restrictions, OAuth system-browser handoff, native confirmation dialogs, WebView lifecycle/recovery and automated CI are implemented. Galaxy Tab A9 acceptance remains Phase 31. See `JARVIS_PHASE_2_APP_SHELL.md`. |
-| 3 | Native Android Core | PARTIAL | Kotlin APK builds; not yet the unified application. |
+| 3 | Native Android Core | CODE_COMPLETE | Application-scoped native runtime now unifies typed input, one-shot voice and hands-free routes; Room v1 stores a bounded privacy-minimized 500-entry execution journal. Node/Android CI and APK verification passed; Galaxy Tab A9 acceptance remains Phase 31. See `JARVIS_PHASE_3_NATIVE_ANDROID_CORE.md`. |
 | 4 | Local System Controller | PARTIAL | Modular Node/Android services exist; not one complete on-device runtime. |
 | 5 | Offline Voice System | PARTIAL | Native SpeechRecognizer/TTS paths exist; offline recognition is provider/device dependent. |
 | 6 | Independent Intelligence Engine | PARTIAL | Deterministic offline brain and optional model adapter exist; no general local LLM. |
@@ -72,7 +72,7 @@ See:
 1. Phase 0 audit and current Render source reconciliation are complete. Legacy data recovery remains a hard gate before migrations or storage cutovers.
 2. Phase 1 native orb implementation is code-complete; keep its physical Galaxy Tab A9 checks in Phase 31.
 3. Phase 2 application-shell implementation is code-complete: the existing authenticated workspace is embedded in the native Android shell, with external-browser OAuth and tested WebView boundaries. Keep physical Galaxy Tab A9 acceptance in Phase 31.
-4. Continue Phase 3 only after the Phase 2 automated checks pass and its manual device acceptance is recorded when the tablet is available.
+4. Phase 3 native Android core is code-complete: the shared local-first dispatcher and additive Room execution ledger passed automated acceptance without replacing server data or Keystore credentials. Continue Phase 4 on this runtime; keep physical Galaxy Tab A9 checks in Phase 31.
 5. Complete and test each phase against the phase-specific acceptance criteria before advancing.
 6. Retain all current tests and add new regression/acceptance tests.
 7. Keep `main` as the release source of truth; use short-lived branches only when useful.
