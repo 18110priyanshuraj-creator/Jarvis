@@ -60,3 +60,8 @@ Keep the native JARVIS orb as the Android launch screen, then expose the existin
 - The existing OAuth state, PKCE S256 challenge/verifier, browser-binding validation, session validity check, allowed scopes, token exchange and encrypted refresh-token storage remain in place.
 - The transient launch ticket is process-local and intentionally not added to the database schema. If the server restarts or the two-minute ticket expires before it is redeemed, start the connection again. No persistent-store migration is made.
 - After the external browser completes the callback, return to the still-open JARVIS app and refresh Connections to see the server-side connection result.
+
+
+## Return from Google sign-in
+
+When the Android Activity resumes after the external browser flow, the embedded dashboard reloads once so its existing authenticated session fetches the updated server-side Connections state. If the user cancels or leaves the browser before completing authorization, the reload is harmless and no connection is created.

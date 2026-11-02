@@ -67,6 +67,7 @@ class MainActivity : Activity() {
     private var dashboardWebView: WebView? = null
     private var dashboardStatusText: TextView? = null
     private var dashboardBaseUrl: String? = null
+    private var pendingOAuthBrowserReturn = false
     private var showingDashboard = false
     private var showingSetup = false
     private var speechRecognizer: SpeechRecognizer? = null
@@ -528,9 +529,11 @@ class MainActivity : Activity() {
     private fun routeDashboardNavigation(rawUrl: String): Boolean {
         if (DashboardUrlPolicy.isOAuthBrowserHandoffUrl(rawUrl, dashboardBaseUrl)) {
             try {
+                pendingOAuthBrowserReturn = true
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(rawUrl)))
                 dashboardStatusText?.text = "Google sign-in opened in your secure browser. Return to JARVIS when the connection finishes."
             } catch (_: Exception) {
+                pendingOAuthBrowserReturn = false
                 dashboardStatusText?.text = "No secure browser is available to continue Google sign-in."
             }
             return true
@@ -750,7 +753,14 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (showingDashboard) dashboardWebView?.onResume()
+        if (showingDashboard) {
+            dashboardWebView?.onResume()
+            if (pendingOAuthBrowserReturn) {
+                pendingOAuthBrowserReturn = false
+                dashboardStatusText?.text = "Refreshing Connections after browser sign-in…"
+                dashboardWebView?.reload()
+            }
+        }
         refreshStatus()
         refreshPermissionChecklist()
         refreshActivityLog()
