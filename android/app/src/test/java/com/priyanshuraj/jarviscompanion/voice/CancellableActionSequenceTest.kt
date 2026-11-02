@@ -251,8 +251,6 @@ class CancellableActionSequenceTest {
         assertEquals(listOf("running:0", "paused:1", "running:1"), states)
         assertEquals(listOf("completed"), terminal)
     }
-}
-
 
     @Test
     fun failedProgressCheckpointStopsBeforeTheNextAction() {
@@ -297,3 +295,4 @@ class CancellableActionSequenceTest {
         assertTrue(terminal.isEmpty())
         assertTrue(messages.any { it.contains("could not verify the final saved status") })
     }
+}
