@@ -281,7 +281,7 @@ class AndroidLocalSystemPlatform(context: Context) : LocalSystemPlatform {
             SystemSettingsTarget.APP_NOTIFICATIONS -> Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
                 putExtra("android.provider.extra.APP_PACKAGE", appContext.packageName)
             }
-            SystemSettingsTarget.HOTSPOT -> Intent(Settings.ACTION_TETHER_SETTINGS)
+            SystemSettingsTarget.HOTSPOT -> Intent("android.settings.TETHER_SETTINGS")
         }
         return try {
             appContext.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
