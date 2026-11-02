@@ -27,6 +27,15 @@ class ScreenObservationTextTest {
     }
 
     @Test
+    fun identifiesCredentialAndVerificationScreenLabels() {
+        assertTrue(ScreenObservationText.containsProtectedScreenLabel(listOf("Enter your password")))
+        assertTrue(ScreenObservationText.containsProtectedScreenLabel(listOf("One-time code")))
+        assertTrue(ScreenObservationText.containsProtectedScreenLabel(listOf("Verification code")))
+        assertTrue(ScreenObservationText.containsProtectedScreenLabel(listOf("CVV")))
+        assertFalse(ScreenObservationText.containsProtectedScreenLabel(listOf("Welcome to JARVIS")))
+    }
+
+    @Test
     fun combinesAccessibilityAndOcrWithoutRepeatingTheSameLabel() {
         val output = ScreenObservationText.format(
             accessibilityText = "• Home\n• Settings",
