@@ -49,7 +49,7 @@ The Phase 13 test additions cover:
 - Authenticated API catalog, static match preview, invalid preview IDs, app-only preview results, dashboard identity spoof rejection, and chat ID validation.
 - The existing skill draft, static validation, approval, pause, and version-history regression suite.
 
-Automated acceptance passed on the Phase 13 source tree: Node CI reported 203/203 tests and 0 production dependency vulnerabilities; Android JVM unit tests, Gradle build, APK integrity verification, release metadata and artifact upload passed in push run #41434694585 and PR run #41434702832. The merged `main` commit has the identical Git tree hash `8eabf26a4ead01630c52f8a3fa660fd9869eda9f`. Post-merge main run #41435305226 also passed its Node job (203/203, 0 vulnerabilities); its separate Android job remained in progress/stale at closeout, so it is not represented as a completed post-merge run. Physical Samsung Galaxy Tab A9 behavior remains to be checked in Phase 31; no hardware acceptance is claimed here.
+Automated acceptance passed on the Phase 13 source tree: Node CI reported 203/203 tests and 0 production dependency vulnerabilities; Android JVM unit tests, Gradle build, APK integrity verification, release metadata and artifact upload passed in push run #41434694585 and PR run #41434702832. The merged `main` commit has the identical Git tree hash `8eabf26a4ead01630c52f8a3fa660fd9869eda9f`. Post-merge main run #41435305226 completed successfully in both jobs: Node 203/203 with 0 vulnerabilities, plus Android JVM tests, Gradle build, APK integrity verification and artifact upload. Physical Samsung Galaxy Tab A9 behavior remains to be checked in Phase 31; no hardware acceptance is claimed here.
 
 ## Closeout record
 
@@ -57,6 +57,7 @@ Automated acceptance passed on the Phase 13 source tree: Node CI reported 203/20
 - Merge commit: `d149c1d7420682abc3ffa411dec5e0e9d0a02c05`
 - Fully green PR CI: [run #41434702832](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41434702832)
 - Fully green source-branch CI/artifact: [run #41434694585](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41434694585)
-- Post-merge main CI: [run #41435305226](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41435305226) — Node passed; duplicate Android job remained in progress at closeout. The main tree hash matches the fully green source tree above.
-- Debug APK artifact: `13136570415`, 23,973,708 bytes; SHA-256 `1254690f2d9dcb8505ca6b155c0be206ef249864281972333ddc7aff8b677ae3`.
+- Post-merge main CI: [run #41435305226](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41435305226) — both Node and Android jobs completed successfully.
+- Main-branch debug APK artifact: `13135873407`, 23,973,678 bytes; SHA-256 `0853b436da3b4ce8c8c4e3e1a60fdbbda4650f871f967feaabd1b5c37abf6d7f`.
+- Phase-branch debug APK artifact (also fully verified): `13136570415`, 23,973,708 bytes; SHA-256 `1254690f2d9dcb8505ca6b155c0be206ef249864281972333ddc7aff8b677ae3`.
 - Hardware acceptance: Samsung Galaxy Tab A9 hands-on validation is still reserved for Phase 31.
