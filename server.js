@@ -22,7 +22,7 @@ import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, mergeDup
 import { buildMemoryContext, findExactMemory, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, parseExplicitForgetIntent, previewMemoryContext, searchMemories } from "./services/memory.js";
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeSkill, pauseSkill, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
-import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, createWorkflowDraft, createWorkflowRun, normalizeWorkflow, pauseWorkflow, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
+import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, createWorkflowDraft, createWorkflowRun, normalizeWorkflow, pauseWorkflow, recoverInterruptedWorkflowRuns, resumeWorkflowRun, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
 import { createTaskPlan, TASK_PLANNER_LIMITS } from "./services/task-planner.js";
 import { getIntegrationCatalog, INTEGRATION_PROVIDER_IDS, probeIntegration, runIntegrationAction } from "./services/integrations.js";
 import { appendActionStatus, createPendingExternalAction, executeExternalAction, getExternalActionCapabilities, MAX_ACTION_HISTORY, MAX_PENDING_ACTIONS, normalizeExternalAction } from "./services/external-actions.js";
@@ -164,7 +164,7 @@ const oauthLaunchLimiter = rateLimit({
 
 app.use("/api", apiLimiter);
 
-let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [] };
+let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], workflowStepEffects: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [] };
 let writeQueue = Promise.resolve();
 let neonSql;
 let databaseRevision = null;
@@ -177,6 +177,9 @@ function getNeonSql() {
 }
 
 const runtimeStore = createRuntimeStore({ getSql: getNeonSql });
+const activeWorkflowExecutions = new Set();
+const pauseWorkflowRequests = new Set();
+const stopWorkflowRequests = new Set();
 
 function cloneStore(value) {
   return JSON.parse(JSON.stringify(value));
@@ -287,7 +290,13 @@ function normalizeStore(parsed = {}) {
     workflowRuns: Array.isArray(parsed.workflowRuns)
       ? parsed.workflowRuns.slice(-WORKFLOW_LIMITS.runs).filter((item) =>
           item && typeof item.id === "string" && typeof item.workflowId === "string" &&
-          Array.isArray(item.steps) && ["running", "waiting_review", "completed", "failed", "cancelled"].includes(item.status)
+          Array.isArray(item.steps) && ["running", "waiting_review", "paused", "completed", "failed", "cancelled"].includes(item.status)
+        )
+      : [],
+    workflowStepEffects: Array.isArray(parsed.workflowStepEffects)
+      ? parsed.workflowStepEffects.slice(-WORKFLOW_LIMITS.runs * WORKFLOW_LIMITS.steps).filter((item) =>
+          item && typeof item.executionKey === "string" && item.executionKey.length <= 120 &&
+          typeof item.type === "string" && item.result && typeof item.result === "object" && !Array.isArray(item.result)
         )
       : [],
     disabledIntegrations: Array.isArray(parsed.disabledIntegrations)
@@ -1638,9 +1647,30 @@ async function runEnabledIntegration(provider, action) {
   return runIntegrationAction(action, provider === "google_drive" ? googleDriveIntegrationOptions() : {});
 }
 
+function findWorkflowStepEffect(executionKey) {
+  return store.workflowStepEffects.find((item) => item.executionKey === executionKey) || null;
+}
+
+async function persistWorkflowStepEffect(executionKey, type, result) {
+  if (!executionKey) return;
+  store.workflowStepEffects = store.workflowStepEffects.filter((item) => item.executionKey !== executionKey);
+  store.workflowStepEffects.push({
+    executionKey,
+    type,
+    result: cloneStore(result),
+    createdAt: new Date().toISOString()
+  });
+  store.workflowStepEffects = store.workflowStepEffects.slice(-(WORKFLOW_LIMITS.runs * WORKFLOW_LIMITS.steps));
+  // The local effect and its replay record are committed together with the
+  // application's canonical state before the runner marks this step complete.
+  await saveStore();
+}
+
 function workflowStepHandlers() {
   return {
     create_task: async (step) => {
+      const replay = findWorkflowStepEffect(step.executionKey);
+      if (replay) return { ...replay.result, replayed: true };
       if (store.tasks.length >= 200) throw new Error("Task limit reached. Remove an old task first.");
       const task = {
         id: newId(),
@@ -1648,19 +1678,29 @@ function workflowStepHandlers() {
         description: step.description || "",
         dueAt: "",
         done: false,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        workflowRunId: step.runId || "",
+        workflowStepIndex: Number.isInteger(step.stepIndex) ? step.stepIndex : -1
       };
       store.tasks.push(task);
-      return { taskId: task.id, summary: "Task created: " + task.title };
+      const result = { taskId: task.id, summary: "Task created: " + task.title };
+      await persistWorkflowStepEffect(step.executionKey, "create_task", result);
+      return result;
     },
     save_memory: async (step) => {
+      const replay = findWorkflowStepEffect(step.executionKey);
+      if (replay) return { ...replay.result, replayed: true };
       const memory = normalizeMemory({ content: step.content, category: step.category });
       if (isDuplicateMemory(store.memories, memory)) {
-        return { duplicate: true, summary: "That memory is already saved." };
+        const result = { duplicate: true, summary: "That memory is already saved." };
+        await persistWorkflowStepEffect(step.executionKey, "save_memory", result);
+        return result;
       }
       if (store.memories.length >= MEMORY_LIMITS.items) throw new Error("Memory limit reached.");
       store.memories.push(memory);
-      return { memoryId: memory.id, summary: "Memory saved: " + memory.content.slice(0, 120) };
+      const result = { memoryId: memory.id, summary: "Memory saved: " + memory.content.slice(0, 120) };
+      await persistWorkflowStepEffect(step.executionKey, "save_memory", result);
+      return result;
     },
     search_knowledge: async (step) => {
       const results = searchKnowledgeItems(store.knowledge, step.query, 5).map((item) => ({
@@ -1683,24 +1723,48 @@ function workflowStepHandlers() {
   };
 }
 
+async function executeWorkflowRun(runId) {
+  if (activeWorkflowExecutions.has(runId)) throw new Error("This workflow run is already executing.");
+  const initial = store.workflowRuns.find((item) => item.id === runId);
+  if (!initial) throw new Error("Workflow run not found.");
+  if (initial.status !== "running") throw new Error("Only a running workflow can execute.");
+  activeWorkflowExecutions.add(runId);
+  try {
+    const result = await advanceWorkflowRun(initial, workflowStepHandlers(), {
+      shouldPause: () => pauseWorkflowRequests.has(runId),
+      shouldCancel: () => stopWorkflowRequests.has(runId),
+      onCheckpoint: async (checkpoint) => {
+        store.workflowRuns = store.workflowRuns.map((item) => item.id === runId ? checkpoint : item);
+        await saveStore();
+      }
+    });
+    store.workflowRuns = store.workflowRuns.map((item) => item.id === runId ? result : item);
+    await saveStore();
+    return result;
+  } finally {
+    activeWorkflowExecutions.delete(runId);
+    pauseWorkflowRequests.delete(runId);
+    stopWorkflowRequests.delete(runId);
+  }
+}
+
 app.post("/api/workflows/:id/run", requireAuth, async (req, res) => {
   const workflow = store.workflows.find((item) => item.id === req.params.id);
   if (!workflow) return res.status(404).json({ error: "Workflow not found." });
   if (workflow.status !== "approved" || !workflow.approvedAt) {
     return res.status(409).json({ error: "Validate and approve this workflow before running it." });
   }
-  if (store.workflowRuns.some((run) => run.workflowId === workflow.id && ["running", "waiting_review"].includes(run.status))) {
-    return res.status(409).json({ error: "This workflow already has an active run. Continue or stop it first." });
+  if (store.workflowRuns.some((run) => run.workflowId === workflow.id && ["running", "waiting_review", "paused"].includes(run.status))) {
+    return res.status(409).json({ error: "This workflow already has an active run. Continue, resume or stop it first." });
   }
   if (store.workflowRuns.length >= WORKFLOW_LIMITS.runs) {
-    store.workflowRuns = store.workflowRuns.filter((run) => ["running", "waiting_review"].includes(run.status))
-      .concat(store.workflowRuns.filter((run) => !["running", "waiting_review"].includes(run.status)).slice(-(WORKFLOW_LIMITS.runs - 1)));
+    store.workflowRuns = store.workflowRuns.filter((run) => ["running", "waiting_review", "paused"].includes(run.status))
+      .concat(store.workflowRuns.filter((run) => !["running", "waiting_review", "paused"].includes(run.status)).slice(-(WORKFLOW_LIMITS.runs - 1)));
   }
   const run = createWorkflowRun(workflow);
   store.workflowRuns.push(run);
-  const result = await advanceWorkflowRun(run, workflowStepHandlers());
-  store.workflowRuns = store.workflowRuns.map((item) => item.id === run.id ? result : item);
   await saveStore();
+  const result = await executeWorkflowRun(run.id);
   res.status(201).json({ run: result });
 });
 
@@ -1710,16 +1774,47 @@ app.post("/api/workflow-runs/:id/continue", requireAuth, async (req, res) => {
   if (existing.status !== "waiting_review") {
     return res.status(409).json({ error: "This run is not waiting for your review." });
   }
+  if (activeWorkflowExecutions.has(existing.id)) return res.status(409).json({ error: "This workflow run is already executing." });
   const continued = { ...existing, status: "running", updatedAt: new Date().toISOString() };
-  const result = await advanceWorkflowRun(continued, workflowStepHandlers());
-  store.workflowRuns = store.workflowRuns.map((item) => item.id === existing.id ? result : item);
+  store.workflowRuns = store.workflowRuns.map((item) => item.id === existing.id ? continued : item);
   await saveStore();
+  const result = await executeWorkflowRun(existing.id);
   res.json({ run: result });
+});
+
+app.post("/api/workflow-runs/:id/resume", requireAuth, async (req, res) => {
+  const existing = store.workflowRuns.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow run not found." });
+  if (activeWorkflowExecutions.has(existing.id)) return res.status(409).json({ error: "This workflow run is already executing." });
+  let resumed;
+  try {
+    resumed = resumeWorkflowRun(existing);
+  } catch (error) {
+    return res.status(409).json({ error: error.message || "Workflow run cannot be resumed." });
+  }
+  store.workflowRuns = store.workflowRuns.map((item) => item.id === existing.id ? resumed : item);
+  await saveStore();
+  const result = await executeWorkflowRun(existing.id);
+  res.json({ run: result });
+});
+
+app.post("/api/workflow-runs/:id/pause", requireAuth, async (req, res) => {
+  const existing = store.workflowRuns.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow run not found." });
+  if (existing.status !== "running" || !activeWorkflowExecutions.has(existing.id)) {
+    return res.status(409).json({ error: "This workflow run is not currently executing." });
+  }
+  pauseWorkflowRequests.add(existing.id);
+  res.status(202).json({ run: existing, pauseRequested: true, message: "JARVIS will pause after the current safe step checkpoint." });
 });
 
 app.post("/api/workflow-runs/:id/stop", requireAuth, async (req, res) => {
   const existing = store.workflowRuns.find((item) => item.id === req.params.id);
   if (!existing) return res.status(404).json({ error: "Workflow run not found." });
+  if (existing.status === "running" && activeWorkflowExecutions.has(existing.id)) {
+    stopWorkflowRequests.add(existing.id);
+    return res.status(202).json({ run: existing, stopRequested: true, message: "JARVIS will stop after the current safe step checkpoint." });
+  }
   let cancelled;
   try {
     cancelled = cancelWorkflowRun(existing);
@@ -1990,6 +2085,13 @@ app.use((error, _req, res, _next) => {
 });
 
 await loadStore();
+// A process must never silently continue work that was active in the previous
+// process. Convert it to a resumable paused run before accepting requests.
+const recoveredWorkflowRuns = recoverInterruptedWorkflowRuns(store.workflowRuns);
+if (JSON.stringify(recoveredWorkflowRuns) !== JSON.stringify(store.workflowRuns)) {
+  store.workflowRuns = recoveredWorkflowRuns;
+  await saveStore();
+}
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log("JARVIS listening on port " + PORT);
 });
