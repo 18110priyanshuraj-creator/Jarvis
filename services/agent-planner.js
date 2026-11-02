@@ -158,7 +158,7 @@ export function validateAgentPlan(candidate) {
     if (["open_app", "verify_app_foreground"].includes(action.type) && value.length > 60) {
       throw new TypeError("The requested app label is too long.");
     }
-    if (action.type === "open_web_search" &&
+    if (["open_web_search", "verify_browser_foreground"].includes(action.type) &&
       (value.length > 120 || NUMERIC_SECRET.test(value) || BLOCKED_SEARCH_QUERY.test(value) ||
         /\b(password|passcode|otp|one.?time code|pin|cvv|cvc|bank account|card number)\b/i.test(value))) {
       throw new TypeError("The Google search phrase is outside the safe public-research policy.");
@@ -176,6 +176,23 @@ export function validateAgentPlan(candidate) {
   });
 
   // Public Google search launch must be followed by the matching browser foreground check.
+  for (let index = 0; index < actions.length; index += 1) {
+    const action = actions[index];
+    if (action.type === "open_web_search") {
+      const verifier = actions[index + 1];
+      if (verifier?.type !== "verify_browser_foreground" || verifier.value !== action.value) {
+        throw new TypeError("Every Google search launch must be followed by a matching browser foreground verification.");
+      }
+    }
+    if (action.type === "verify_browser_foreground") {
+      const previous = actions[index - 1];
+      if (previous?.type !== "open_web_search" || previous.value !== action.value) {
+        throw new TypeError("Browser foreground verification must immediately follow its matching Google search launch.");
+      }
+    }
+  }
+
+  // Public Google search launch must be followed by a matching browser foreground check.
   for (let index = 0; index < actions.length; index += 1) {
     const action = actions[index];
     if (action.type === "open_web_search") {
