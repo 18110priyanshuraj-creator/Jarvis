@@ -100,16 +100,16 @@ test("built-in device planner supports Hindi and Hinglish search phrasing", () =
   const hindi = createLocalAgentPlan("YouTube kholo aur JEE Physics search karo");
   assert.ok(hindi);
   assert.equal(hindi.actions[0].value, "YouTube");
-  assert.equal(hindi.actions[2].value, "JEE Physics");
+  assert.equal(hindi.actions[3].value, "JEE Physics");
 
   const reversed = createLocalAgentPlan("Search for circular motion on YouTube");
   assert.ok(reversed);
   assert.equal(reversed.actions[0].value, "YouTube");
-  assert.equal(reversed.actions[2].value, "circular motion");
+  assert.equal(reversed.actions[3].value, "circular motion");
 
   const hinglish = createLocalAgentPlan("YouTube par mole concept search karo");
   assert.ok(hinglish);
-  assert.equal(hinglish.actions[2].value, "mole concept");
+  assert.equal(hinglish.actions[3].value, "mole concept");
 });
 
 test("agent planner refuses Android plans without matching outcome verification", () => {
