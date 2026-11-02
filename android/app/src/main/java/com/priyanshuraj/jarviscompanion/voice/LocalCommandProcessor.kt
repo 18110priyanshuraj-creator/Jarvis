@@ -1,5 +1,6 @@
 package com.priyanshuraj.jarviscompanion.voice
 
+import android.app.role.RoleManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -256,20 +257,28 @@ object LocalCommandProcessor {
             return PlannedActionResult(true, true, "The foreground app identity is unavailable. The search is not marked complete.")
         }
 
-        val searchUri = Uri.parse("https://www.google.com/search")
-            .buildUpon()
-            .appendQueryParameter("q", query)
-            .build()
-        val viewIntent = Intent(Intent.ACTION_VIEW, searchUri)
-            .addCategory(Intent.CATEGORY_BROWSABLE)
-        val resolvedInfo = resolveViewActivity(context.packageManager, viewIntent)
-        val expectedPackage = resolvedInfo?.activityInfo?.packageName.orEmpty()
+        val expectedPackage = if (Build.VERSION.SDK_INT >= 29) {
+            val roleManager = context.getSystemService(RoleManager::class.java)
+            if (roleManager?.isRoleAvailable(RoleManager.ROLE_BROWSER) == true) {
+                roleManager.getRoleHolders(RoleManager.ROLE_BROWSER).singleOrNull().orEmpty()
+            } else {
+                ""
+            }
+        } else {
+            val searchUri = Uri.parse("https://www.google.com/search")
+                .buildUpon()
+                .appendQueryParameter("q", query)
+                .build()
+            val viewIntent = Intent(Intent.ACTION_VIEW, searchUri)
+                .addCategory(Intent.CATEGORY_BROWSABLE)
+            resolveViewActivity(context.packageManager, viewIntent)?.activityInfo?.packageName.orEmpty()
+        }
         if (expectedPackage.isBlank() ||
             expectedPackage in setOf("android", "com.android.intentresolver", "com.android.systemui")
         ) {
             return PlannedActionResult(
                 true, true,
-                "Android is asking you to choose a browser. Choose one manually; JARVIS will not select a browser or bypass the system dialog."
+                "Android has no unique default browser selected. Set a default browser in Android Settings, then retry. JARVIS will not choose a browser or bypass the system chooser."
             )
         }
         return if (foregroundPackage == expectedPackage) {
