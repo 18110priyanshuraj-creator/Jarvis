@@ -36,6 +36,40 @@ class AgentPlanRunnerTest {
     }
 
     @Test
+    fun validatesAndPreviewsGoogleSearchHandoffWithVisibleResultCheck() {
+        val plan = JSONObject(
+            """{"mode":"device_action","reply":"Open Google in the default browser.","actions":[
+                {"type":"open_web_search","value":"latest AI research","purpose":"Open Google search."},
+                {"type":"verify_screen_text","value":"latest AI research","purpose":"Confirm the query is visible."},
+                {"type":"ask_user","value":"Choose a public result manually.","purpose":"User selects the result."}
+            ]}"""
+        )
+        val actions = AgentPlanRunner.validate(plan)
+        assertEquals(3, actions.length())
+        assertTrue(AgentPlanRunner.describe(plan).contains("Open Google search"))
+        assertEquals("open web search → verify screen → ask user", AgentPlanRunner.actionKinds(plan))
+        assertTrue(AgentPlanRunner.requiresAccessibility(plan))
+    }
+
+    @Test
+    fun rejectsGoogleSearchPlansWithoutVisibleQueryVerificationOrWithUnsafeTerms() {
+        val missingCheck = JSONObject(
+            """{"mode":"device_action","actions":[
+                {"type":"open_web_search","value":"latest AI research"},
+                {"type":"ask_user","value":"Choose a result."}
+            ]}"""
+        )
+        val secretQuery = JSONObject(
+            """{"mode":"device_action","actions":[
+                {"type":"open_web_search","value":"123456"},
+                {"type":"verify_screen_text","value":"123456"}
+            ]}"""
+        )
+        expectIllegalArgument { AgentPlanRunner.validate(missingCheck) }
+        expectIllegalArgument { AgentPlanRunner.validate(secretQuery) }
+    }
+
+    @Test
     fun rejectsProtectedScreenControlsBeforePreview() {
         val plan = JSONObject(
             """
