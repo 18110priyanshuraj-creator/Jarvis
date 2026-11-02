@@ -354,6 +354,11 @@ class VoiceControlService : Service() {
             return
         }
 
+        if (AgentPlanExecutionGate.isBusy() && cancelActivePlan == null) {
+            speak("Another Android task is active in the Companion. Use its on-screen task controls to pause or cancel it before starting another request.")
+            return
+        }
+
         val waitingPlan = pendingPlan
         if (waitingPlan != null) {
             when (approvalDecision(transcript)) {
@@ -431,8 +436,8 @@ class VoiceControlService : Service() {
         networkExecutor.execute {
             try {
                 val plan = core.requestAgentPlan(transcript)
-                when (plan.optString("mode", "device_action")) {
-                    "device_action" -> mainHandler.post {
+                when (AgentPlanRunner.mode(plan)) {
+                    AgentPlanMode.DEVICE_ACTION -> mainHandler.post {
                         if (running && requestId == requestGeneration) {
                             try {
                                 if (!ttsReady || textToSpeech == null) {
@@ -479,13 +484,17 @@ class VoiceControlService : Service() {
                             }
                         }
                     }
-                    "conversation" -> {
-                        val answer = core.requestAssistantReply(transcript, CoreCommandSource.HANDS_FREE)
+                    AgentPlanMode.CONVERSATION -> {
+                        val answer = if (plan.optString("reply").isNotBlank()) {
+                            plan.optString("reply").trim()
+                        } else {
+                            core.requestAssistantReply(transcript, CoreCommandSource.HANDS_FREE)
+                        }
                         mainHandler.post {
                             if (running && requestId == requestGeneration) speak(answer)
                         }
                     }
-                    "clarification" -> {
+                    AgentPlanMode.CLARIFICATION -> {
                         val question = plan.optString("reply").ifBlank {
                             "Please clarify what you want me to do."
                         }

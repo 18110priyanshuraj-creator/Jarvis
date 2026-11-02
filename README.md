@@ -305,7 +305,23 @@ JARVIS_SEARCH_LANGUAGE=all
 
 Use a SearXNG instance that you operate or trust. Do not point this setting at a URL supplied by a chat message or search result. Production is not live-search-enabled until this endpoint is configured and `/api/health` reports `searchProvider.enabled=true`.
 
-## Full-Page Reading & Research (Phase 15)
+## Current roadmap Phase 15 — Full Android Task Integration
+
+The current 32-phase roadmap uses Phase 15 for unifying Android task planning and execution across Orb typed input, one-shot voice and hands-free voice. The earlier component-level README milestone labelled full-page reading as Phase 15; that historical feature remains implemented separately and is not the Phase 15 item in the current roadmap.
+
+- Typed Orb and one-shot voice requests resolve local commands on a background executor, then use the authenticated device planner for remaining requests.
+- The server returns one of three bounded modes: conversation, clarification or device action. Conversation and clarification plans must contain no actions.
+- Device-action plans are checked again on-device against the small action allow-list and shared UiActionPolicy. A screen-action plan is blocked before execution when the user has not enabled JARVIS Accessibility.
+- Orb and one-shot voice device-action plans use a visible review dialog and an explicit Approve and run choice. Hands-free voice uses its existing spoken plan preview and explicit approve plan or cancel plan decision. Neither path executes actions before approval.
+- Approved tasks run through the same on-device AgentPlanRunner and bounded CancellableActionSequence used by hands-free voice. The local task journal stores generic action categories and step status only; typed content and screen text are not stored in this journal.
+- A process-wide execution gate prevents a second Orb or voice task from starting while another task is active. The Orb provides Pause, Resume and Cancel controls; hands-free keeps its spoken task controls.
+- The engine still cannot send or submit messages, delete data, purchase, pay, transfer funds, enter credentials, grant permissions, install apps, run arbitrary code or tap screen coordinates. Search-result and other consequential choices remain with the user.
+- If the server planner is unavailable, JARVIS uses its existing chat fallback; it does not silently invent or execute a device-action plan.
+- Physical Samsung Galaxy Tab A9 acceptance remains the separate Phase 31 hardware validation milestone.
+
+## Historical milestone — Full-Page Reading & Research
+
+This heading retains an earlier component-sequence label. In the current 32-phase roadmap, Phase 15 is Full Android Task Integration, described above. The page-reading capability itself remains unchanged.
 
 - Each live search source can receive a short-lived signed token tied to the authenticated JARVIS session. The read API accepts that token, not a browser-selected URL or arbitrary request headers.
 - Only HTTPS URLs on port 443 are eligible. DNS is resolved to IPv4, every returned address must be public, and the request is pinned to a validated address to reduce DNS-rebinding/SSRF risk.

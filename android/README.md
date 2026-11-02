@@ -44,6 +44,22 @@ UI labels must be visible and uniquely exposed by the target app's Android acces
 - Screen content is summarized locally only after the spoken "read screen" command; it is not saved or uploaded.
 - Stop hands-free listening by saying "stop listening" or pressing Stop in the persistent notification.
 
+## Current roadmap Phase 15 — Full Android Task Integration
+
+The native Orb's typed input and one-shot Speak button, together with the existing user-started hands-free service, use one bounded Android task validator and execution engine.
+
+- A request first checks local commands away from the UI thread. Remaining requests use the paired device's authenticated HTTPS planner endpoint.
+- The server may return conversation, clarification or a device-action plan. Conversation and clarification modes are rejected if they contain device actions.
+- Orb and one-shot voice device-action plans are previewed in an Android approval dialog. No action starts until the user taps Approve and run; Cancel, Back or dismiss means no actions run. Hands-free voice retains its spoken preview and explicit approve plan or cancel plan decision.
+- The on-device runner validates each action again using the allow-list and the shared UiActionPolicy. A plan that needs screen access is blocked unless the user has manually enabled the JARVIS Accessibility service.
+- Approved plans use the same bounded sequence runner and generic local task journal used by hands-free voice. Progress is stored by step index and generic action category; typed text, transcript content and screen text are not stored in the task journal.
+- The Orb exposes Pause, Resume and Cancel controls for its active task. Hands-free retains the spoken task commands and persistent notification stop controls.
+- Only one task sequence can own the process-wide execution gate at a time. A second Orb or voice request is rejected until the active task has been paused, completed or cancelled.
+- Search-result selection remains manual. No task can send or submit, delete, purchase, pay, transfer funds, enter credentials, grant permissions, install applications, run arbitrary code or use coordinate taps.
+- If planning is unavailable, the request falls back to ordinary assistant conversation. Chat fallback never executes a device action.
+
+This does not enable background microphone monitoring: voice begins only after the user starts the one-shot or hands-free input. Physical Samsung Galaxy Tab A9 validation remains part of Phase 31.
+
 ## Build
 
 1. Open the android directory in Android Studio.
