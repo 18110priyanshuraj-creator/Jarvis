@@ -53,6 +53,9 @@ internal object ScreenObservationText {
         for (raw in source) {
             val cleaned = sanitize(raw)
             if (cleaned.isBlank()) continue
+            if (cleaned.equals("Accessible labels:", ignoreCase = true) ||
+                cleaned.startsWith("Visible text (one-time on-device OCR):", ignoreCase = true)
+            ) continue
             val key = normalize(cleaned)
             if (seen.add(key)) result += cleaned.take(180)
             if (result.size >= MAX_LINES) break
