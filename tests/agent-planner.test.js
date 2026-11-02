@@ -89,9 +89,11 @@ test("built-in device planner builds a bounded English app-search workflow", () 
     "type_text", "verify_screen_text", "ask_user"
   ]);
   assert.equal(plan.actions[0].value, "YouTube");
-  assert.equal(plan.actions[1].value, "Search");
-  assert.equal(plan.actions[2].value, "JEE Physics");
-  assert.match(plan.actions[3].value, /choose the result/i);
+  assert.equal(plan.actions[1].value, "YouTube");
+  assert.equal(plan.actions[2].value, "Search");
+  assert.equal(plan.actions[3].value, "JEE Physics");
+  assert.equal(plan.actions[4].value, "JEE Physics");
+  assert.match(plan.actions[5].value, /choose the result/i);
 });
 
 test("built-in device planner supports Hindi and Hinglish search phrasing", () => {
