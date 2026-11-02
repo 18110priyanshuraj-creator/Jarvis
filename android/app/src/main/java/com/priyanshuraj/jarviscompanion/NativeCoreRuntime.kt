@@ -302,9 +302,17 @@ class NativeCoreRuntime(context: Context) {
         message: String,
         source: CoreCommandSource = CoreCommandSource.HANDS_FREE
     ): JSONObject {
+        val startedAt = System.currentTimeMillis()
+        val localPlan = LocalCommandProcessor.createGoogleSearchPlan(message)
+        if (localPlan != null) {
+            ledger.record(
+                source, CoreCommandRoute.LOCAL, CoreCommandOutcome.SUCCESS,
+                message.trim().length, System.currentTimeMillis() - startedAt
+            )
+            return localPlan
+        }
         val credentials = remoteCredentials()
             ?: throw IllegalStateException("Pair this device with JARVIS before requesting an action plan.")
-        val startedAt = System.currentTimeMillis()
         return try {
             val plan = DeviceConnector.agentPlan(credentials.serverUrl, credentials.token, message)
             ledger.record(
