@@ -73,6 +73,33 @@ class AgentPlanRunnerTest {
     }
 
     @Test
+    fun rejectsPermissionAndFinancialControlsUsingTheSharedPolicy() {
+        listOf("Allow", "Grant permission", "Confirm transfer", "Delete account", "Card number").forEach { label ->
+            val plan = JSONObject(
+                """
+                {
+                  "actions": [
+                    {"type":"tap_label","value":"$label"}
+                  ]
+                }
+                """.trimIndent()
+            )
+            expectIllegalArgument { AgentPlanRunner.validate(plan) }
+        }
+
+        val cvvPlan = JSONObject(
+            """
+            {
+              "actions": [
+                {"type":"type_text","value":"CVV 123"}
+              ]
+            }
+            """.trimIndent()
+        )
+        expectIllegalArgument { AgentPlanRunner.validate(cvvPlan) }
+    }
+
+    @Test
     fun rejectsMissingOrOversizedActionLists() {
         expectIllegalArgument { AgentPlanRunner.validate(JSONObject()) }
 
