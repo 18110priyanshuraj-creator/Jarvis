@@ -44,11 +44,13 @@ object DeviceConnector {
         )
     }
 
-    fun voiceCommand(serverUrl: String, token: String, message: String): String {
+    fun voiceCommand(serverUrl: String, token: String, message: String, applicationId: String? = null): String {
+        val payload = JSONObject().put("message", message)
+        if (!applicationId.isNullOrBlank()) payload.put("applicationId", applicationId)
         val response = request(
             serverUrl,
             "/api/devices/voice-command",
-            JSONObject().put("message", message),
+            payload,
             token
         )
         return response.optString("answer").takeIf { it.isNotBlank() }
