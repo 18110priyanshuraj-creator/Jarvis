@@ -398,6 +398,11 @@ class JarvisApplication : Application() {
     val core: NativeCoreRuntime
         get() = coreDelegate.value
 
+    override fun onCreate() {
+        super.onCreate()
+        LocalTaskExecutionJournal.recoverInterrupted(applicationContext)
+    }
+
     override fun onTerminate() {
         if (coreDelegate.isInitialized()) coreDelegate.value.close()
         super.onTerminate()
