@@ -172,9 +172,78 @@ object LocalCommandProcessor {
                     PlannedActionResult(result.ok, !result.ok, result.message)
                 }
             }
+            "verify_app_foreground" -> verifyAppForeground(context, value)
+            "verify_screen_text" -> {
+                if (service == null) {
+                    PlannedActionResult(
+                        true, true,
+                        "JARVIS cannot verify the visible result without its user-enabled Accessibility service. No later actions were run."
+                    )
+                } else {
+                    val result = UIActionExecutor.verifyVisibleText(service, value)
+                    if (result.ok) {
+                        PlannedActionResult(true, false, result.message)
+                    } else {
+                        PlannedActionResult(
+                            true, true,
+                            "The requested result is not verified. " + result.message + " No later actions were run."
+                        )
+                    }
+                }
+            }
             "ask_user" -> PlannedActionResult(true, true, value)
             "finish" -> PlannedActionResult(true, true, value)
             else -> PlannedActionResult(false, true, "JARVIS rejected an unsupported action.")
+        }
+    }
+
+    private fun verifyAppForeground(context: Context, requestedName: String): PlannedActionResult {
+        val service = JarvisAccessibilityService.activeService
+            ?: return PlannedActionResult(
+                true, true,
+                "JARVIS cannot confirm which app is in the foreground without its user-enabled Accessibility service. No later actions were run."
+            )
+        val root = service.rootInActiveWindow
+            ?: return PlannedActionResult(
+                true, true,
+                "JARVIS could not inspect the foreground app yet. Review the screen and reissue the task."
+            )
+        val foregroundPackage = try {
+            root.packageName?.toString()?.trim().orEmpty()
+        } finally {
+            runCatching { root.recycle() }
+        }
+        if (foregroundPackage.isBlank()) {
+            return PlannedActionResult(true, true, "The foreground app identity is unavailable. The task is not marked complete.")
+        }
+
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val matchingApps = queryLauncherActivities(context.packageManager, launcherIntent)
+            .mapNotNull { item ->
+                val info = item.activityInfo ?: return@mapNotNull null
+                AppEntry(
+                    packageName = info.packageName,
+                    className = info.name,
+                    label = item.loadLabel(context.packageManager)?.toString()?.trim().orEmpty()
+                )
+            }
+            .filter { it.label.isNotBlank() && normalize(it.label) == normalize(requestedName) }
+            .distinctBy { it.packageName }
+
+        if (matchingApps.size != 1) {
+            return PlannedActionResult(
+                true, true,
+                "JARVIS could not uniquely identify the requested installed app for verification. Please check the screen manually."
+            )
+        }
+        val expected = matchingApps.single()
+        return if (foregroundPackage == expected.packageName) {
+            PlannedActionResult(true, false, "JARVIS verified that " + expected.label + " is the foreground app.")
+        } else {
+            PlannedActionResult(
+                true, true,
+                "Android opened an app, but JARVIS could not verify that " + expected.label + " is in the foreground. No later actions were run."
+            )
         }
     }
 
