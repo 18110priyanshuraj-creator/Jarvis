@@ -1748,6 +1748,34 @@ async function executeWorkflowRun(runId) {
   }
 }
 
+function scheduleWorkflowExecution(runId) {
+  // executeWorkflowRun acquires the in-process lock synchronously before its
+  // first await. The HTTP request can now return while checkpoints continue.
+  const execution = executeWorkflowRun(runId);
+  execution.catch(async (error) => {
+    const current = store.workflowRuns.find((item) => item.id === runId);
+    if (current && current.status === "running") {
+      const failedAt = new Date().toISOString();
+      const failed = {
+        ...current,
+        status: "failed",
+        finishedAt: failedAt,
+        updatedAt: failedAt,
+        failure: { name: /^[A-Za-z][A-Za-z0-9_.-]{0,49}$/.test(String(error?.name || "")) ? String(error.name) : "ExecutionError" },
+        logs: (Array.isArray(current.logs) ? current.logs : []).concat([{
+          at: failedAt,
+          stepIndex: Number.isInteger(current.currentStepIndex) ? current.currentStepIndex : current.nextStepIndex,
+          stepTitle: "Execution stopped",
+          status: "failed",
+          summary: "Execution stopped because a durable checkpoint or runtime operation failed. Review the run before retrying."
+        }]).slice(-50)
+      };
+      store.workflowRuns = store.workflowRuns.map((item) => item.id === runId ? failed : item);
+      try { await saveStore(); } catch { /* the last durable checkpoint remains available for restart recovery */ }
+    }
+  });
+}
+
 app.post("/api/workflows/:id/run", requireAuth, async (req, res) => {
   const workflow = store.workflows.find((item) => item.id === req.params.id);
   if (!workflow) return res.status(404).json({ error: "Workflow not found." });
@@ -1764,8 +1792,8 @@ app.post("/api/workflows/:id/run", requireAuth, async (req, res) => {
   const run = createWorkflowRun(workflow);
   store.workflowRuns.push(run);
   await saveStore();
-  const result = await executeWorkflowRun(run.id);
-  res.status(201).json({ run: result });
+  scheduleWorkflowExecution(run.id);
+  res.status(202).json({ run: store.workflowRuns.find((item) => item.id === run.id) });
 });
 
 app.post("/api/workflow-runs/:id/continue", requireAuth, async (req, res) => {
@@ -1778,8 +1806,8 @@ app.post("/api/workflow-runs/:id/continue", requireAuth, async (req, res) => {
   const continued = { ...existing, status: "running", updatedAt: new Date().toISOString() };
   store.workflowRuns = store.workflowRuns.map((item) => item.id === existing.id ? continued : item);
   await saveStore();
-  const result = await executeWorkflowRun(existing.id);
-  res.json({ run: result });
+  scheduleWorkflowExecution(existing.id);
+  res.status(202).json({ run: store.workflowRuns.find((item) => item.id === existing.id) });
 });
 
 app.post("/api/workflow-runs/:id/resume", requireAuth, async (req, res) => {
@@ -1794,8 +1822,8 @@ app.post("/api/workflow-runs/:id/resume", requireAuth, async (req, res) => {
   }
   store.workflowRuns = store.workflowRuns.map((item) => item.id === existing.id ? resumed : item);
   await saveStore();
-  const result = await executeWorkflowRun(existing.id);
-  res.json({ run: result });
+  scheduleWorkflowExecution(existing.id);
+  res.status(202).json({ run: store.workflowRuns.find((item) => item.id === existing.id) });
 });
 
 app.post("/api/workflow-runs/:id/pause", requireAuth, async (req, res) => {
