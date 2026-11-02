@@ -39,7 +39,7 @@ Provide a private, authenticated media workspace that turns a user brief into an
 
 The Node suite covers format dimensions, local fallback, AI candidate validation and fallback, credential/unsafe-content rejection, storyboard limits, editable-draft versus approved state, and script/SRT output. CI also syntax-checks the Media Studio browser module.
 
-PR #58 head `7afe2eaee846fd32bf10c81f9795d3ed4fa32fb1` passed GitHub Actions run `41466460893`: 226 Node tests passed, zero failed, production dependency audit found zero vulnerabilities, Android unit tests/build passed, APK integrity/metadata verification passed and the debug APK artifact uploaded successfully. Post-merge main CI is a separate final integration check. Physical Samsung Galaxy Tab A9 acceptance remains under Phase 31 and is not claimed here.
+PR #58 was merged to `main` at `612123275d3c2c459c08e01f7a76d76a9ffa5945`. Pull-request CI run `41466460893` passed 226 Node tests, zero failed, zero production dependency vulnerabilities, Android unit tests/build, APK integrity/metadata verification and artifact upload. Post-merge `main` CI run `41467416089` also passed both jobs on the merge commit: 226/226 Node tests, zero vulnerabilities, Android unit tests/build, APK integrity/metadata verification and artifact upload. The merged debug APK artifact is `jarvis-companion-debug`, artifact ID `13152927902`, SHA-256 `f04800e7b88e84fbd922c9419dd0b647afda3346b0e77e41e32b9b813e77c619`, and expires 2026-11-09. Physical Samsung Galaxy Tab A9 acceptance remains under Phase 31 and is not claimed here.
 
 ## Phase 17 completion gate
 
@@ -51,4 +51,4 @@ PR #58 head `7afe2eaee846fd32bf10c81f9795d3ed4fa32fb1` passed GitHub Actions run
 - [x] JSON, script, SRT, PNG and silent WebM exports.
 - [x] Automated tests authored and added to the default test command.
 - [x] CI passes on the final pull-request head (run 41466460893).
-- [ ] Merge PR #58 to main and verify post-merge CI.
+- [x] Merge PR #58 to main and verify post-merge CI (merge commit `6121232`; run `41467416089` passed).
