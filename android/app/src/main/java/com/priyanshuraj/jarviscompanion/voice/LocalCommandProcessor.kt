@@ -174,6 +174,7 @@ object LocalCommandProcessor {
                 }
             }
             "open_web_search" -> openGoogleSearch(context, value)
+            "verify_browser_foreground" -> verifyBrowserForeground(context, value)
             "verify_app_foreground" -> verifyAppForeground(context, value)
             "verify_screen_text" -> {
                 if (service == null) {
@@ -229,6 +230,68 @@ object LocalCommandProcessor {
             )
         }
     }
+
+    private fun verifyBrowserForeground(context: Context, rawQuery: String): PlannedActionResult {
+        val service = JarvisAccessibilityService.activeService
+            ?: return PlannedActionResult(
+                true, true,
+                "Google was opened, but JARVIS cannot verify the browser without its user-enabled Accessibility service. Check the browser manually."
+            )
+        val query = rawQuery.trim()
+        if (query.isBlank() || query.length > 120 ||
+            !UiActionPolicy.validateTextPayload(query, 120).allowed
+        ) {
+            return PlannedActionResult(true, true, "The browser handoff could not be safely verified. Check the screen manually.")
+        }
+        val root = service.rootInActiveWindow
+            ?: return PlannedActionResult(true, true, "The browser window is not available to JARVIS yet. Check it manually.")
+        val foregroundPackage = try {
+            root.packageName?.toString()?.trim().orEmpty()
+        } finally {
+            runCatching { root.recycle() }
+        }
+        if (foregroundPackage.isBlank()) {
+            return PlannedActionResult(true, true, "The foreground app identity is unavailable. The search is not marked complete.")
+        }
+
+        val searchUri = Uri.parse("https://www.google.com/search")
+            .buildUpon()
+            .appendQueryParameter("q", query)
+            .build()
+        val viewIntent = Intent(Intent.ACTION_VIEW, searchUri)
+        val resolvedInfo = resolveViewActivity(context.packageManager, viewIntent)
+        val expectedPackage = resolvedInfo?.activityInfo?.packageName.orEmpty()
+        if (expectedPackage.isBlank() ||
+            expectedPackage in setOf("android", "com.android.intentresolver", "com.android.systemui")
+        ) {
+            return PlannedActionResult(
+                true, true,
+                "Android is asking you to choose a browser. Choose one manually; JARVIS will not select a browser or bypass the system dialog."
+            )
+        }
+        return if (foregroundPackage == expectedPackage) {
+            PlannedActionResult(
+                true, false,
+                "JARVIS verified that the selected browser app is in the foreground. It has not read or checked the Google results."
+            )
+        } else {
+            PlannedActionResult(
+                true, true,
+                "Google was opened, but the expected browser is not in the foreground. Check the browser manually; no later steps were run."
+            )
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun resolveViewActivity(packageManager: PackageManager, intent: Intent) =
+        if (Build.VERSION.SDK_INT >= 33) {
+            packageManager.resolveActivity(
+                intent,
+                PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong())
+            )
+        } else {
+            packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        }
 
     private fun verifyAppForeground(context: Context, requestedName: String): PlannedActionResult {
         val service = JarvisAccessibilityService.activeService
