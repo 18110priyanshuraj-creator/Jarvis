@@ -354,6 +354,11 @@ class VoiceControlService : Service() {
             return
         }
 
+        if (AgentPlanExecutionGate.isBusy() && cancelActivePlan == null) {
+            speak("Another Android task is active in the Companion. Use its on-screen task controls to pause or cancel it before starting another request.")
+            return
+        }
+
         val waitingPlan = pendingPlan
         if (waitingPlan != null) {
             when (approvalDecision(transcript)) {
