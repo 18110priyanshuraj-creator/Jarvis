@@ -10,6 +10,7 @@ const TOKEN_TIMEOUT_MS = 8000;
 const pendingStates = new Map();
 const pendingBrowserHandoffs = new Map();
 const OAUTH_BROWSER_HANDOFF_TTL_MS = 2 * 60 * 1000;
+const MAX_PENDING_BROWSER_HANDOFFS = 100;
 const accessTokenCache = new Map();
 const refreshOperations = new Map();
 
@@ -305,6 +306,12 @@ export function createGoogleOAuthBrowserHandoff({ authorizationUrl, browserBindi
   }
 
   prunePendingStates();
+  while (pendingBrowserHandoffs.size >= MAX_PENDING_BROWSER_HANDOFFS) {
+    const oldestTicketHash = pendingBrowserHandoffs.keys().next().value;
+    if (!oldestTicketHash) break;
+    pendingBrowserHandoffs.delete(oldestTicketHash);
+  }
+
   const ticket = crypto.randomBytes(32).toString("base64url");
   const ticketHash = hash(ticket).toString("base64url");
   pendingBrowserHandoffs.set(ticketHash, {

@@ -35,7 +35,7 @@ See:
 | Phase | Target scope | Current status | Existing evidence and remaining gap |
 |---|---|---|---|
 | 1 | Central Orb Interface | CODE_COMPLETE | Native Android orb home is responsive, keyboard-send enabled and accessibility-aware; CI verifies code/build. Physical Galaxy Tab A9 acceptance remains scheduled under Phase 31. |
-| 2 | Unified All-in-One Application Shell | IN_PROGRESS | First increment embeds the existing authenticated browser workspace in the Android app behind a restricted HTTPS WebView; additional native integration and Galaxy Tab A9 checks remain. See `JARVIS_PHASE_2_APP_SHELL.md`. |
+| 2 | Unified All-in-One Application Shell | CODE_COMPLETE | Existing authenticated dashboard is integrated in the Android shell; origin restrictions, OAuth system-browser handoff, native confirmation dialogs, WebView lifecycle/recovery and automated CI are implemented. Galaxy Tab A9 acceptance remains Phase 31. See `JARVIS_PHASE_2_APP_SHELL.md`. |
 | 3 | Native Android Core | PARTIAL | Kotlin APK builds; not yet the unified application. |
 | 4 | Local System Controller | PARTIAL | Modular Node/Android services exist; not one complete on-device runtime. |
 | 5 | Offline Voice System | PARTIAL | Native SpeechRecognizer/TTS paths exist; offline recognition is provider/device dependent. |
@@ -71,13 +71,14 @@ See:
 
 1. Phase 0 audit and current Render source reconciliation are complete. Legacy data recovery remains a hard gate before migrations or storage cutovers.
 2. Phase 1 native orb implementation is code-complete; keep its physical Galaxy Tab A9 checks in Phase 31.
-3. Phase 2 first increment embeds the existing authenticated workspace inside the native Android shell, using the configured HTTPS server origin and preserving the existing backend and browser app.
-4. Complete and test each phase against the phase-specific acceptance criteria before advancing.
-4. Retain all current tests and add new regression/acceptance tests.
-5. Keep `main` as the release source of truth; use short-lived branches only when useful.
-6. Do not delete branches with unreviewed unique work or mark a phase verified because a file exists.
-7. Device-only acceptance must be marked blocked until an actual Galaxy Tab A9 observation is recorded.
-8. The final release must be a signed, installable Android build with migration, offline behavior and real-device evidence.
+3. Phase 2 application-shell implementation is code-complete: the existing authenticated workspace is embedded in the native Android shell, with external-browser OAuth and tested WebView boundaries. Keep physical Galaxy Tab A9 acceptance in Phase 31.
+4. Continue Phase 3 only after the Phase 2 automated checks pass and its manual device acceptance is recorded when the tablet is available.
+5. Complete and test each phase against the phase-specific acceptance criteria before advancing.
+6. Retain all current tests and add new regression/acceptance tests.
+7. Keep `main` as the release source of truth; use short-lived branches only when useful.
+8. Do not delete branches with unreviewed unique work or mark a phase verified because a file exists.
+9. Device-only acceptance must be marked blocked until an actual Galaxy Tab A9 observation is recorded.
+10. The final release must be a signed, installable Android build with migration, offline behavior and real-device evidence.
 
 ## Reconciliation of historical phases
 

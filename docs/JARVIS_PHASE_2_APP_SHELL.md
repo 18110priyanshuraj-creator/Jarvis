@@ -1,6 +1,6 @@
 # JARVIS Phase 2 — Unified All-in-One Android Application Shell
 
-**Status:** IN PROGRESS — first integration increment
+**Status:** CODE COMPLETE — AUTOMATED TESTS AND APK CHECK PASSED; GALAXY TAB VALIDATION DEFERRED TO PHASE 31
 **Target:** Existing Android package `com.priyanshuraj.jarviscompanion`
 **Baseline:** Phase 1 code-complete native orb home
 
@@ -30,10 +30,11 @@ Keep the native JARVIS orb as the Android launch screen, then expose the existin
 
 ## Acceptance checks
 
-- Existing Node.js tests and audit stay green.
-- Android JVM tests include URL-policy cases for HTTPS-only configuration, origin boundaries, OAuth hosts and unsafe external links.
-- Android debug APK builds and passes archive verification in CI.
-- Manual Galaxy Tab A9 checks remain required: login/session persistence, rotation, WebView back behavior, Google OAuth return, external-link handoff and dashboard navigation. These checks are not inferred from CI.
+- Existing Node.js tests cover the one-use OAuth browser handoff, its 303 Google redirect, browser-binding cookie delivery, no-store headers and replay rejection.
+- Android JVM tests cover HTTPS-only configuration, exact origin boundaries, OAuth handoff routing, workspace dialog origin checks and unsafe external links.
+- Android debug APK builds, passes archive verification and uploads as a CI artifact.
+- Existing browser dashboard features are presented inside the native app shell without copying their persistence/API state or replacing the Node backend.
+- Manual Galaxy Tab A9 checks remain required: login/session persistence, portrait/landscape rotation, WebView back behavior, Google OAuth return, external-link handoff, renderer recovery, TalkBack and dashboard navigation. These checks are not inferred from CI.
 
 
 ## Lifecycle and recovery hardening
@@ -71,3 +72,10 @@ When the Android Activity resumes after the external browser flow, the embedded 
 
 - Persist the pending external-browser return flag in the Activity saved state. If Android recreates the app while Google sign-in is in the foreground, JARVIS still refreshes the dashboard when the user returns.
 - Flush WebView-managed cookies when the Activity pauses as well as during state save; application code never copies raw cookie values into app preferences or saved-state bundles.
+
+
+## Completion boundary
+
+The Android application-shell integration is code-complete and its automated Node.js and Android CI acceptance is expected to remain green on the final commit. This is not a claim of physical-device verification. Galaxy Tab A9 login/session persistence, rotation, touch/navigation, OAuth browser return, TalkBack and renderer recovery still require an actual device check in Phase 31.
+
+The launch-ticket cache is intentionally bounded to 100 outstanding entries and tickets expire after two minutes. It remains process-local to avoid a new persistence schema while Phase 0 legacy-data migration safeguards are open. The current Render service is configured for one instance; scaling the service or restarting it during a handoff requires the user to start OAuth again.

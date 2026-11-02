@@ -301,6 +301,13 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
     headers: {}
   });
   assert.equal(googleBrowserLaunch.status, 303);
+  assert.equal(googleBrowserLaunch.headers.get("cache-control"), "no-store");
+  assert.equal(googleBrowserLaunch.headers.get("referrer-policy"), "no-referrer");
+  const replayedGoogleLaunch = await request(googleLaunchUrl.pathname + googleLaunchUrl.search, {
+    redirect: "manual",
+    headers: {}
+  });
+  assert.equal(replayedGoogleLaunch.status, 410);
   const googleAuthorizationUrl = new URL(googleBrowserLaunch.headers.get("location"));
   assert.equal(googleAuthorizationUrl.origin, "https://accounts.google.com");
   assert.equal(googleAuthorizationUrl.searchParams.get("scope"), "https://www.googleapis.com/auth/drive.metadata.readonly");
