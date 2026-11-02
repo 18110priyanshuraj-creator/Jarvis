@@ -34,6 +34,271 @@ function safeValue(value) {
   return !SENSITIVE_VALUE_PATTERN.test(value) && !EMAIL_PATTERN.test(value) && !PHONE_PATTERN.test(value);
 }
 
+const WORKFLOW_FAILURES = Object.freeze({
+  timeout: Object.freeze({
+    code: "timeout",
+    category: "transient",
+    retryable: true,
+    message: "The step timed out. Check whether it completed before retrying."
+  }),
+  rate_limited: Object.freeze({
+    code: "rate_limited",
+    category: "transient",
+    retryable: true,
+    message: "The connected service rate limit was reached. Wait, then retry manually."
+  }),
+  service_unavailable: Object.freeze({
+    code: "service_unavailable",
+    category: "transient",
+    retryable: true,
+    message: "The connected service is temporarily unavailable. Try again later."
+  }),
+  network_unavailable: Object.freeze({
+    code: "network_unavailable",
+    category: "transient",
+    retryable: true,
+    message: "The connection was unavailable. Check connectivity, then retry manually."
+  }),
+  storage_conflict: Object.freeze({
+    code: "storage_conflict",
+    category: "transient",
+    retryable: true,
+    message: "JARVIS could not save the latest checkpoint because data changed concurrently. Review the saved run, then retry manually."
+  }),
+  authentication_required: Object.freeze({
+    code: "authentication_required",
+    category: "action_required",
+    retryable: false,
+    message: "The connected service rejected its saved credential. Verify or reconnect it before continuing."
+  }),
+  permission_denied: Object.freeze({
+    code: "permission_denied",
+    category: "action_required",
+    retryable: false,
+    message: "The connected account lacks the required permission. Review its access before continuing."
+  }),
+  configuration_missing: Object.freeze({
+    code: "configuration_missing",
+    category: "action_required",
+    retryable: false,
+    message: "The integration is not configured or is disabled. Review Connections settings before continuing."
+  }),
+  endpoint_not_found: Object.freeze({
+    code: "endpoint_not_found",
+    category: "action_required",
+    retryable: false,
+    message: "The connected service endpoint was not found. Check the provider configuration."
+  }),
+  resource_limit: Object.freeze({
+    code: "resource_limit",
+    category: "action_required",
+    retryable: false,
+    message: "A workflow or local storage limit was reached. Review capacity before starting another run."
+  }),
+  invalid_request: Object.freeze({
+    code: "invalid_request",
+    category: "action_required",
+    retryable: false,
+    message: "The workflow step data is invalid or unsupported. Edit, validate and approve a new workflow version."
+  }),
+  handler_missing: Object.freeze({
+    code: "handler_missing",
+    category: "action_required",
+    retryable: false,
+    message: "This step has no registered handler. Update the workflow or restore the missing integration."
+  }),
+  unknown: Object.freeze({
+    code: "unknown",
+    category: "needs_review",
+    retryable: false,
+    message: "The failure could not be classified safely. Inspect the run and verify the underlying state before continuing."
+  })
+});
+
+export function classifyWorkflowError(error) {
+  const rawMessage = cleanText(error?.message || error || "", 500).toLocaleLowerCase();
+  const name = cleanText(error?.name, 60);
+  let code = Object.hasOwn(WORKFLOW_FAILURES, error?.code) ? error.code : "unknown";
+
+  if (code !== "unknown") {
+    // Trusted internal error codes take precedence over message heuristics.
+  } else if (name === "TimeoutError" || name === "AbortError" ||
+      /\b(?:timed? ?out|timeout|etimedout)\b/.test(rawMessage)) {
+    code = "timeout";
+  } else if (/\b(?:429|rate.?limit|too many requests)\b/.test(rawMessage)) {
+    code = "rate_limited";
+  } else if (/\b(?:not configured|disabled in jarvis|configuration missing|invalid configuration|token format is invalid)\b/.test(rawMessage)) {
+    code = "configuration_missing";
+  } else if (/\b(?:401|unauthorized|credential|authentication|token was rejected|rejected the configured credential)\b/.test(rawMessage)) {
+    code = "authentication_required";
+  } else if (/\b(?:403|forbidden|permission denied|lacks permission|access denied)\b/.test(rawMessage)) {
+    code = "permission_denied";
+  } else if (/\b(?:404|endpoint was not found|endpoint not found)\b/.test(rawMessage)) {
+    code = "endpoint_not_found";
+  } else if (/\b(?:limit reached|quota exceeded|capacity limit|too many records)\b/.test(rawMessage)) {
+    code = "resource_limit";
+  } else if (/\b(?:invalid|unsupported|malformed|unknown or unsupported)\b/.test(rawMessage)) {
+    code = "invalid_request";
+  } else if (/\b(?:kept changing during the save|concurrent|serialization conflict)\b/.test(rawMessage)) {
+    code = "storage_conflict";
+  } else if (/\b(?:temporarily unavailable|service unavailable|server error|5\d\d)\b/.test(rawMessage)) {
+    code = "service_unavailable";
+  } else if (/\b(?:could not connect|connection|network|fetch failed|econnreset|eai_again|temporary|temporarily)\b/.test(rawMessage)) {
+    code = "network_unavailable";
+  }
+
+  const failure = WORKFLOW_FAILURES[code];
+  return {
+    code: failure.code,
+    category: failure.category,
+    retryable: failure.retryable,
+    message: failure.message
+  };
+}
+
+function makeWorkflowFailure(error, at = new Date().toISOString(), attempts = 0) {
+  const classified = classifyWorkflowError(error);
+  return {
+    ...classified,
+    at: timestamp(at),
+    attempts: Number.isInteger(attempts) ? Math.max(0, Math.min(3, attempts)) : 0
+  };
+}
+
+export function sanitizeWorkflowRunRecord(runInput) {
+  if (!runInput || typeof runInput !== "object" || runInput.status !== "failed") return runInput;
+  const run = structuredClone(runInput);
+  const failedSteps = (Array.isArray(run.steps) ? run.steps : []).filter((step) => step?.status === "failed");
+  const primaryStep = failedSteps[0] || null;
+  const sourceFailure = run.failure && typeof run.failure.code === "string"
+    ? run.failure
+    : primaryStep?.result?.failure && typeof primaryStep.result.failure.code === "string"
+      ? primaryStep.result.failure
+      : primaryStep?.result?.error || "";
+  const runFailure = makeWorkflowFailure(
+    sourceFailure,
+    run.failure?.at || primaryStep?.updatedAt || run.updatedAt || new Date().toISOString(),
+    Number(primaryStep?.attempts) || Number(run.failure?.attempts) || 0
+  );
+  run.failure = runFailure;
+  if (Array.isArray(run.logs)) {
+    run.logs = run.logs.slice(-50).map((entry) => entry?.status === "failed"
+      ? { ...entry, summary: runFailure.message }
+      : entry);
+  }
+
+  for (const step of failedSteps) {
+    const stepSource = step.result?.failure && typeof step.result.failure.code === "string"
+      ? step.result.failure
+      : step.result?.error || sourceFailure;
+    const safeFailure = makeWorkflowFailure(
+      stepSource,
+      step.result?.failure?.at || runFailure.at,
+      Number(step.attempts) || 0
+    );
+    step.result = { error: safeFailure.message, failure: safeFailure };
+    if (step.lastFailure && typeof step.lastFailure === "object") {
+      const priorSource = step.lastFailure.failure?.code
+        ? step.lastFailure.failure
+        : step.lastFailure.error || "";
+      const priorFailure = makeWorkflowFailure(priorSource, step.lastFailure.failure?.at || safeFailure.at, Math.max(0, (Number(step.attempts) || 1) - 1));
+      step.lastFailure = { error: priorFailure.message, failure: priorFailure };
+    }
+  }
+
+  return run;
+}
+
+export function getWorkflowRecoverySummary(runInput) {
+  const run = runInput && typeof runInput === "object" ? runInput : {};
+  const index = Number.isInteger(run.currentStepIndex)
+    ? run.currentStepIndex
+    : Number.isInteger(run.nextStepIndex) ? run.nextStepIndex : -1;
+  const step = Array.isArray(run.steps) && index >= 0 ? run.steps[index] : null;
+  const attempts = Math.max(0, Number(step?.attempts) || 0);
+  const storedFailure = run.failure || step?.result?.failure || null;
+
+  if (run.status === "failed") {
+    const classified = storedFailure && typeof storedFailure.code === "string" &&
+      Object.hasOwn(WORKFLOW_FAILURES, storedFailure.code)
+      ? WORKFLOW_FAILURES[storedFailure.code]
+      : classifyWorkflowError(step?.result?.error || "");
+    const retryable = classified.retryable === true && attempts < 3 && step?.status === "failed";
+    return {
+      runId: cleanText(run.id, 80),
+      status: run.status,
+      step: step ? { index, title: cleanText(step.title, MAX_TITLE), type: cleanText(step.type, 60) } : null,
+      failure: {
+        code: classified.code,
+        category: classified.category,
+        retryable: classified.retryable,
+        message: classified.message,
+        at: typeof storedFailure?.at === "string" ? storedFailure.at : ""
+      },
+      attempts,
+      maxAttempts: 3,
+      canRetry: retryable,
+      canResume: false,
+      requiresManualReview: !retryable,
+      automaticRecovery: false,
+      nextAction: retryable ? "retry_manually" : "review_or_fix",
+      guidance: retryable
+        ? classified.message + " Only the failed step will be retried after you explicitly confirm."
+        : classified.message
+    };
+  }
+
+  if (run.status === "paused") {
+    return {
+      runId: cleanText(run.id, 80),
+      status: run.status,
+      step: null,
+      failure: null,
+      attempts: 0,
+      maxAttempts: 3,
+      canRetry: false,
+      canResume: true,
+      requiresManualReview: true,
+      automaticRecovery: false,
+      nextAction: "resume_manually",
+      guidance: "Review the last saved checkpoint and completed steps. Resume only after you explicitly confirm; interrupted actions are never replayed automatically."
+    };
+  }
+
+  if (run.status === "waiting_review") {
+    return {
+      runId: cleanText(run.id, 80),
+      status: run.status,
+      step: null,
+      failure: null,
+      attempts: 0,
+      maxAttempts: 3,
+      canRetry: false,
+      canResume: false,
+      canContinue: true,
+      requiresManualReview: true,
+      automaticRecovery: false,
+      nextAction: "continue_after_review",
+      guidance: "Review the completed steps before choosing Continue. Later steps remain paused until you approve."
+    };
+  }
+
+  return {
+    runId: cleanText(run.id, 80),
+    status: cleanText(run.status, 30) || "unknown",
+    step: null,
+    failure: null,
+    attempts: 0,
+    maxAttempts: 3,
+    canRetry: false,
+    canResume: false,
+    requiresManualReview: false,
+    automaticRecovery: false,
+    nextAction: "none",
+    guidance: "No recovery action is currently available for this run status."
+  };
+}
+
 function timestamp(value) {
   if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) return new Date().toISOString();
   return new Date(Date.parse(value)).toISOString();
@@ -288,7 +553,10 @@ export async function advanceWorkflowRun(runInput, handlers, options = {}) {
       step.status = "failed";
       run.status = "failed";
       run.currentStepIndex = index;
-      addLog(run, { stepIndex: index, stepTitle: step.title, status: "failed", summary: "This step has no registered handler." });
+      const failure = makeWorkflowFailure(Object.assign(new Error("This step has no registered handler."), { code: "handler_missing" }), new Date().toISOString(), 0);
+      step.result = { error: failure.message, failure };
+      run.failure = failure;
+      addLog(run, { stepIndex: index, stepTitle: step.title, status: "failed", summary: failure.message });
       run.finishedAt = new Date().toISOString();
       await checkpoint();
       return run;
@@ -300,11 +568,14 @@ export async function advanceWorkflowRun(runInput, handlers, options = {}) {
       step.status = "failed";
       run.status = "failed";
       run.currentStepIndex = index;
+      const failure = makeWorkflowFailure(Object.assign(new Error("The step reached the maximum of three attempts."), { code: "resource_limit" }), new Date().toISOString(), step.attempts);
+      step.result = { error: failure.message, failure };
+      run.failure = failure;
       addLog(run, {
         stepIndex: index,
         stepTitle: step.title,
         status: "failed",
-        summary: "The step reached the maximum of three attempts. Review it before changing the workflow."
+        summary: failure.message
       });
       run.finishedAt = new Date().toISOString();
       await checkpoint();
@@ -344,8 +615,10 @@ export async function advanceWorkflowRun(runInput, handlers, options = {}) {
       });
       await checkpoint();
     } catch (error) {
+      const failure = makeWorkflowFailure(error, new Date().toISOString(), step.attempts);
       step.status = "failed";
-      step.result = { error: cleanText(error?.message || "Step failed.", 200) };
+      step.result = { error: failure.message, failure };
+      run.failure = failure;
       run.status = "failed";
       run.nextStepIndex = index;
       run.currentStepIndex = index;
@@ -353,7 +626,7 @@ export async function advanceWorkflowRun(runInput, handlers, options = {}) {
         stepIndex: index,
         stepTitle: step.title,
         status: "failed",
-        summary: "Step failed. Review the error before resuming or creating a new run."
+        summary: failure.message
       });
       run.finishedAt = new Date().toISOString();
       await checkpoint();
@@ -402,12 +675,20 @@ export function retryWorkflowRun(runInput) {
   const step = run.steps?.[index];
   if (!step || step.status !== "failed") throw new Error("The failed step could not be identified safely.");
   if ((Number(step.attempts) || 0) >= 3) throw new Error("This step reached the maximum of three attempts.");
+  const storedFailure = run.failure || step.result?.failure;
+  const classification = storedFailure && Object.hasOwn(WORKFLOW_FAILURES, storedFailure.code)
+    ? WORKFLOW_FAILURES[storedFailure.code]
+    : classifyWorkflowError(step.result?.error || "");
+  if (!classification.retryable) {
+    throw new Error("This failure is not safe to retry. Fix the underlying cause and create a new run.");
+  }
   step.lastFailure = step.result || null;
   step.result = null;
   step.status = "pending";
   run.status = "running";
   run.nextStepIndex = index;
   run.currentStepIndex = null;
+  run.failure = null;
   run.finishedAt = "";
   run.updatedAt = new Date().toISOString();
   addLog(run, {

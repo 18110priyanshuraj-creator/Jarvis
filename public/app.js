@@ -1637,6 +1637,24 @@ function renderWorkflows() {
       meta.textContent = "Version " + run.workflowVersion + " · " + new Date(run.createdAt).toLocaleString();
       main.append(title, status, meta);
 
+      const failedStep = (run.steps || []).find((step) => step.status === "failed");
+      const failure = run.failure || failedStep?.result?.failure || null;
+      const canRetryFailedStep = run.status === "failed" && failure?.retryable === true &&
+        failedStep && (Number(failedStep.attempts) || 0) < 3;
+      if (run.status === "failed") {
+        const recoveryMeta = document.createElement("div");
+        recoveryMeta.className = "list-item-meta";
+        recoveryMeta.textContent = failure?.message
+          ? "Recovery: " + failure.message + (canRetryFailedStep ? " Manual retry available." : " Fix the cause or review the saved checkpoint before continuing.")
+          : "Recovery: Failure details are unavailable for this older run. Review its saved state; automatic retry is disabled.";
+        main.append(recoveryMeta);
+      } else if (run.status === "paused" && run.recovery?.requiresManualResume) {
+        const recoveryMeta = document.createElement("div");
+        recoveryMeta.className = "list-item-meta";
+        recoveryMeta.textContent = "Recovery: Interrupted after restart. Review the last saved checkpoint; no actions were replayed.";
+        main.append(recoveryMeta);
+      }
+
       const steps = document.createElement("ol");
       steps.className = "workflow-run-steps";
       for (const step of run.steps || []) {
@@ -1645,7 +1663,9 @@ function renderWorkflows() {
         const heading = document.createElement("strong");
         heading.textContent = step.title + " · " + step.status.replace("_", " ");
         item.append(heading);
-        const detail = step.result?.summary || step.result?.message || step.result?.error;
+        const detail = step.result?.summary || step.result?.message ||
+          step.result?.failure?.message ||
+          (step.status === "failed" ? "Step failed. Review the recovery guidance above." : step.result?.error);
         if (detail) {
           const text = document.createElement("p");
           text.textContent = detail;
@@ -1743,13 +1763,14 @@ function renderWorkflows() {
         });
         actions.append(continueButton);
       }
-      if (run.status === "failed") {
+      if (canRetryFailedStep) {
         const retryButton = document.createElement("button");
         retryButton.type = "button";
         retryButton.className = "item-action";
         retryButton.textContent = "Retry failed step";
         retryButton.addEventListener("click", async () => {
-          if (!confirm("Retry only the failed step? Previously completed steps will remain completed. A step is limited to three attempts.")) return;
+          if (!confirm((failure.message || "A transient error was detected.") +
+            "\n\nRetry only the failed step? Previously completed steps stay completed. A step is limited to three attempts.")) return;
           retryButton.disabled = true;
           try {
             const data = await api("/api/workflow-runs/" + encodeURIComponent(run.id) + "/retry", {

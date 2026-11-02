@@ -22,7 +22,7 @@ import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, mergeDup
 import { buildMemoryContext, findExactMemory, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, parseExplicitForgetIntent, previewMemoryContext, searchMemories } from "./services/memory.js";
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeApplicationId, normalizeSkill, pauseSkill, SKILL_APPLICATION_CATALOG, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
-import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, createWorkflowDraft, createWorkflowRun, normalizeWorkflow, pauseWorkflow, pauseWorkflowRun, recoverInterruptedWorkflowRuns, resumeWorkflowRun, retryWorkflowRun, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
+import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, classifyWorkflowError, createWorkflowDraft, createWorkflowRun, getWorkflowRecoverySummary, normalizeWorkflow, pauseWorkflow, pauseWorkflowRun, recoverInterruptedWorkflowRuns, resumeWorkflowRun, retryWorkflowRun, sanitizeWorkflowRunRecord, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
 import { createTaskPlan, TASK_PLANNER_LIMITS } from "./services/task-planner.js";
 import { getIntegrationCatalog, INTEGRATION_PROVIDER_IDS, probeIntegration, runIntegrationAction } from "./services/integrations.js";
 import { appendActionStatus, createPendingExternalAction, executeExternalAction, getExternalActionCapabilities, MAX_ACTION_HISTORY, MAX_PENDING_ACTIONS, normalizeExternalAction } from "./services/external-actions.js";
@@ -293,7 +293,7 @@ function normalizeStore(parsed = {}) {
       ? parsed.workflowRuns.slice(-WORKFLOW_LIMITS.runs).filter((item) =>
           item && typeof item.id === "string" && typeof item.workflowId === "string" &&
           Array.isArray(item.steps) && ["queued", "running", "waiting_review", "paused", "completed", "failed", "cancelled"].includes(item.status)
-        )
+        ).map(sanitizeWorkflowRunRecord)
       : [],
     workflowStepEffects: Array.isArray(parsed.workflowStepEffects)
       ? parsed.workflowStepEffects.slice(-WORKFLOW_LIMITS.runs * WORKFLOW_LIMITS.steps).filter((item) =>
@@ -1792,7 +1792,11 @@ async function markWorkflowExecutionFailed(runId, error) {
     status: "failed",
     finishedAt: failedAt,
     updatedAt: failedAt,
-    failure: { name: /^[A-Za-z][A-Za-z0-9_.-]{0,49}$/.test(String(error?.name || "")) ? String(error.name) : "ExecutionError" },
+    failure: {
+      ...classifyWorkflowError(error),
+      at: failedAt,
+      attempts: Number(current.steps?.[current.currentStepIndex ?? current.nextStepIndex]?.attempts) || 0
+    },
     logs: (Array.isArray(current.logs) ? current.logs : []).concat([{
       at: failedAt,
       stepIndex: Number.isInteger(current.currentStepIndex) ? current.currentStepIndex : current.nextStepIndex,
@@ -1900,6 +1904,13 @@ app.post("/api/workflow-runs/:id/resume", requireAuth, async (req, res) => {
   }
   const result = await executeWorkflowRun(existing.id);
   res.json({ run: result });
+});
+
+app.get("/api/workflow-runs/:id/recovery", requireAuth, (req, res) => {
+  const existing = store.workflowRuns.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow run not found." });
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ recovery: getWorkflowRecoverySummary(existing) });
 });
 
 app.post("/api/workflow-runs/:id/retry", requireAuth, async (req, res) => {

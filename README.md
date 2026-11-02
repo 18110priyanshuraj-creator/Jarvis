@@ -87,8 +87,11 @@ JARVIS is a private, single-owner assistant with a web dashboard and an Android 
   - `search_knowledge` — search the saved Knowledge Library.
   - `draft_text` — prepare a text draft in the execution result; nothing is sent or published.
   - `review_checkpoint` — pause the run so the user can review completed steps before choosing Continue or Stop.
-- Workflow steps execute in order. A failed step stops later steps. Each run keeps a bounded step log, result summaries and status.
-- Users can continue a run at an explicit review checkpoint or stop it. Workflows can also be paused or deleted.
+- Workflow steps execute in order. A failed step stops later steps. Each run keeps a bounded step log, safe result summaries and status.
+- Failures are classified into transient connection/timeout/rate-limit errors, configuration or credential problems, permission failures, capacity limits, invalid requests and unknown failures. Saved failure summaries use fixed safe messages; raw provider/exception text is not persisted in the recovery record.
+- Only classified transient failures can be retried. A retry is a separate user-confirmed action, replays only the failed step with its stable execution key, preserves completed steps and is limited to three attempts. Missing credentials, disabled integrations, permission errors, capacity limits, invalid requests and unknown failures require the cause to be fixed or reviewed; they are not retryable.
+- Restart recovery pauses active runs at the last durable checkpoint. Users must review the saved progress and explicitly resume; no action is automatically replayed after a restart. Review checkpoints still require explicit Continue.
+- Users can continue a run at an explicit review checkpoint or stop it. Workflows can also be paused or deleted. There is no general automatic repair or background retry loop.
 - Limits: 50 saved workflows, 10 steps per workflow, and 100 recent execution records.
 - The engine does not run shell commands, execute user-supplied code, send messages, publish posts, make purchases/payments, change security settings, or perform unapproved Android device operations.
 - This phase does not connect workflow steps to an autonomous background worker or external app connectors. Actions run in the authenticated dashboard request using the local JARVIS data store.
@@ -102,6 +105,9 @@ JARVIS is a private, single-owner assistant with a web dashboard and an Android 
 - POST /api/workflows/:id/approve — approve a version after validation.
 - POST /api/workflows/:id/run — explicitly start an approved workflow.
 - POST /api/workflow-runs/:id/continue — continue after a review checkpoint.
+- GET /api/workflow-runs/:id/recovery — read a sanitized, non-mutating recovery preview.
+- POST /api/workflow-runs/:id/retry — explicitly retry a classified transient failed step (maximum three attempts).
+- POST /api/workflow-runs/:id/resume — explicitly resume a paused run from its durable checkpoint.
 - POST /api/workflow-runs/:id/stop — stop an active run.
 - POST /api/workflows/:id/pause — pause a saved workflow.
 - DELETE /api/workflows/:id — delete a workflow while preserving its run history.
