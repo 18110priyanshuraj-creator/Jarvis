@@ -503,9 +503,12 @@ class VoiceControlService : Service() {
             .replace(Regex("\\s+"), " ")
             .trim()
         return when (normalized) {
-            "pause task", "pause plan", "pause current task", "task pause" -> "pause"
-            "resume task", "resume plan", "continue task", "continue plan", "task resume" -> "resume"
-            "cancel task", "cancel current task", "stop task", "cancel running task" -> "cancel"
+            "pause task", "pause plan", "pause current task", "task pause",
+            "pause karo", "task pause karo", "kaam roko", "kaam rok do" -> "pause"
+            "resume task", "resume plan", "continue task", "continue plan", "task resume",
+            "resume karo", "task resume karo", "kaam jari karo", "kaam chalu karo" -> "resume"
+            "cancel task", "cancel current task", "stop task", "cancel running task",
+            "cancel karo", "task cancel karo", "kaam cancel karo" -> "cancel"
             else -> null
         }
     }
