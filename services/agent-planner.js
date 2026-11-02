@@ -20,7 +20,7 @@ const ALLOWED_ACTIONS = new Set([
 const BLOCKED_LABEL = /\b(send|submit|delete|remove|pay|payment|purchase|buy|transfer|confirm|otp|one.?time|password|passcode|pin|verification|checkout|order|uninstall|grant|allow|deny|revoke)\b/i;
 const NUMERIC_SECRET = /^\d{4,10}$/;
 
-const BLOCKED_SEARCH_QUERY = /\b(porn|xxx|adult content|vape|cigarette|weed|marijuana|cocaine|methamphetamine|steroids|how to make a bomb|explosive|weapon|gun|suicide|self.?harm)\b/i;
+const BLOCKED_SEARCH_QUERY = /\b(porn|xxx|adult content|vape|cigarette|tobacco|nicotine|alcohol|liquor|beer|wine|weed|marijuana|cannabis|cocaine|methamphetamine|steroids|gambling|sports betting|casino|firearms?|weapons?|ammunition|how to make a bomb|explosives?|gun|suicide|self.?harm)\b/i;
 
 function cleanLocalIntent(value, maxLength) {
   return String(value || "")
