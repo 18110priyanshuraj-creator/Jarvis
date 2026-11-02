@@ -6,6 +6,9 @@ import {
   createSkillVersion,
   getActiveSkillContext,
   normalizeSkill,
+  normalizeApplicationId,
+  SKILL_APPLICATION_CATALOG,
+  SKILL_LIMITS,
   pauseSkill,
   validateSkill
 } from "../services/skill-engine.js";
@@ -156,4 +159,129 @@ test("paused skills stop matching until re-approved", () => {
   const paused = pauseSkill(active);
   assert.equal(paused.status, "paused");
   assert.equal(getActiveSkillContext([paused], "Explain JEE question").length, 0);
+});
+
+
+test("legacy skills migrate to the global application scope without losing activation", () => {
+  const legacy = normalizeSkill({
+    id: "legacy-global-skill",
+    name: "Legacy global skill",
+    instructions: "Explain matching requests clearly and verify the final response."
+  });
+  assert.deepEqual(legacy.applicationIds, ["*"]);
+  assert.deepEqual(legacy.versions[0].applicationIds, ["*"]);
+  assert.equal(getActiveSkillContext([legacy], "Explain matching requests").length, 1);
+  assert.equal(getActiveSkillContext([legacy], "Explain matching requests", 3, "android-companion").length, 1);
+});
+
+test("application IDs normalize safely and reject malformed identifiers", () => {
+  assert.equal(normalizeApplicationId(" COM.Google.Android.YouTube "), "com.google.android.youtube");
+  assert.equal(normalizeApplicationId("android-companion"), "android-companion");
+  assert.equal(normalizeApplicationId("*"), "*");
+  assert.equal(normalizeApplicationId("com.example/app"), "");
+  assert.equal(normalizeApplicationId(""), "");
+  assert.equal(SKILL_LIMITS.applicationIds, 12);
+  assert.ok(SKILL_APPLICATION_CATALOG.some((item) => item.id === "android-companion"));
+});
+
+test("approved skills only enter context for their assigned application surfaces", () => {
+  const candidate = createSkillCandidate({
+    name: "Android navigation helper",
+    instructions: "Explain supported Android navigation steps clearly and never claim an action succeeded without confirmation.",
+    applicationIds: [" Android-Companion ", "com.google.android.youtube", "android-companion"],
+    triggers: ["help with Android navigation"],
+    testCases: [
+      { input: "Help with Android navigation", shouldMatch: true },
+      { input: "What is the weather today?", shouldMatch: false }
+    ]
+  });
+  assert.deepEqual(candidate.applicationIds, ["android-companion", "com.google.android.youtube"]);
+  const approved = approveSkill(validateSkill(candidate).skill);
+  const androidMatches = getActiveSkillContext([approved], "Please help with Android navigation", 3, "android-companion");
+  assert.equal(androidMatches.length, 1);
+  assert.equal(androidMatches[0].applicationId, "android-companion");
+  assert.equal(getActiveSkillContext([approved], "Please help with Android navigation", 3, "web-dashboard").length, 0);
+  assert.equal(getActiveSkillContext([approved], "Please help with Android navigation", 3, "com.google.android.youtube").length, 1);
+});
+
+test("explicit global wildcard skills apply to all registered application surfaces", () => {
+  const candidate = createSkillCandidate({
+    name: "General explanation helper",
+    instructions: "Explain general questions clearly, identify uncertainty, and keep answers relevant.",
+    applicationIds: ["*"],
+    triggers: ["explain general question"],
+    testCases: [
+      { input: "Please explain general question", shouldMatch: true },
+      { input: "What is the weather?", shouldMatch: false }
+    ]
+  });
+  const approved = approveSkill(validateSkill(candidate).skill);
+  assert.equal(getActiveSkillContext([approved], "Please explain general question", 3, "web-dashboard").length, 1);
+  assert.equal(getActiveSkillContext([approved], "Please explain general question", 3, "android-companion").length, 1);
+  assert.equal(getActiveSkillContext([approved], "Please explain general question", 3, "com.android.chrome").length, 1);
+});
+
+test("invalid, empty, and excessive application target lists fail closed", () => {
+  const base = {
+    name: "Scoped skill validation",
+    instructions: "Explain the requested topic clearly and state relevant assumptions.",
+    triggers: ["explain scoped topic"],
+    testCases: [
+      { input: "Please explain scoped topic", shouldMatch: true },
+      { input: "What is the weather?", shouldMatch: false }
+    ]
+  };
+  assert.throws(() => createSkillCandidate({ ...base, applicationIds: [] }), /application target/i);
+  assert.throws(() => createSkillCandidate({ ...base, applicationIds: ["com.example/app"] }), /application id/i);
+  assert.throws(() => createSkillCandidate({
+    ...base,
+    applicationIds: Array.from({ length: 13 }, (_, index) => "app-" + index)
+  }), /at most 12 applications/i);
+  const malformedStored = normalizeSkill({
+    id: "malformed-scope",
+    name: "Malformed scope",
+    instructions: base.instructions,
+    applicationIds: []
+  });
+  assert.deepEqual(malformedStored.applicationIds, []);
+  assert.deepEqual(getActiveSkillContext([malformedStored], "Please explain scoped topic", 3, "web-dashboard"), []);
+});
+
+test("new versions preserve their prior application scope unless explicitly changed", () => {
+  const candidate = createSkillCandidate({
+    name: "Dashboard-only helper",
+    instructions: "Explain dashboard requests clearly and keep the answer focused and accurate.",
+    applicationIds: ["web-dashboard"],
+    triggers: ["explain dashboard request"],
+    testCases: [
+      { input: "Please explain dashboard request", shouldMatch: true },
+      { input: "What is the weather?", shouldMatch: false }
+    ]
+  });
+  const active = approveSkill(validateSkill(candidate).skill);
+  const updated = createSkillVersion(active, {
+    name: "Dashboard-only helper v2",
+    instructions: "Explain dashboard requests clearly, state assumptions, and keep the answer focused.",
+    triggers: ["explain dashboard request"],
+    testCases: [
+      { input: "Please explain dashboard request", shouldMatch: true },
+      { input: "What is the weather?", shouldMatch: false }
+    ]
+  });
+  assert.deepEqual(updated.applicationIds, ["web-dashboard"]);
+  assert.equal(getActiveSkillContext([updated], "Please explain dashboard request", 3, "android-companion").length, 0);
+  const retargeted = createSkillVersion(active, {
+    name: "Dashboard and Android helper",
+    instructions: "Explain supported requests clearly, state assumptions, and keep the answer focused.",
+    applicationIds: ["web-dashboard", "android-companion"],
+    triggers: ["explain dashboard request"],
+    testCases: [
+      { input: "Please explain dashboard request", shouldMatch: true },
+      { input: "What is the weather?", shouldMatch: false }
+    ]
+  });
+  assert.deepEqual(retargeted.applicationIds, ["web-dashboard", "android-companion"]);
+  assert.equal(retargeted.activeVersion, active.activeVersion);
+  assert.equal(retargeted.currentVersion, 2);
+  assert.equal(getActiveSkillContext([retargeted], "Please explain dashboard request", 3, "android-companion").length, 0);
 });
