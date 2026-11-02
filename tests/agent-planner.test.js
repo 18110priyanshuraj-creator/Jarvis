@@ -96,6 +96,45 @@ test("built-in device planner builds a bounded English app-search workflow", () 
   assert.match(plan.actions[5].value, /choose the result/i);
 });
 
+test("built-in planner opens Google search for English, Hindi and Hinglish requests without an API provider", () => {
+  const english = createLocalAgentPlan("Search latest AI research on Google");
+  assert.ok(english);
+  assert.deepEqual(english.actions.map(item => item.type), [
+    "open_web_search", "verify_screen_text", "ask_user"
+  ]);
+  assert.equal(english.actions[0].value, "latest AI research");
+  assert.equal(english.actions[1].value, "latest AI research");
+  assert.match(english.reply, /default browser/i);
+
+  const hindi = createLocalAgentPlan("Google par JEE Main 2027 notification search karo");
+  assert.ok(hindi);
+  assert.equal(hindi.actions[0].value, "JEE Main 2027 notification");
+
+  const hinglish = createLocalAgentPlan("Google pe latest AI technology research karo");
+  assert.ok(hinglish);
+  assert.equal(hinglish.actions[0].value, "latest AI technology");
+});
+
+test("Google browser plans reject missing postconditions and unsafe search phrases", () => {
+  assert.throws(() => validateAgentPlan({
+    mode: "device_action",
+    reply: "Open Google",
+    actions: [{ type: "open_web_search", value: "latest AI research", purpose: "Search" }]
+  }), /visible-text verification/i);
+
+  assert.throws(() => validateAgentPlan({
+    mode: "device_action",
+    reply: "Open Google",
+    actions: [
+      { type: "open_web_search", value: "123456", purpose: "Search" },
+      { type: "verify_screen_text", value: "123456", purpose: "Verify query" }
+    ]
+  }), /safe public-research policy/i);
+
+  assert.equal(createLocalAgentPlan("Google par how to make a bomb search karo"), null);
+  assert.equal(createLocalAgentPlan("Google pe adult content search karo"), null);
+});
+
 test("built-in device planner supports Hindi and Hinglish search phrasing", () => {
   const hindi = createLocalAgentPlan("YouTube kholo aur JEE Physics search karo");
   assert.ok(hindi);
