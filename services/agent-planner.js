@@ -3,6 +3,7 @@ import { createChatCompletion, getAIProviderStatus } from "./ai-provider.js";
 const ALLOWED_ACTIONS = new Set([
   "open_app",
   "verify_app_foreground",
+  "open_web_search",
   "read_screen",
   "tap_label",
   "type_text",
@@ -31,12 +32,48 @@ function cleanLocalIntent(value, maxLength) {
 }
 
 /**
+ * Extract a clearly requested public Google query. The browser owns navigation;
+ * JARVIS opens only a fixed Google HTTPS search URL and never accepts a user URL.
+ */
+function extractGoogleSearchQuery(input) {
+  const patterns = [
+    /^(?:please\\s+)?search\\s+(.+?)\\s+(?:on|using)\\s+google$/i,
+    /^(?:please\\s+)?google\\s+search\\s+(?:for\\s+)?(.+)$/i,
+    /^google\\s+(?:par|pe)\\s+(.+?)\\s+(?:search|research)(?:\\s+(?:karo|kar do))?$/i,
+    /^google\\s+se\\s+(.+?)\\s+(?:search|dhundo|dhoondo)(?:\\s+(?:karo|kar do))?$/i,
+    /^(?:internet|web)\\s+(?:par|pe)\\s+(.+?)\\s+(?:search|research|check)(?:\\s+(?:karo|kar do))?$/i
+  ];
+  for (const pattern of patterns) {
+    const match = input.match(pattern);
+    if (match?.[1]) return cleanLocalIntent(match[1], 120);
+  }
+  return "";
+}
+
+/**
  * Deterministic fallback for small, clearly expressed Android tasks.
  * It never reads the screen, chooses a search result, or performs a sensitive action.
  */
 export function createLocalAgentPlan(message) {
   const input = String(message || "").normalize("NFKC").trim().slice(0, 2000);
   if (!input) return null;
+
+  const googleQuery = extractGoogleSearchQuery(input);
+  if (googleQuery) {
+    if (googleQuery.length > 120 || BLOCKED_SEARCH_QUERY.test(googleQuery) || NUMERIC_SECRET.test(googleQuery) ||
+      /\\b(password|passcode|otp|one.?time code|pin|cvv|cvc|bank account|card number)\\b/i.test(googleQuery)) {
+      return null;
+    }
+    return validateAgentPlan({
+      mode: "device_action",
+      reply: "I will open Google in your default browser and verify that the search phrase is visible. You will choose a result; JARVIS will not sign in, submit forms or bypass challenges.",
+      actions: [
+        { type: "open_web_search", value: googleQuery, purpose: "Open a fixed Google HTTPS search URL in the default browser." },
+        { type: "verify_screen_text", value: googleQuery, purpose: "Confirm the requested query is visible in the browser." },
+        { type: "ask_user", value: "Google is open with your query. Choose a public result yourself. Handle any login, consent or CAPTCHA prompt manually, then return to JARVIS.", purpose: "Keep result selection and access challenges under the user's control." }
+      ]
+    });
+  }
 
   let app = "";
   let query = "";
@@ -108,7 +145,7 @@ export function validateAgentPlan(candidate) {
     }
 
     const value = typeof action.value === "string" ? action.value.trim().slice(0, 180) : "";
-    if (["open_app", "verify_app_foreground", "tap_label", "type_text", "verify_screen_text", "ask_user", "finish"].includes(action.type) && !value) {
+    if (["open_app", "verify_app_foreground", "open_web_search", "tap_label", "type_text", "verify_screen_text", "ask_user", "finish"].includes(action.type) && !value) {
       throw new TypeError("A required action value is missing.");
     }
     if (action.type === "tap_label" && BLOCKED_LABEL.test(value)) {
@@ -119,6 +156,11 @@ export function validateAgentPlan(candidate) {
     }
     if (["open_app", "verify_app_foreground"].includes(action.type) && value.length > 60) {
       throw new TypeError("The requested app label is too long.");
+    }
+    if (action.type === "open_web_search" &&
+      (value.length > 120 || NUMERIC_SECRET.test(value) || BLOCKED_SEARCH_QUERY.test(value) ||
+        /\\b(password|passcode|otp|one.?time code|pin|cvv|cvc|bank account|card number)\\b/i.test(value))) {
+      throw new TypeError("The Google search phrase is outside the safe public-research policy.");
     }
     if (action.type === "verify_screen_text" &&
       (value.length > 160 || NUMERIC_SECRET.test(value) || BLOCKED_LABEL.test(value))) {
@@ -152,7 +194,7 @@ export function validateAgentPlan(candidate) {
   }
 
   const lastUiMutation = actions.findLastIndex((action) =>
-    ["tap_label", "type_text", "scroll_down", "scroll_up", "back", "home"].includes(action.type)
+    ["open_web_search", "tap_label", "type_text", "scroll_down", "scroll_up", "back", "home"].includes(action.type)
   );
   if (lastUiMutation >= 0 &&
     !actions.slice(lastUiMutation + 1).some((action) => action.type === "verify_screen_text")) {
@@ -196,9 +238,10 @@ const SYSTEM_INSTRUCTIONS = [
   "Use mode device_action only when the user clearly asks to operate the Android interface, such as opening an app, reading visible labels, searching, scrolling or navigating.",
   "Use mode clarification when a requested device action is ambiguous, unsafe, or outside the supported controls. Return actions as an empty array and put one short explanation or clarification question in reply.",
   "You do not control Android directly. The Android app validates and executes every device action locally.",
-  "Allowed device action types only: open_app, verify_app_foreground, read_screen, tap_label, type_text, scroll_down, scroll_up, back, home, verify_screen_text, ask_user, finish.",
+  "Allowed device action types only: open_app, verify_app_foreground, open_web_search, read_screen, tap_label, type_text, scroll_down, scroll_up, back, home, verify_screen_text, ask_user, finish.",
   "Never create actions for sending messages, submitting forms, deleting, purchasing, paying, transferring money, changing account/security settings, handling OTP/PIN/password, granting permissions, installing apps, or bypassing system dialogs.",
-  "For a search workflow, open the requested app and immediately verify its foreground identity, tap the visible Search label, type the query and verify that the query is visible. Do not claim that search results have loaded: tell the user to submit the query in the app and choose a result manually.",
+  "For an explicit Google search request, use open_web_search with only the query text; Android opens a fixed HTTPS Google search URL in the user's default browser. Follow it with verify_screen_text for the same query, then ask the user to choose a result. Never claim that the result page was read. Do not bypass login, consent or CAPTCHA challenges.",
+  "For an app-specific search workflow, open the requested app and immediately verify its foreground identity, tap the visible Search label, type the query and verify that the query is visible. Do not claim that search results have loaded: tell the user to submit the query in the app and choose a result manually.",
   "Every open_app action must be followed immediately by verify_app_foreground with the same app label. Every UI mutation (tap, type, scroll, back or home) must be followed by verify_screen_text for the expected visible result before the plan can finish.",
   "A verification action is an observation only; it never taps, submits, sends, purchases, deletes or changes account state. If the expected result is not visible, stop and ask the user to review the screen. Never report completion without that check.",
   "A tap_label must be a short exact UI label such as Search or Library. If uncertain, choose clarification instead of guessing.",
