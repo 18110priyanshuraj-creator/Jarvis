@@ -665,6 +665,11 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   });
   const waitingRun = await waitingRunResponse.json();
   assert.equal(waitingRun.run.status, "waiting_review");
+  const waitingRecoveryResponse = await request("/api/workflow-runs/" + waitingRun.run.id + "/recovery");
+  assert.equal(waitingRecoveryResponse.status, 200);
+  const waitingRecovery = (await waitingRecoveryResponse.json()).recovery;
+  assert.equal(waitingRecovery.canContinue, true);
+  assert.equal(waitingRecovery.automaticRecovery, false);
   const stopRunResponse = await request("/api/workflow-runs/" + waitingRun.run.id + "/stop", {
     method: "POST", body: JSON.stringify({})
   });
