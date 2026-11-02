@@ -1,6 +1,5 @@
 package com.priyanshuraj.jarviscompanion.voice
 
-import android.app.role.RoleManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -12,6 +11,7 @@ import org.json.JSONObject
 import com.priyanshuraj.jarviscompanion.accessibility.JarvisAccessibilityService
 import com.priyanshuraj.jarviscompanion.accessibility.ScreenObserver
 import com.priyanshuraj.jarviscompanion.accessibility.UIActionExecutor
+import com.priyanshuraj.jarviscompanion.accessibility.UiActionPolicy
 import java.util.Locale
 
 object LocalCommandProcessor {
@@ -324,22 +324,16 @@ object LocalCommandProcessor {
             return PlannedActionResult(true, true, "The foreground app identity is unavailable. The search is not marked complete.")
         }
 
-        val expectedPackage = if (Build.VERSION.SDK_INT >= 29) {
-            val roleManager = context.getSystemService(RoleManager::class.java)
-            if (roleManager?.isRoleAvailable(RoleManager.ROLE_BROWSER) == true) {
-                roleManager.getRoleHolders(RoleManager.ROLE_BROWSER).singleOrNull().orEmpty()
-            } else {
-                ""
-            }
-        } else {
-            val searchUri = Uri.parse("https://www.google.com/search")
-                .buildUpon()
-                .appendQueryParameter("q", query)
-                .build()
-            val viewIntent = Intent(Intent.ACTION_VIEW, searchUri)
-                .addCategory(Intent.CATEGORY_BROWSABLE)
-            resolveViewActivity(context.packageManager, viewIntent)?.activityInfo?.packageName.orEmpty()
-        }
+        val searchUri = Uri.parse("https://www.google.com/search")
+            .buildUpon()
+            .appendQueryParameter("q", query)
+            .build()
+        val viewIntent = Intent(Intent.ACTION_VIEW, searchUri)
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+        val expectedPackage = resolveViewActivity(context.packageManager, viewIntent)
+            ?.activityInfo
+            ?.packageName
+            .orEmpty()
         if (expectedPackage.isBlank() ||
             expectedPackage in setOf("android", "com.android.intentresolver", "com.android.systemui")
         ) {
