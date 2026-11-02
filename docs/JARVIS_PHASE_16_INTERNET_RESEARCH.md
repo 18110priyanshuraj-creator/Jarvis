@@ -30,7 +30,7 @@ Supported intent examples include:
 The validated plan is exactly:
 
 1. `open_web_search` — create a fixed `https://www.google.com/search?q=...` URI from the query and open it with Android's `ACTION_VIEW` / `BROWSABLE` intent.
-2. `verify_browser_foreground` — check on-device that the package holding Android's default-browser role is the foreground accessibility window.
+2. `verify_browser_foreground` — check on-device that the package resolved for Android's default HTTPS BROWSABLE intent is the foreground accessibility window.
 3. `ask_user` — pause so the user can inspect the page and choose a public result.
 
 The server-side plan validator and Android `AgentPlanRunner` independently require the browser verification to immediately follow the matching search action and carry the same query. The Android executor does not accept a browser URL from a model or user; it builds the Google HTTPS URL itself.
@@ -47,7 +47,7 @@ The local task journal stores only generic action categories (`open web search`,
 - The external Google browser handoff does not pass arbitrary Google result URLs into the secure server reader. That reader intentionally accepts only short-lived source tokens issued by JARVIS's own live SearXNG search flow. A user-selected Google URL cannot be injected into the page reader.
 - The SearXNG endpoint is not bundled into the APK. Live server research is enabled only when an owner-configured trusted endpoint is present. A protected SearXNG instance may use its optional server-side key; the Android browser handoff itself needs no search API key.
 - Optional AI synthesis still depends on the separately configured provider. Search-result snippets and extracted pages remain available without claiming an AI-generated source comparison when no provider is configured.
-- Physical Samsung Galaxy Tab A9 browser handoff and default-browser role behavior are not claimed until Phase 31 device testing.
+- Physical Samsung Galaxy Tab A9 browser handoff and default HTTPS handler resolution are not claimed until Phase 31 device testing.
 
 ## Security and privacy
 
