@@ -3,6 +3,7 @@ package com.priyanshuraj.jarviscompanion.voice
 import android.content.Context
 import android.os.Handler
 import com.priyanshuraj.jarviscompanion.LocalTaskExecutionJournal
+import com.priyanshuraj.jarviscompanion.accessibility.UiActionPolicy
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -17,15 +18,6 @@ object AgentPlanRunner {
         "open_app", "read_screen", "tap_label", "type_text",
         "scroll_down", "scroll_up", "back", "home", "ask_user", "finish"
     )
-    private val blockedLabel = Regex(
-        "\\b(send|submit|delete|remove|pay|payment|purchase|buy|transfer|confirm|otp|one.?time|password|passcode|pin|verification|checkout|order|uninstall|grant|allow|deny|revoke)\\b",
-        RegexOption.IGNORE_CASE
-    )
-    private val blockedTypedText = Regex(
-        "\\b(password|passcode|otp|one.?time.?code|pin|cvv|security.?code|bank.?account|card.?number|payment|transfer|delete|submit|send)\\b",
-        RegexOption.IGNORE_CASE
-    )
-    private val numericSecret = Regex("^\\d{4,10}$")
 
     /**
      * Validate every action on-device before the plan is previewed or executed.
@@ -49,14 +41,10 @@ object AgentPlanRunner {
             if (type in setOf("open_app", "tap_label", "type_text", "ask_user", "finish") && value.isBlank()) {
                 throw IllegalArgumentException("A required action value is missing.")
             }
-            if (type == "tap_label" && blockedLabel.containsMatchIn(value)) {
+            if (type == "tap_label" && UiActionPolicy.isProtectedControl(value)) {
                 throw IllegalArgumentException("The plan contains a protected screen control.")
             }
-            if (type == "type_text" && (
-                value.length > 160 ||
-                numericSecret.matches(value) ||
-                blockedTypedText.containsMatchIn(value)
-            )) {
+            if (type == "type_text" && !UiActionPolicy.validateTextPayload(value, 160).allowed) {
                 throw IllegalArgumentException("The requested text is outside the safe typing policy.")
             }
             if (type == "open_app" && value.length > 60) {
