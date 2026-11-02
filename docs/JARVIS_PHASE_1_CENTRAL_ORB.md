@@ -33,7 +33,7 @@ Make the native Android application open into a central animated JARVIS orb inst
 ## Acceptance checks
 
 - Android CI must compile the existing application and produce a non-empty, structurally valid debug APK.
-- The existing Android JVM test task must remain green.
+- The existing Android JVM test task must remain green, including unit tests for phone/tablet layout breakpoints.
 - The orb, visible Send, keyboard Send, Speak, Hands-free and Setup controls must remain wired to real activity actions.
 - Home content must use a bounded centered width on larger Android screens and scale the orb to available width.
 - Setup must retain all previous pairing, permission and local activity controls.

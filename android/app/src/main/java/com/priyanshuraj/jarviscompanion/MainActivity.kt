@@ -448,12 +448,8 @@ class MainActivity : Activity() {
         }
 
         val screenWidthDp = resources.configuration.screenWidthDp
-        val horizontalPadding = if (screenWidthDp >= 600) 32 else 24
-        val orbSizeDp = when {
-            screenWidthDp >= 900 -> 380
-            screenWidthDp >= 600 -> 340
-            else -> (screenWidthDp - horizontalPadding * 2).coerceIn(230, 310)
-        }
+        val horizontalPadding = HomeLayoutPolicy.horizontalPaddingDp(screenWidthDp)
+        val orbSizeDp = HomeLayoutPolicy.orbSizeDp(screenWidthDp)
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -593,11 +589,9 @@ class MainActivity : Activity() {
         content.addView(controls, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         content.addView(footer, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         val contentFrame = FrameLayout(this).apply {
-            val contentWidth = if (screenWidthDp >= 600) {
-                dp(minOf(screenWidthDp, 720))
-            } else {
-                ViewGroup.LayoutParams.MATCH_PARENT
-            }
+            val contentWidth = HomeLayoutPolicy.contentMaxWidthDp(screenWidthDp)
+                ?.let(::dp)
+                ?: ViewGroup.LayoutParams.MATCH_PARENT
             addView(
                 content,
                 FrameLayout.LayoutParams(
