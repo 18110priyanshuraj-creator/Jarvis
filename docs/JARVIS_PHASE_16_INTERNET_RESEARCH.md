@@ -1,8 +1,8 @@
 # JARVIS Phase 16 — Internet and Google Research
 
-**Status:** IN_PROGRESS — server-side source-research pipeline exists; bounded Android Google browser handoff is implemented on a review branch. Full Phase 16 acceptance is not yet met.  
-**Branch:** `feat/phase-16-public-browser-research`  
-**Base:** `ff87b01eda4501c0b9f0b863639c4811f99ef2e2`
+**Status:** CODE_COMPLETE — repository implementation and automated acceptance passed. Live deployment configuration and physical-device acceptance are separate external gates. Full Phase 16 acceptance is not yet met.  
+**Merged by:** PR #57 into `main` after green Node and Android CI.  
+**Verification:** PR CI run `41458827159`; post-push run `41458816638`.
 
 ## Objective
 
@@ -10,7 +10,7 @@ Provide useful public-web research without making a paid search API or external 
 
 ## Existing repository capabilities retained
 
-The existing server-side research stack is not replaced:
+The existing server-side research stack is the canonical source-grounded research path; the Android Google browser handoff is an additional user-controlled way to open public web search. The existing stack is not replaced:
 
 - `services/web-research.js` queries a server-configured SearXNG JSON endpoint. It enforces HTTPS for remote endpoints, SafeSearch level 2, query screening, bounded timeouts/retries/response size/results, unique HTTPS source links, and an honest search-snippet fallback when optional AI synthesis is unavailable.
 - `services/web-page-reader.js` retrieves only selected, session-token-authorized public HTTPS pages. It pins validated public IPv4 addresses, rejects redirects, credentials, private/reserved hosts, compressed responses and non-text content, and bounds request time, bytes and extracted characters.
@@ -44,7 +44,7 @@ The local task journal stores only generic action categories (`open web search`,
 - A successful browser-foreground check proves only that the default browser package is foregrounded. It does **not** prove that Google finished loading, the query is visible, search results are accurate, or a source page was read.
 - Result selection remains manual. The handoff does not click search results, submit forms, send messages, purchase items, or publish content.
 - Login, account selection, consent and CAPTCHA challenges remain user-controlled. JARVIS pauses rather than bypassing them.
-- The external Google browser handoff does not pass arbitrary Google result URLs into the secure server reader. That reader intentionally accepts only short-lived source tokens issued by JARVIS's own live SearXNG search flow. A user-selected Google URL cannot be injected into the page reader.
+- The external Google browser handoff intentionally does not pass arbitrary Google result URLs into the secure server reader. That reader accepts only short-lived source tokens issued by JARVIS's own live SearXNG search flow. For source-grounded answers, use the Research screen's SearXNG results, select the returned tokenized sources, read them, and build the answer. This is a deliberate security boundary, not an unfinished URL-import feature.
 - The SearXNG endpoint is not bundled into the APK. Live server research is enabled only when an owner-configured trusted endpoint is present. A protected SearXNG instance may use its optional server-side key; the Android browser handoff itself needs no search API key.
 - Optional AI synthesis still depends on the separately configured provider. Search-result snippets and extracted pages remain available without claiming an AI-generated source comparison when no provider is configured.
 - Physical Samsung Galaxy Tab A9 browser handoff and default HTTPS handler resolution are not claimed until Phase 31 device testing.
@@ -70,13 +70,15 @@ The local task journal stores only generic action categories (`open web search`,
 - [x] Add generic privacy-minimized browser action journal category.
 - [x] Add server and Android regression tests for local intent parsing, restricted queries, browser-check pairing and journal categories.
 - [x] Route native Google plan generation through the shared runtime for Orb and hands-free voice without requiring a paired server.
-- [ ] Pass current PR Node syntax/tests and production dependency audit.
-- [ ] Pass current PR Android unit tests, debug build and APK integrity checks.
-- [ ] Merge verified implementation into `main` and verify post-merge CI.
-- [ ] Verify live SearXNG configuration and service readiness without exposing secrets.
-- [ ] Add a supported user-reviewed bridge from selected browser sources into the token-bound JARVIS research reader, without accepting arbitrary URLs or weakening SSRF protections.
+- [x] Pass current PR Node syntax/tests and production dependency audit (211/211 Node tests; 0 production dependency vulnerabilities).
+- [x] Pass current PR Android unit tests, debug build, APK archive integrity and artifact upload.
+- [x] Merge verified implementation into `main` and verify post-merge CI.
+- [ ] Verify the production SearXNG endpoint is configured and healthy. This requires the owner to select the Render workspace/service before its environment can be inspected; no credentials are exposed or changed by this phase.
+
 - [ ] Test default-browser handoff on the physical Samsung Galaxy Tab A9 (Phase 31).
 
 ## Acceptance status
 
-**Partial only.** The safe Android browser handoff and the existing server-side source-research stack are present in source. Full Phase 16 is not complete because the current Google handoff does not retrieve or compare the manually selected result, live SearXNG service configuration has not been proven available in this repository audit, and physical-device acceptance remains open.
+**CODE_COMPLETE for repository scope.** The Android app has a deterministic, no-AI-key Google browser handoff behind the normal explicit approval gate. The Research screen retains the configured SearXNG search → signed page-read tokens → safe full-page extraction → two-to-five-source grounded answer workflow, including citations, disagreements and uncertainty handling. CI passed on PR #57 and again on the merged `main` source. The Google browser handoff does not scrape results or import arbitrary URLs by design.
+
+External acceptance remains separate: production SearXNG endpoint health must be verified after the owner selects the intended Render workspace/service, and physical Galaxy Tab A9 behavior remains in Phase 31. No production environment variable or service was changed as part of this phase.
