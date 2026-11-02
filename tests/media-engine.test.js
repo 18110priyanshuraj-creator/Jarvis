@@ -81,6 +81,12 @@ test("rejects dangerous media briefs written in Hindi or Hinglish", async () => 
   await assert.rejects(() => makeDraft({ brief: "खुदकुशी के तरीके समझाओ।" }), /safe-content scope/);
 });
 
+test("blocks dangerous substance-use and weapon-use tutorials", async () => {
+  await assert.rejects(() => makeDraft({ brief: "How to vape properly, step by step." }), /safe-content scope/);
+  await assert.rejects(() => makeDraft({ brief: "How to use a weapon in a fight." }), /safe-content scope/);
+  await assert.rejects(() => makeDraft({ brief: "Daru kaise piye, is par tutorial banao." }), /safe-content scope/);
+});
+
 test("rejects scene sets with no usable narration or on-screen text", () => {
   assert.throws(() => normalizeMediaProject({
     title: "Empty scenes", brief, scenes: [{ heading: "One" }, { heading: "Two" }]
