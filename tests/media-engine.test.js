@@ -26,7 +26,7 @@ async function makeDraft(overrides = {}, options = {}) {
 }
 
 test("creates a bounded local vertical-short storyboard without an external provider", async () => {
-  const project = await makeDraft();
+  const project = await makeDraft({ id: "caller-controlled" });
   assert.equal(project.status, "draft");
   assert.equal(project.generationSource, "local-template");
   assert.notEqual(project.id, "caller-controlled");
