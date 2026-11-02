@@ -186,7 +186,7 @@ class LocalMemoryRepository(
             encryptedContent = cipher.encrypt(content),
             contentHash = hash,
             category = normalizeCategory(categoryInput),
-            updatedAtEpochMs = now().coerceAtLeast(existing.createdAtEpochMs)
+            updatedAtEpochMs = now().coerceAtLeast(existing.updatedAtEpochMs)
         )
         if (dao.update(updated) == 0) throw IllegalStateException("The local memory could not be updated.")
         return updated.toNote()
@@ -196,7 +196,7 @@ class LocalMemoryRepository(
         val existing = dao.findById(id) ?: throw IllegalArgumentException("Local memory not found.")
         val updated = existing.copy(
             enabled = enabled,
-            updatedAtEpochMs = now().coerceAtLeast(existing.createdAtEpochMs)
+            updatedAtEpochMs = now().coerceAtLeast(existing.updatedAtEpochMs)
         )
         if (dao.update(updated) == 0) throw IllegalStateException("The local memory setting could not be changed.")
         return updated.toNote()
@@ -399,7 +399,7 @@ class LocalMemoryCommandHandler(private val repository: LocalMemoryRepository) {
             if (matches.isEmpty()) {
                 "I could not find a matching on-device memory. Local memories are separate from the server workspace."
             } else {
-                "Your on-device memories (paused notes are included in this list):\n" +
+                "Your active on-device memories:\n" +
                     matches.joinToString("\n") {
                         "- [" + it.category + (if (it.enabled) "" else ", paused") + "] " + it.content
                     }
