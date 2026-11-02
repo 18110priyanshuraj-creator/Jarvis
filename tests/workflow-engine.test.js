@@ -136,6 +136,11 @@ test("runner executes allow-listed local steps and pauses at a review checkpoint
   };
   const waiting = await advanceWorkflowRun(run, handlers);
   assert.equal(waiting.status, "waiting_review");
+  const reviewPreview = getWorkflowRecoverySummary(waiting);
+  assert.equal(reviewPreview.canContinue, true);
+  assert.equal(reviewPreview.canRetry, false);
+  assert.equal(reviewPreview.automaticRecovery, false);
+  assert.equal(reviewPreview.nextAction, "continue_after_review");
   assert.equal(waiting.nextStepIndex, 3);
   assert.deepEqual(called, ["create_task", "search_knowledge"]);
   assert.equal(waiting.steps[2].status, "waiting_review");
@@ -264,6 +269,12 @@ test("restart recovery pauses active runs and preserves the next durable checkpo
   assert.equal(recovered.nextStepIndex, 1);
   assert.equal(recovered.recovery.reason, "process_restart");
   assert.equal(recovered.recovery.requiresManualResume, true);
+  const recoveryPreview = getWorkflowRecoverySummary(recovered);
+  assert.equal(recoveryPreview.canResume, true);
+  assert.equal(recoveryPreview.canRetry, false);
+  assert.equal(recoveryPreview.automaticRecovery, false);
+  assert.equal(recoveryPreview.nextAction, "resume_manually");
+  assert.match(recoveryPreview.guidance, /never replayed automatically/i);
   assert.equal(resumeWorkflowRun(recovered).status, "running");
   assert.deepEqual(recoverInterruptedWorkflowRuns([recovered]), [recovered]);
 });
