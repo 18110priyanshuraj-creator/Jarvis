@@ -1656,6 +1656,7 @@ async function persistWorkflowStepEffect(executionKey, type, result) {
   if (!executionKey) return;
   store.workflowStepEffects = store.workflowStepEffects.filter((item) => item.executionKey !== executionKey);
   store.workflowStepEffects.push({
+    id: executionKey,
     executionKey,
     type,
     result: cloneStore(result),
