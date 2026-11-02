@@ -53,7 +53,7 @@ internal class CancellableActionSequence<T>(
     private fun runNext() {
         if (cancelled || completed) return
         if (index >= actions.size) {
-            finish()
+            finish("completed")
             return
         }
 
