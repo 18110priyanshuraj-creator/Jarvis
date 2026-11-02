@@ -85,8 +85,8 @@ internal class CancellableActionSequence<T>(
         cancelled = true
         paused = false
         scheduler.remove(runner)
-        onState("cancelled", index)
-        onTerminal("cancelled")
+        runCatching { onState("cancelled", index) }
+        runCatching { onTerminal("cancelled") }
     }
 
     private fun runNext() {
@@ -135,7 +135,12 @@ internal class CancellableActionSequence<T>(
     private fun finish(status: String) {
         if (cancelled || completed) return
         completed = true
-        runCatching { onTerminal(status) }
-        onComplete(messages.toList())
+        try {
+            onTerminal(status)
+            onComplete(messages.toList())
+        } catch (error: Exception) {
+            val detail = error.message?.take(160) ?: "The final task checkpoint could not be saved."
+            onComplete(messages.toList() + "The actions ended, but JARVIS could not verify the final saved status: $detail")
+        }
     }
 }
