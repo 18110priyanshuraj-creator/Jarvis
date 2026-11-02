@@ -359,7 +359,8 @@ test("legacy failed runs are sanitized before they are returned or exported", ()
       attempts: 1,
       result: { error: "Request failed with bearer abcdefghijklmnop for user@example.com." },
       lastFailure: { error: "Old provider response: private-raw-detail." }
-    }]
+    }],
+    logs: [{ status: "failed", summary: "Request failed with bearer abcdefghijklmnop for user@example.com." }]
   };
   const sanitized = sanitizeWorkflowRunRecord(legacy);
   assert.equal(sanitized.steps[0].result.failure.code, "unknown");
@@ -367,6 +368,7 @@ test("legacy failed runs are sanitized before they are returned or exported", ()
   assert.equal(JSON.stringify(sanitized).includes("abcdefghijklmnop"), false);
   assert.equal(JSON.stringify(sanitized).includes("user@example.com"), false);
   assert.equal(JSON.stringify(sanitized).includes("private-raw-detail"), false);
+  assert.equal(sanitized.logs[0].summary, sanitized.failure.message);
   assert.equal(legacy.steps[0].result.error.includes("abcdefghijklmnop"), true);
 });
 
