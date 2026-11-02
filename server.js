@@ -577,7 +577,7 @@ async function processAssistantTurn(message, conversationKey, applicationId = "w
       result = { answer: "I’ll remember this preference or fact because you explicitly asked me to. You can review or delete it in Memory.", engine: "memory", externalAI: false };
     }
   } else {
-    result = await generateAssistantAnswer(message, history, store.memories);
+    result = await generateAssistantAnswer(message, history, store.memories, applicationId);
   }
 
   const enrichedResult = { ...result, nlu: classifyIntent(message) };
@@ -590,7 +590,7 @@ function cleanText(value, maxLength) {
   return value.trim().slice(0, maxLength);
 }
 
-async function generateAssistantAnswer(message, history = [], memories = store.memories) {
+async function generateAssistantAnswer(message, history = [], memories = store.memories, applicationId = "web-dashboard") {
   const useLiveWeb = shouldUseLiveWebResearch(message);
   let webNotice = "";
 
