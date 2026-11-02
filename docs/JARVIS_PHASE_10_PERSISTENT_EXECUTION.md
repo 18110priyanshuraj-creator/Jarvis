@@ -23,19 +23,20 @@ Keep multi-step JARVIS work observable and recoverable across pauses, cancellati
 
 Each workflow step now has a stable execution key of `<run-id>:<step-index>`. Before invoking the handler, JARVIS persists the current step as running. After a handler returns, JARVIS persists its result, next-step index, log event and run state before advancing to the next step.
 
-The `workflowStepEffects` ledger is stored in the same canonical application state as local tasks and memories. The `create_task` and `save_memory` handlers persist their local effect and its replay record together. If the process restarts after that commit but before the step-completed checkpoint, the same execution key returns the prior result instead of repeating the local write. Read-only integration steps remain allow-listed.
+The `workflowStepEffects` ledger is stored in the same canonical application state as local tasks and memories and is included in user data exports. The `create_task` and `save_memory` handlers persist their local effect and its replay record together. If the process restarts after that commit but before the step-completed checkpoint, the same execution key returns the prior result instead of repeating the local write. Read-only integration steps remain allow-listed.
 
-The existing synchronous API behavior remains available for compatibility. The Workflows UI opts into asynchronous execution through `Prefer: respond-async`, allowing visible running state and safe pause/stop requests while a step is awaiting I/O.
+The existing synchronous API behavior remains available for compatibility. The Workflows UI opts into asynchronous execution through `Prefer: respond-async`. Those requests are persisted as queued runs and drained by one worker at a time. A queued run can be paused or cancelled before it starts. While a worker is executing a step, safe pause/stop requests are honored at the next checkpoint. Legacy callers that omit the preference header retain the synchronous response behavior.
 
 ### Restart recovery
 
-On server startup, a workflow run left in `running` is changed to `paused`. Its last running step is returned to pending at the same index; already completed steps remain completed. Recovery metadata records the restart reason and the requirement for manual resume. JARVIS never silently replays an in-flight action during startup.
+On server startup, a workflow run left in `queued` or `running` is changed to `paused`. Its last running step is returned to pending at the same index; already completed steps remain completed. Recovery metadata records the restart reason and the requirement for manual resume. JARVIS never silently replays an in-flight action during startup.
 
 The workflow must be resumed explicitly through the authenticated resume route. Stable execution keys protect local write steps if their effect was committed immediately before the restart.
 
 ### Pause, resume, stop and retry
 
-- Pause requests are honored at the next safe step boundary.
+- Async UI runs are queued and processed by a single worker, avoiding overlapping workflow execution.
+- Pause requests are honored at the next safe step boundary; queued runs can be paused before execution.
 - Resume starts from the durable next-step index.
 - Stop requests do not start later steps; a currently executing step is allowed to reach its next safe boundary.
 - Failed steps can be manually retried without restarting completed steps.
