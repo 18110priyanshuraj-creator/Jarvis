@@ -186,7 +186,7 @@ export function createSkillVersion(skillInput, input = {}) {
     throw new TypeError("This skill contains an unsafe instruction and cannot be saved.");
   }
 
-  const applicationIds = normalizeApplicationIds(input.applicationIds, true);
+  const applicationIds = normalizeApplicationIds(input.applicationIds === undefined ? skill.applicationIds : input.applicationIds, true);
   const now = new Date().toISOString();
   const nextVersion = skill.versions.reduce((max, item) => Math.max(max, item.version), 0) + 1;
   const snapshot = makeSnapshot({ ...input, name, instructions, applicationIds }, nextVersion, now);
