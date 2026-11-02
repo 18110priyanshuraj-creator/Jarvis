@@ -308,7 +308,7 @@ object UIActionExecutor {
             val text = node.text?.toString()?.trim().orEmpty()
             val description = node.contentDescription?.toString()?.trim().orEmpty()
             val hint = node.hintText?.toString()?.trim().orEmpty()
-            if (node.isPassword) labels += "Protected input field"
+            if (node.isPassword) labels += "Password field"
             if (text.isNotBlank()) labels += text
             if (description.isNotBlank()) labels += description
             if (hint.isNotBlank()) labels += hint
