@@ -64,6 +64,7 @@ test("rejects credential-like content and restricted media requests", async () =
   await assert.rejects(() => makeDraft({ brief: "Use this api_key=super-secret-value in the video." }), /credential or secret/);
   await assert.rejects(() => makeDraft({ brief: "Create a pornographic video." }), /safe-content scope/);
   await assert.rejects(() => makeDraft({ audience: "api_key=private-value" }), /credential or secret/);
+  await assert.rejects(() => makeDraft({ audience: "How to vape properly" }), /safe-content scope/);
 });
 
 test("rejects credential-like content in individual scene fields", () => {
