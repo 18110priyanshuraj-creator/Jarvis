@@ -16,7 +16,7 @@ Provide one versioned instruction/trigger registry whose approved entries can be
 - A new version inherits the previous scope unless the user explicitly selects a different scope. The prior approved version remains active until the new version is independently validated and approved.
 - Context matching filters by both the explicit trigger and the trusted application surface. Specific application matches are ordered before global matches.
 - The dashboard exposes application targets in the Skills editor and saved-skill cards.
-- Dashboard chat is bound to `web-dashboard` by server validation; it rejects attempts to claim another application ID. Paired Android voice requests are assigned `android-companion` on the server after device-token authentication, so a request body cannot select or spoof the Android surface.
+- Dashboard chat is bound to `web-dashboard` by server validation; it rejects attempts to claim another application ID. The authenticated paired Android client reports only the current Accessibility active-window package ID; the server validates it and falls back to `android-companion` when unavailable. Package IDs are optional-guidance routing metadata, not permissions or proof that an application action is authorized.
 - `GET /api/skills` includes the known-surface catalog and limits.
 - Authenticated `POST /api/skills/preview` previews approved static matches without changing state or executing a skill.
 
@@ -41,6 +41,7 @@ Provide one versioned instruction/trigger registry whose approved entries can be
 
 The Phase 13 test additions cover:
 - Legacy/global scope migration and backward compatibility.
+- Android foreground package normalization, safe fallback behavior, and malformed package rejection.
 - Application ID normalization and invalid identifier rejection.
 - Exact application scoping, explicit wildcard behavior, and future package IDs.
 - Empty/invalid/excessive scopes failing closed.
