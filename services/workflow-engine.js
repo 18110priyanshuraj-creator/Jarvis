@@ -13,7 +13,7 @@ export const WORKFLOW_STEP_TYPES = Object.freeze([
 ]);
 
 const WORKFLOW_STATUSES = new Set(["draft", "approved", "paused"]);
-const RUN_STATUSES = new Set(["running", "waiting_review", "paused", "completed", "failed", "cancelled"]);
+const RUN_STATUSES = new Set(["queued", "running", "waiting_review", "paused", "completed", "failed", "cancelled"]);
 const MAX_WORKFLOWS = 50;
 const MAX_RUNS = 100;
 const MAX_STEPS = 10;
@@ -351,7 +351,7 @@ export async function advanceWorkflowRun(runInput, handlers, options = {}) {
 
 export function pauseWorkflowRun(runInput) {
   const run = structuredClone(runInput);
-  if (run.status !== "running") throw new Error("Only a running workflow can be paused.");
+  if (!["queued", "running"].includes(run.status)) throw new Error("Only a queued or running workflow can be paused.");
   run.status = "paused";
   run.pauseRequestedAt = new Date().toISOString();
   run.updatedAt = run.pauseRequestedAt;
@@ -404,7 +404,7 @@ export function recoverInterruptedWorkflowRuns(runs, recoveredAt = new Date().to
   if (!Array.isArray(runs)) return [];
   return runs.map((input) => {
     const run = structuredClone(input);
-    if (run.status !== "running") return run;
+    if (!["queued", "running"].includes(run.status)) return run;
 
     const index = Number.isInteger(run.currentStepIndex)
       ? run.currentStepIndex
@@ -440,7 +440,7 @@ export function recoverInterruptedWorkflowRuns(runs, recoveredAt = new Date().to
 
 export function cancelWorkflowRun(runInput) {
   const run = structuredClone(runInput);
-  if (!["running", "waiting_review", "paused"].includes(run.status)) {
+  if (!["queued", "running", "waiting_review", "paused"].includes(run.status)) {
     throw new Error("Only an active workflow run can be stopped.");
   }
   for (const step of run.steps) {
