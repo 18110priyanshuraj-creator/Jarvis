@@ -1,6 +1,6 @@
 # JARVIS Phase 17 — Media and Content Creation Engine
 
-**Status:** IN_PROGRESS — implementation on feature branch; final status depends on automated CI.  
+**Status:** CODE_COMPLETE (repository scope; PR #58 CI passed).  
 **Branch:** feat/phase-17-media-content-engine  
 **Base:** main at 6d66ab38bd382d6ed4f95a9805a48a560a8b0bf5
 
@@ -39,7 +39,7 @@ Provide a private, authenticated media workspace that turns a user brief into an
 
 The Node suite covers format dimensions, local fallback, AI candidate validation and fallback, credential/unsafe-content rejection, storyboard limits, editable-draft versus approved state, and script/SRT output. CI also syntax-checks the Media Studio browser module.
 
-Pending: final feature-branch CI result and post-merge main CI. Physical Samsung Galaxy Tab A9 acceptance remains under Phase 31 and is not claimed here.
+PR #58 head `7afe2eaee846fd32bf10c81f9795d3ed4fa32fb1` passed GitHub Actions run `41466460893`: 226 Node tests passed, zero failed, production dependency audit found zero vulnerabilities, Android unit tests/build passed, APK integrity/metadata verification passed and the debug APK artifact uploaded successfully. Post-merge main CI is a separate final integration check. Physical Samsung Galaxy Tab A9 acceptance remains under Phase 31 and is not claimed here.
 
 ## Phase 17 completion gate
 
@@ -50,5 +50,5 @@ Pending: final feature-branch CI result and post-merge main CI. Physical Samsung
 - [x] Scene editing and explicit approval.
 - [x] JSON, script, SRT, PNG and silent WebM exports.
 - [x] Automated tests authored and added to the default test command.
-- [ ] CI passes on the final pull-request head.
-- [ ] Merge to main and verify post-merge CI.
+- [x] CI passes on the final pull-request head (run 41466460893).
+- [ ] Merge PR #58 to main and verify post-merge CI.
