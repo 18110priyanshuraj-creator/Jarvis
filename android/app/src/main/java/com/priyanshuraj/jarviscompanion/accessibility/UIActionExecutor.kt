@@ -23,7 +23,8 @@ enum class UiActionCode {
     FIELD_PROTECTED,
     FIELD_NOT_EDITABLE,
     SCROLL_AREA_NOT_FOUND,
-    SYSTEM_ACTION_REJECTED
+    SYSTEM_ACTION_REJECTED,
+    EXPECTED_TEXT_NOT_FOUND
 }
 
 data class UiActionResult(
@@ -297,6 +298,49 @@ object UIActionExecutor {
         }
     }
 
+    /**
+     * Verifies a planner-supplied expected phrase against the current visible accessibility
+     * tree. The text is inspected only in memory and is never persisted or uploaded.
+     */
+    fun verifyVisibleText(service: JarvisAccessibilityService, expectedText: String): UiActionResult {
+        val expected = expectedText.trim()
+        if (expected.isBlank() || expected.length > 160) {
+            return failure(
+                UiActionCode.EXPECTED_TEXT_NOT_FOUND,
+                "A short expected visible phrase is required for verification."
+            )
+        }
+        val root = service.rootInActiveWindow
+            ?: return failure(
+                UiActionCode.NO_ACCESSIBLE_WINDOW,
+                "The current app did not expose a screen that JARVIS can verify.",
+                retryable = true
+            )
+        try {
+            val tree = collectVisibleTree(root)
+            try {
+                if (UiActionPolicy.isProtectedScreen(tree.labels)) {
+                    return failure(
+                        UiActionCode.PROTECTED_SCREEN,
+                        "This screen may contain credentials or verification details. Complete it manually."
+                    )
+                }
+                return if (UiActionPolicy.containsExpectedText(tree.labels, expected)) {
+                    success("JARVIS verified that the expected text is visible on the current screen.")
+                } else {
+                    failure(
+                        UiActionCode.EXPECTED_TEXT_NOT_FOUND,
+                        "JARVIS could not find the expected text on the visible screen. The task is paused for your review."
+                    )
+                }
+            } finally {
+                tree.recycleNodes()
+            }
+        } finally {
+            runCatching { root.recycle() }
+        }
+    }
+
     private fun collectVisibleTree(root: AccessibilityNodeInfo): VisibleTree {
         val nodes = mutableListOf<AccessibilityNodeInfo>()
         val labels = linkedSetOf<String>()
@@ -305,13 +349,17 @@ object UIActionExecutor {
             if (depth > MAX_DEPTH || nodes.size >= MAX_NODES || !node.isVisibleToUser) return
 
             nodes += AccessibilityNodeInfo.obtain(node)
-            val text = node.text?.toString()?.trim().orEmpty()
-            val description = node.contentDescription?.toString()?.trim().orEmpty()
-            val hint = node.hintText?.toString()?.trim().orEmpty()
-            if (node.isPassword) labels += "Password field"
-            if (text.isNotBlank()) labels += text
-            if (description.isNotBlank()) labels += description
-            if (hint.isNotBlank()) labels += hint
+            if (node.isPassword) {
+                // Never inspect or copy a password node's value, even into a transient label list.
+                labels += "Password field"
+            } else {
+                val text = node.text?.toString()?.trim().orEmpty()
+                val description = node.contentDescription?.toString()?.trim().orEmpty()
+                val hint = node.hintText?.toString()?.trim().orEmpty()
+                if (text.isNotBlank()) labels += text
+                if (description.isNotBlank()) labels += description
+                if (hint.isNotBlank()) labels += hint
+            }
 
             for (index in 0 until node.childCount) {
                 if (nodes.size >= MAX_NODES) break
