@@ -43,22 +43,41 @@ internal class CancellableActionSequence<T>(
 
     fun start() {
         if (cancelled || completed || paused) return
-        onState("running", index)
+        if (!persistState("running")) return
         scheduler.post(runner, 0L)
     }
 
     fun pause() {
         if (cancelled || completed || paused) return
-        paused = true
         scheduler.remove(runner)
-        onState("paused", index)
+        if (!persistState("paused")) return
+        paused = true
     }
 
     fun resume() {
         if (cancelled || completed || !paused) return
+        if (!persistState("running")) return
         paused = false
-        onState("running", index)
         scheduler.post(runner, 0L)
+    }
+
+    private fun persistState(state: String): Boolean {
+        return try {
+            onState(state, index)
+            true
+        } catch (error: Exception) {
+            failCheckpoint(error)
+            false
+        }
+    }
+
+    private fun failCheckpoint(error: Exception) {
+        if (cancelled || completed) return
+        completed = true
+        scheduler.remove(runner)
+        runCatching { onTerminal("failed") }
+        val detail = error.message?.take(160) ?: "The task progress could not be saved."
+        onComplete(messages.toList() + "Task paused safely: $detail No further actions were run.")
     }
 
     fun cancel() {
@@ -87,7 +106,13 @@ internal class CancellableActionSequence<T>(
                 message = error.message?.take(380) ?: "The action failed unexpectedly."
             )
         }
-        onProgress(index, result)
+        try {
+            onProgress(index, result)
+        } catch (error: Exception) {
+            if (result.message.isNotBlank()) messages.add(result.message.take(380))
+            failCheckpoint(error)
+            return
+        }
         if (result.message.isNotBlank()) messages.add(result.message.take(380))
         index++
 
@@ -110,7 +135,7 @@ internal class CancellableActionSequence<T>(
     private fun finish(status: String) {
         if (cancelled || completed) return
         completed = true
-        onTerminal(status)
+        runCatching { onTerminal(status) }
         onComplete(messages.toList())
     }
 }
