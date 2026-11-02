@@ -118,30 +118,32 @@ const WORKFLOW_FAILURES = Object.freeze({
 export function classifyWorkflowError(error) {
   const rawMessage = cleanText(error?.message || error || "", 500).toLocaleLowerCase();
   const name = cleanText(error?.name, 60);
-  let code = "unknown";
+  let code = Object.hasOwn(WORKFLOW_FAILURES, error?.code) ? error.code : "unknown";
 
-  if (name === "TimeoutError" || name === "AbortError" ||
-      /\\b(?:timed? ?out|timeout|etimedout)\\b/.test(rawMessage)) {
+  if (code !== "unknown") {
+    // Trusted internal error codes take precedence over message heuristics.
+  } else if (name === "TimeoutError" || name === "AbortError" ||
+      /\b(?:timed? ?out|timeout|etimedout)\b/.test(rawMessage)) {
     code = "timeout";
-  } else if (/\\b(?:429|rate.?limit|too many requests)\\b/.test(rawMessage)) {
+  } else if (/\b(?:429|rate.?limit|too many requests)\b/.test(rawMessage)) {
     code = "rate_limited";
-  } else if (/\\b(?:401|unauthorized|credential|authentication|token was rejected|rejected the configured credential)\\b/.test(rawMessage)) {
+  } else if (/\b(?:401|unauthorized|credential|authentication|token was rejected|rejected the configured credential)\b/.test(rawMessage)) {
     code = "authentication_required";
-  } else if (/\\b(?:403|forbidden|permission denied|lacks permission|access denied)\\b/.test(rawMessage)) {
+  } else if (/\b(?:403|forbidden|permission denied|lacks permission|access denied)\b/.test(rawMessage)) {
     code = "permission_denied";
-  } else if (/\\b(?:not configured|disabled in jarvis|configuration missing|invalid configuration|token format is invalid)\\b/.test(rawMessage)) {
+  } else if (/\b(?:not configured|disabled in jarvis|configuration missing|invalid configuration|token format is invalid)\b/.test(rawMessage)) {
     code = "configuration_missing";
-  } else if (/\\b(?:404|endpoint was not found|endpoint not found)\\b/.test(rawMessage)) {
+  } else if (/\b(?:404|endpoint was not found|endpoint not found)\b/.test(rawMessage)) {
     code = "endpoint_not_found";
-  } else if (/\\b(?:limit reached|quota exceeded|capacity limit|too many records)\\b/.test(rawMessage)) {
+  } else if (/\b(?:limit reached|quota exceeded|capacity limit|too many records)\b/.test(rawMessage)) {
     code = "resource_limit";
-  } else if (/\\b(?:invalid|unsupported|malformed|unknown or unsupported)\\b/.test(rawMessage)) {
+  } else if (/\b(?:invalid|unsupported|malformed|unknown or unsupported)\b/.test(rawMessage)) {
     code = "invalid_request";
-  } else if (/\\b(?:kept changing during the save|concurrent|serialization conflict)\\b/.test(rawMessage)) {
+  } else if (/\b(?:kept changing during the save|concurrent|serialization conflict)\b/.test(rawMessage)) {
     code = "storage_conflict";
-  } else if (/\\b(?:temporarily unavailable|service unavailable|server error|5\\d\\d)\\b/.test(rawMessage)) {
+  } else if (/\b(?:temporarily unavailable|service unavailable|server error|5\d\d)\b/.test(rawMessage)) {
     code = "service_unavailable";
-  } else if (/\\b(?:could not connect|connection|network|fetch failed|econnreset|eai_again|temporary|temporarily)\\b/.test(rawMessage)) {
+  } else if (/\b(?:could not connect|connection|network|fetch failed|econnreset|eai_again|temporary|temporarily)\b/.test(rawMessage)) {
     code = "network_unavailable";
   }
 
@@ -507,7 +509,10 @@ export async function advanceWorkflowRun(runInput, handlers, options = {}) {
       step.status = "failed";
       run.status = "failed";
       run.currentStepIndex = index;
-      addLog(run, { stepIndex: index, stepTitle: step.title, status: "failed", summary: "This step has no registered handler." });
+      const failure = makeWorkflowFailure(Object.assign(new Error("This step has no registered handler."), { code: "handler_missing" }), new Date().toISOString(), 0);
+      step.result = { error: failure.message, failure };
+      run.failure = failure;
+      addLog(run, { stepIndex: index, stepTitle: step.title, status: "failed", summary: failure.message });
       run.finishedAt = new Date().toISOString();
       await checkpoint();
       return run;
@@ -519,11 +524,14 @@ export async function advanceWorkflowRun(runInput, handlers, options = {}) {
       step.status = "failed";
       run.status = "failed";
       run.currentStepIndex = index;
+      const failure = makeWorkflowFailure(Object.assign(new Error("The step reached the maximum of three attempts."), { code: "resource_limit" }), new Date().toISOString(), step.attempts);
+      step.result = { error: failure.message, failure };
+      run.failure = failure;
       addLog(run, {
         stepIndex: index,
         stepTitle: step.title,
         status: "failed",
-        summary: "The step reached the maximum of three attempts. Review it before changing the workflow."
+        summary: failure.message
       });
       run.finishedAt = new Date().toISOString();
       await checkpoint();
@@ -563,8 +571,10 @@ export async function advanceWorkflowRun(runInput, handlers, options = {}) {
       });
       await checkpoint();
     } catch (error) {
+      const failure = makeWorkflowFailure(error, new Date().toISOString(), step.attempts);
       step.status = "failed";
-      step.result = { error: cleanText(error?.message || "Step failed.", 200) };
+      step.result = { error: failure.message, failure };
+      run.failure = failure;
       run.status = "failed";
       run.nextStepIndex = index;
       run.currentStepIndex = index;
@@ -572,7 +582,7 @@ export async function advanceWorkflowRun(runInput, handlers, options = {}) {
         stepIndex: index,
         stepTitle: step.title,
         status: "failed",
-        summary: "Step failed. Review the error before resuming or creating a new run."
+        summary: failure.message
       });
       run.finishedAt = new Date().toISOString();
       await checkpoint();
@@ -621,12 +631,20 @@ export function retryWorkflowRun(runInput) {
   const step = run.steps?.[index];
   if (!step || step.status !== "failed") throw new Error("The failed step could not be identified safely.");
   if ((Number(step.attempts) || 0) >= 3) throw new Error("This step reached the maximum of three attempts.");
+  const storedFailure = run.failure || step.result?.failure;
+  const classification = storedFailure && Object.hasOwn(WORKFLOW_FAILURES, storedFailure.code)
+    ? WORKFLOW_FAILURES[storedFailure.code]
+    : classifyWorkflowError(step.result?.error || "");
+  if (!classification.retryable) {
+    throw new Error("This failure is not safe to retry. Fix the underlying cause and create a new run.");
+  }
   step.lastFailure = step.result || null;
   step.result = null;
   step.status = "pending";
   run.status = "running";
   run.nextStepIndex = index;
   run.currentStepIndex = null;
+  run.failure = null;
   run.finishedAt = "";
   run.updatedAt = new Date().toISOString();
   addLog(run, {
