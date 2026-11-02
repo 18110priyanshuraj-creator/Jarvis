@@ -123,7 +123,7 @@ class CoreExecutionRecordFactoryTest {
 }
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+@Config(sdk = [35])
 class JarvisCoreDatabaseTest {
     private val app = RuntimeEnvironment.getApplication()
     private val databaseName = "jarvis-core-test-${UUID.randomUUID()}.db"
