@@ -165,6 +165,45 @@ function makeWorkflowFailure(error, at = new Date().toISOString(), attempts = 0)
   };
 }
 
+export function sanitizeWorkflowRunRecord(runInput) {
+  if (!runInput || typeof runInput !== "object" || runInput.status !== "failed") return runInput;
+  const run = structuredClone(runInput);
+  const failedSteps = (Array.isArray(run.steps) ? run.steps : []).filter((step) => step?.status === "failed");
+  const primaryStep = failedSteps[0] || null;
+  const sourceFailure = run.failure && typeof run.failure.code === "string"
+    ? run.failure
+    : primaryStep?.result?.failure && typeof primaryStep.result.failure.code === "string"
+      ? primaryStep.result.failure
+      : primaryStep?.result?.error || "";
+  const runFailure = makeWorkflowFailure(
+    sourceFailure,
+    run.failure?.at || primaryStep?.updatedAt || run.updatedAt || new Date().toISOString(),
+    Number(primaryStep?.attempts) || Number(run.failure?.attempts) || 0
+  );
+  run.failure = runFailure;
+
+  for (const step of failedSteps) {
+    const stepSource = step.result?.failure && typeof step.result.failure.code === "string"
+      ? step.result.failure
+      : step.result?.error || sourceFailure;
+    const safeFailure = makeWorkflowFailure(
+      stepSource,
+      step.result?.failure?.at || runFailure.at,
+      Number(step.attempts) || 0
+    );
+    step.result = { error: safeFailure.message, failure: safeFailure };
+    if (step.lastFailure && typeof step.lastFailure === "object") {
+      const priorSource = step.lastFailure.failure?.code
+        ? step.lastFailure.failure
+        : step.lastFailure.error || "";
+      const priorFailure = makeWorkflowFailure(priorSource, step.lastFailure.failure?.at || safeFailure.at, Math.max(0, (Number(step.attempts) || 1) - 1));
+      step.lastFailure = { error: priorFailure.message, failure: priorFailure };
+    }
+  }
+
+  return run;
+}
+
 export function getWorkflowRecoverySummary(runInput) {
   const run = runInput && typeof runInput === "object" ? runInput : {};
   const index = Number.isInteger(run.currentStepIndex)
