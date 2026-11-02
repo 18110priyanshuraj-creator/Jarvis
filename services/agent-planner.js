@@ -175,18 +175,20 @@ export function isAgentPlannerConfigured() {
 }
 
 export async function createAgentPlan(message) {
+  // Keep well-defined device-search intents local even when an optional model is configured.
+  const localPlan = createLocalAgentPlan(message);
+  if (localPlan) {
+    return {
+      ...localPlan,
+      engine: "built-in-device-rules",
+      model: "built-in-rule-parser",
+      provider: "built-in",
+      externalAI: false
+    };
+  }
+
   const runtime = getAIProviderStatus();
   if (!runtime.plannerEnabled) {
-    const localPlan = createLocalAgentPlan(message);
-    if (localPlan) {
-      return {
-        ...localPlan,
-        engine: "built-in-device-rules",
-        model: "built-in-rule-parser",
-        provider: "built-in",
-        externalAI: false
-      };
-    }
     const error = new Error("AI planning is disabled or not configured on the server, and this request is outside the supported offline device commands.");
     error.code = "AI_NOT_CONFIGURED";
     throw error;

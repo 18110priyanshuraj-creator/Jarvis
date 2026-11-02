@@ -159,10 +159,10 @@ export function searchLocalKnowledge(query, limit = 8) {
   return knowledgeSearch(query, limit);
 }
 
-export function runLocalBrain({ message, memories = [], tasks = [], skills = [], feedback = [], knowledge = [] } = {}) {
+function runLocalBrainInternal({ message, memories = [], tasks = [], skills = [], feedback = [], knowledge = [] } = {}, includeUnsupportedFallback = true) {
   const raw = String(message ?? "").trim();
   const q = normalize(raw);
-  if (!q) return "Message khaali hai. Apna sawaal type karo.";
+  if (!q) return includeUnsupportedFallback ? "Message khaali hai. Apna sawaal type karo." : null;
 
   const calculation = findCalculation(raw);
   if (calculation) {
@@ -247,8 +247,18 @@ export function runLocalBrain({ message, memories = [], tasks = [], skills = [],
       + "\n\nYeh chhota built-in knowledge pack hai, live internet search ya general-purpose model nahi.";
   }
 
+  if (!includeUnsupportedFallback) return null;
   const style = skills.length ? "\n\nNote: tumhare custom skills saved hain, lekin bina language model ke unki open-ended instructions ko general answer mein execute nahi kar sakta." : "";
   const hasNegativeFeedback = feedback.some((item) => item.rating === "down");
   return "Is sawaal ka reliable jawab mere current offline rule set mein nahi hai. Main guess karke galat fact dene ke bajay limitation bata raha hoon.\n\nTum calculator, saved tasks/memories, ya bundled topics (Newton's laws, units/dimensions, mole concept, sets, circular motion, Ohm's law, basic debugging, study planning) try kar sakte ho. " +
     (hasNegativeFeedback ? "Recent feedback saved hai, par feedback se model ki capability train nahi hoti." : "Feedback save karna memory mein note rakhta hai, model ko train nahi karta.") + style;
+}
+
+export function tryRunLocalBrain(options = {}) {
+  return runLocalBrainInternal(options, false);
+}
+
+/** Backwards-compatible offline response; unknown requests receive an explicit limitation. */
+export function runLocalBrain(options = {}) {
+  return runLocalBrainInternal(options, true);
 }

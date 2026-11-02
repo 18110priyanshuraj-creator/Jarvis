@@ -53,3 +53,15 @@ test("local knowledge search uses bundled entries", () => {
   assert.ok(results.length > 0);
   assert.equal(results[0].title, "Mole concept");
 });
+
+test("offline brain provides a no-match signal for unsupported requests", async () => {
+  const { tryRunLocalBrain } = await import("../brain.js");
+  assert.equal(tryRunLocalBrain({ message: "Who won a game that happened a minute ago?" }), null);
+});
+
+test("offline brain can handle covered requests without invoking the unsupported fallback", async () => {
+  const { tryRunLocalBrain } = await import("../brain.js");
+  const answer = tryRunLocalBrain({ message: "calculate (25 * 4) + 10" });
+  assert.match(answer, /110/);
+  assert.match(answer, /calculated locally/i);
+});

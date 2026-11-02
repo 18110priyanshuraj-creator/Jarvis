@@ -7,6 +7,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import crypto from "node:crypto";
 import { runLocalBrain, searchLocalKnowledge } from "./brain.js";
+import { getIntelligenceStatus, resolveOfflineAssistantTurn } from "./services/intelligence-engine.js";
 import { fileURLToPath } from "node:url";
 import { createDevicesRouter } from "./routes/devices.js";
 import { createRuntimeStore } from "./services/runtime-store.js";
@@ -589,6 +590,23 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
     }
   }
 
+  // Resolve deterministic requests before spending a model call. Live web research above
+  // remains first for prompts that need current information.
+  const offlineTurn = resolveOfflineAssistantTurn({
+    message,
+    memories: store.memories,
+    tasks: store.tasks,
+    skills: getActiveSkillContext(store.skills, message, 3),
+    feedback: store.feedback,
+    knowledge: buildKnowledgeContext(store.knowledge, message, 3)
+  });
+  if (offlineTurn) {
+    return {
+      ...offlineTurn,
+      answer: webNotice ? webNotice + "\\n\\n" + offlineTurn.answer : offlineTurn.answer
+    };
+  }
+
   const conversationAIEnabled = isConversationAIEnabled();
   if (conversationAIEnabled) {
     try {
@@ -635,7 +653,8 @@ app.get("/api/health", (_req, res) => {
     ok: true,
     service: "jarvis",
     version: "1.12.0-system-readiness",
-    brain: conversationAIEnabled ? "online-conversation-with-offline-fallback" : "built-in-offline-rules",
+    brain: conversationAIEnabled ? "offline-first-with-online-conversation-fallback" : "built-in-offline-rules",
+    intelligence: getIntelligenceStatus(aiRuntime),
     plannerAIEnabled,
     conversationAIEnabled,
     webResearchEnabled,

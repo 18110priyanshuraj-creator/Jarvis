@@ -39,7 +39,7 @@ See:
 | 3 | Native Android Core | CODE_COMPLETE | Application-scoped native runtime now unifies typed input, one-shot voice and hands-free routes; Room v1 stores a bounded privacy-minimized 500-entry execution journal. Node/Android CI and APK verification passed; Galaxy Tab A9 acceptance remains Phase 31. See `JARVIS_PHASE_3_NATIVE_ANDROID_CORE.md`. |
 | 4 | Local System Controller | CODE_COMPLETE | One app-scoped local controller routes status, media-volume and Android Settings commands before the existing app launcher or optional remote assistant; automated command/policy tests pass. Physical Galaxy Tab A9 checks remain Phase 31. See `JARVIS_PHASE_4_LOCAL_SYSTEM_CONTROLLER.md`. |
 | 5 | Offline Voice System | CODE_COMPLETE | One-shot and hands-free voice now share on-device-first policy with persistent Prefer offline / Offline only modes; offline-only refuses online recognition and network TTS fallbacks. Actual language-pack/device acceptance remains Phase 31. See `JARVIS_PHASE_5_OFFLINE_VOICE.md`. |
-| 6 | Independent Intelligence Engine | PARTIAL | Deterministic offline brain and optional model adapter exist; no general local LLM. |
+| 6 | Independent Intelligence Engine | CODE_COMPLETE | Deterministic offline-first routing, local-first device planning, secret-safe capability status and optional model fallback are tested; no general local LLM is claimed. |
 | 7 | Natural Language Understanding | PARTIAL | Selected Hindi/Hinglish/English rules; no broad measured conversational coverage. |
 | 8 | Local Memory System | PARTIAL | User-controlled memory service exists server-side; local Android canonical storage is not implemented. |
 | 9 | Autonomous Task Planner | PARTIAL | Optional model planner plus bounded local plans; not unrestricted autonomous planning. |
@@ -75,7 +75,8 @@ See:
 4. Phase 3 native Android core is code-complete: the shared local-first dispatcher and additive Room execution ledger passed automated acceptance without replacing server data or Keystore credentials.
 5. Phase 4 local system controller is code-complete: typed input, one-shot voice and hands-free requests share a permission-aware on-device system boundary; physical Galaxy Tab A9 checks remain Phase 31.
 6. Phase 5 offline voice system is code-complete: both Android voice input paths use one on-device selection policy, offline-only mode blocks online speech fallbacks, and TTS honors local-voice requirements. Device-specific model and audio acceptance remains Phase 31.
-7. Complete and test each phase against the phase-specific acceptance criteria before advancing.
+7. Phase 6 is code-complete: supported deterministic requests route offline before the optional model adapter, current-information requests retain live-research precedence, and bounded Android device plans prefer local rules. See `JARVIS_PHASE_6_INDEPENDENT_INTELLIGENCE_ENGINE.md`.
+8. Complete and test each remaining phase against the phase-specific acceptance criteria before advancing.
 8. Retain all current tests and add new regression/acceptance tests.
 9. Keep `main` as the release source of truth; use short-lived branches only when useful.
 10. Do not delete branches with unreviewed unique work or mark a phase verified because a file exists.

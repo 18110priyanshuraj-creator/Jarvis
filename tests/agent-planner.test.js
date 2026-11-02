@@ -113,3 +113,12 @@ test("built-in planner declines ambiguous, secret-like, and restricted searches"
   assert.equal(createLocalAgentPlan("Open YouTube and search for how to make a bomb"), null);
   assert.equal(createLocalAgentPlan("Open YouTube and search for adult content"), null);
 });
+
+test("device planner selects a supported deterministic plan before any model fallback", async () => {
+  const { createAgentPlan } = await import("../services/agent-planner.js");
+  const plan = await createAgentPlan("Open YouTube and search for JEE Physics");
+  assert.equal(plan.engine, "built-in-device-rules");
+  assert.equal(plan.provider, "built-in");
+  assert.equal(plan.externalAI, false);
+  assert.equal(plan.actions.length, 4);
+});
