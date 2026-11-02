@@ -16,7 +16,8 @@ import {
   isTokenVaultConfigured,
   revokeGoogleOAuthConnection,
   GOOGLE_DRIVE_METADATA_SCOPE,
-  GOOGLE_DRIVE_FILE_SCOPE
+  GOOGLE_DRIVE_FILE_SCOPE,
+  YOUTUBE_UPLOAD_SCOPE
 } from "../services/oauth.js";
 
 const env = {
@@ -269,6 +270,60 @@ test("Google Docs permission upgrade requests metadata plus drive.file and store
   });
   assert.deepEqual(connection.grantedScopes.slice().sort(), [GOOGLE_DRIVE_FILE_SCOPE, GOOGLE_DRIVE_METADATA_SCOPE].sort());
   assert.equal(getGoogleOAuthStatus(connection, env).canCreateDocs, true);
+});
+
+test("YouTube OAuth upgrade adds only the upload scope and preserves existing Drive permissions", async () => {
+  const existingConnection = await authorize(async () => response({
+    access_token: "drive-access",
+    refresh_token: "drive-refresh",
+    expires_in: 3600,
+    scope: GOOGLE_DRIVE_METADATA_SCOPE + " " + GOOGLE_DRIVE_FILE_SCOPE
+  }));
+  const flow = beginGoogleOAuth({
+    sessionToken: "test-session-id",
+    capability: "youtube_upload",
+    existingConnection,
+    env
+  });
+  const url = new URL(flow.authorizationUrl);
+  assert.deepEqual(url.searchParams.get("scope").split(" ").sort(), [
+    GOOGLE_DRIVE_FILE_SCOPE,
+    GOOGLE_DRIVE_METADATA_SCOPE,
+    YOUTUBE_UPLOAD_SCOPE
+  ].sort());
+  const connection = await finishGoogleOAuth({
+    state: url.searchParams.get("state"),
+    browserBinding: flow.browserBinding,
+    code: "youtube-upgrade-code",
+    existingConnection,
+    isSessionValid: (id) => id === "test-session-id",
+    env,
+    fetchImpl: async (_url, options) => {
+      const body = new URLSearchParams(options.body);
+      assert.equal(body.get("grant_type"), "authorization_code");
+      return response({
+        access_token: "youtube-access",
+        refresh_token: "youtube-refresh",
+        expires_in: 3600,
+        scope: [GOOGLE_DRIVE_METADATA_SCOPE, GOOGLE_DRIVE_FILE_SCOPE, YOUTUBE_UPLOAD_SCOPE].join(" ")
+      });
+    }
+  });
+  const status = getGoogleOAuthStatus(connection, env);
+  assert.equal(status.canCreateDocs, true);
+  assert.equal(status.canUploadYouTube, true);
+  assert.ok(connection.grantedScopes.includes(YOUTUBE_UPLOAD_SCOPE));
+  const permission = getIntegrationPermissionCatalog(connection, env).find((item) => item.provider === "youtube");
+  assert.equal(permission.status, "connected");
+  assert.deepEqual(permission.requestedScopes, [YOUTUBE_UPLOAD_SCOPE]);
+  assert.match(permission.accessBoundary, /does not request channel management/i);
+});
+
+test("YouTube OAuth capability is rejected when unknown", () => {
+  assert.throws(
+    () => beginGoogleOAuth({ sessionToken: "test-session-id", capability: "youtube_admin", env }),
+    /Unsupported Google permission capability/
+  );
 });
 
 test("Google OAuth refuses any unrequested extra scope during an upgrade", async () => {

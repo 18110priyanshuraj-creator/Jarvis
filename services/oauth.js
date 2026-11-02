@@ -4,6 +4,8 @@ export const GOOGLE_DRIVE_METADATA_SCOPE =
   "https://www.googleapis.com/auth/drive.metadata.readonly";
 export const GOOGLE_DRIVE_FILE_SCOPE =
   "https://www.googleapis.com/auth/drive.file";
+export const YOUTUBE_UPLOAD_SCOPE =
+  "https://www.googleapis.com/auth/youtube.upload";
 const GOOGLE_CALLBACK_PATH = "/api/integrations/google_drive/oauth/callback";
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const TOKEN_TIMEOUT_MS = 8000;
@@ -97,7 +99,7 @@ export function normalizeGoogleOAuthConnection(input = {}) {
       typeof encrypted.ciphertext !== "string" ||
       !Array.isArray(input.grantedScopes) ||
       !input.grantedScopes.includes(GOOGLE_DRIVE_METADATA_SCOPE) ||
-      input.grantedScopes.some((scope) => ![GOOGLE_DRIVE_METADATA_SCOPE, GOOGLE_DRIVE_FILE_SCOPE].includes(scope))) {
+      input.grantedScopes.some((scope) => ![GOOGLE_DRIVE_METADATA_SCOPE, GOOGLE_DRIVE_FILE_SCOPE, YOUTUBE_UPLOAD_SCOPE].includes(scope))) {
     throw new TypeError("Invalid encrypted Google Drive connection record.");
   }
   const connectedAt = cleanString(input.connectedAt, 40);
@@ -159,6 +161,8 @@ export function getGoogleOAuthStatus(connection, env = process.env) {
     requiredScopes: [GOOGLE_DRIVE_METADATA_SCOPE],
     docsScope: GOOGLE_DRIVE_FILE_SCOPE,
     canCreateDocs: credentialHealthy && normalized.grantedScopes.includes(GOOGLE_DRIVE_FILE_SCOPE),
+    youtubeUploadScope: YOUTUBE_UPLOAD_SCOPE,
+    canUploadYouTube: credentialHealthy && normalized.grantedScopes.includes(YOUTUBE_UPLOAD_SCOPE),
     grantedScopes: credentialHealthy ? normalized.grantedScopes : [],
     connectedAt: credentialHealthy ? normalized.connectedAt : null,
     redirectPath: GOOGLE_CALLBACK_PATH,
@@ -176,15 +180,19 @@ function prunePendingStates() {
   }
 }
 
-export function beginGoogleOAuth({ sessionToken, capability = "read", env = process.env, runtimeStore = null }) {
+export function beginGoogleOAuth({ sessionToken, capability = "read", existingConnection = null, env = process.env, runtimeStore = null }) {
   if (!cleanString(sessionToken, 200)) throw new Error("Sign in to JARVIS before connecting Google Drive.");
-  if (!["read", "create_docs"].includes(capability)) throw new TypeError("Unsupported Google Drive permission capability.");
+  if (!["read", "create_docs", "youtube_upload"].includes(capability)) throw new TypeError("Unsupported Google permission capability.");
   getEncryptionKey(env);
   const config = getGoogleConfig(env);
   prunePendingStates();
-  const requestedScopes = capability === "create_docs"
+  const capabilityScopes = capability === "create_docs"
     ? [GOOGLE_DRIVE_METADATA_SCOPE, GOOGLE_DRIVE_FILE_SCOPE]
-    : [GOOGLE_DRIVE_METADATA_SCOPE];
+    : capability === "youtube_upload"
+      ? [GOOGLE_DRIVE_METADATA_SCOPE, YOUTUBE_UPLOAD_SCOPE]
+      : [GOOGLE_DRIVE_METADATA_SCOPE];
+  const previousScopes = existingConnection ? normalizeGoogleOAuthConnection(existingConnection).grantedScopes : [];
+  const requestedScopes = [...new Set([...previousScopes, ...capabilityScopes])].sort();
 
   const state = crypto.randomBytes(32).toString("base64url");
   const browserBinding = crypto.randomBytes(32).toString("base64url");
@@ -515,6 +523,15 @@ export function getIntegrationPermissionCatalog(connection, env = process.env) {
       accessBoundary: google.canCreateDocs
         ? "Reads file names and metadata. drive.file allows JARVIS to create and edit files created by this app; it does not request broad Drive access or permission to edit unrelated existing files."
         : "Read-only Drive metadata. Creating Google Docs requires a separate explicit drive.file consent upgrade."
+    },
+    {
+      provider: "youtube",
+      authModel: "Separate, incremental Google OAuth permission",
+      status: google.canUploadYouTube ? "connected" : google.canConnect ? "not_connected" : "not_configured",
+      requestedScopes: [YOUTUBE_UPLOAD_SCOPE],
+      grantedScopes: google.grantedScopes.includes(YOUTUBE_UPLOAD_SCOPE) ? [YOUTUBE_UPLOAD_SCOPE] : [],
+      actions: google.canUploadYouTube ? ["Upload a video after an explicit owner confirmation"] : ["Request YouTube upload permission when publishing is needed"],
+      accessBoundary: "youtube.upload permission only. JARVIS does not request channel management, analytics or account-wide YouTube permissions. The upload target and visibility are reviewed before each upload."
     },
     {
       provider: "github",

@@ -143,6 +143,16 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(blockedWorkflows.status, 401);
   const blockedIntegrations = await request("/api/integrations", { headers: {} });
   assert.equal(blockedIntegrations.status, 401);
+  const blockedYouTubeStatus = await request("/api/youtube/status", { headers: {} });
+  assert.equal(blockedYouTubeStatus.status, 401);
+  const blockedYouTubePreview = await request("/api/youtube/previews", {
+    method: "POST", headers: {}, body: JSON.stringify({})
+  });
+  assert.equal(blockedYouTubePreview.status, 401);
+  const blockedYouTubeUpload = await request("/api/youtube/publications/not-an-id/upload", {
+    method: "POST", headers: { "content-type": "video/mp4", "content-length": "1" }, body: Buffer.from("x")
+  });
+  assert.equal(blockedYouTubeUpload.status, 401);
   const blockedExport = await request("/api/export", { headers: {} });
   assert.equal(blockedExport.status, 401);
   const blockedResearch = await request("/api/research", {
@@ -181,6 +191,30 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.match(cookieHeader, /SameSite=Strict/i);
   cookie = cookieHeader.split(";")[0];
   assert.match(cookie, /^jarvis_session=/);
+
+  const youtubeStatusResponse = await request("/api/youtube/status");
+  assert.equal(youtubeStatusResponse.status, 200);
+  const youtubeStatus = await youtubeStatusResponse.json();
+  assert.equal(youtubeStatus.connected, false);
+  assert.equal(youtubeStatus.canUpload, false);
+  assert.equal(youtubeStatus.canConnect, true);
+  assert.equal(youtubeStatus.maxUploadBytes, 256 * 1024 * 1024);
+  assert.ok(youtubeStatus.allowedMimeTypes.includes("video/mp4"));
+  assert.equal(JSON.stringify(youtubeStatus).includes("local-test-client-secret"), false);
+  const blockedYouTubePreviewNoConsent = await request("/api/youtube/previews", {
+    method: "POST",
+    body: JSON.stringify({
+      projectId: "not-created",
+      fileName: "video.mp4",
+      contentType: "video/mp4",
+      contentLength: 1024,
+      reviewed: true,
+      rightsConfirmed: true,
+      madeForKids: false
+    })
+  });
+  assert.equal(blockedYouTubePreviewNoConsent.status, 409);
+  assert.match((await blockedYouTubePreviewNoConsent.json()).error, /YouTube upload permission/i);
 
   const diagnosticsResponse = await request("/api/diagnostics");
   assert.equal(diagnosticsResponse.status, 200);
@@ -332,6 +366,24 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(docsUpgradeUrl.searchParams.get("code_challenge_method"), "S256");
   assert.match(docsBrowserLaunch.headers.get("set-cookie") || "", /HttpOnly/i);
   assert.match(docsBrowserLaunch.headers.get("set-cookie") || "", /SameSite=Lax/i);
+
+  const startYoutubeOAuth = await request("/api/integrations/google_drive/oauth/start", {
+    method: "POST",
+    body: JSON.stringify({ capability: "youtube_upload" })
+  });
+  assert.equal(startYoutubeOAuth.status, 200);
+  const youtubeLaunchUrl = new URL((await startYoutubeOAuth.json()).launchUrl);
+  const youtubeBrowserLaunch = await request(youtubeLaunchUrl.pathname + youtubeLaunchUrl.search, {
+    redirect: "manual",
+    headers: {}
+  });
+  assert.equal(youtubeBrowserLaunch.status, 303);
+  const youtubeAuthorizationUrl = new URL(youtubeBrowserLaunch.headers.get("location"));
+  assert.deepEqual(youtubeAuthorizationUrl.searchParams.get("scope").split(" ").sort(), [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/drive.metadata.readonly"
+  ].sort());
+  assert.equal(youtubeAuthorizationUrl.searchParams.get("code_challenge_method"), "S256");
 
   const invalidGoogleCallback = await request("/api/integrations/google_drive/oauth/callback?state=not-a-real-state&code=not-a-real-code", {
     headers: {},
@@ -1021,6 +1073,7 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.ok(Array.isArray(exportPayload.data.workflowRuns));
   assert.ok(Array.isArray(exportPayload.data.disabledIntegrations));
   assert.ok(Array.isArray(exportPayload.data.externalActions));
+  assert.ok(Array.isArray(exportPayload.data.youtubePublications));
   assert.equal(Object.hasOwn(exportPayload.data, "oauthConnections"), false);
   assert.equal(JSON.stringify(exportPayload).includes("encryptedRefreshToken"), false);
   assert.equal(Object.hasOwn(exportPayload.data, "integrations"), false);
