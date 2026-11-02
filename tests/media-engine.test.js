@@ -64,6 +64,17 @@ test("rejects credential-like content and restricted media requests", async () =
   await assert.rejects(() => makeDraft({ brief: "Create a pornographic video." }), /safe-content scope/);
 });
 
+test("rejects credential-like content in individual scene fields", () => {
+  assert.throws(() => normalizeMediaProject({
+    title: "Scene secret test",
+    brief,
+    scenes: [
+      { heading: "Start", voiceover: "A safe sentence.", onScreenText: "Intro" },
+      { heading: "Reveal", voiceover: "The token is api_key=private-value.", onScreenText: "Secret" }
+    ]
+  }), /credential or secret/);
+});
+
 test("rejects scene sets with no usable narration or on-screen text", () => {
   assert.throws(() => normalizeMediaProject({
     title: "Empty scenes", brief, scenes: [{ heading: "One" }, { heading: "Two" }]
