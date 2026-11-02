@@ -163,3 +163,62 @@ class CancellableActionSequenceTest {
         assertTrue(scheduler.pending.isEmpty())
     }
 }
+
+
+    @Test
+    fun reportsEveryStepAndExactlyOneTerminalState() {
+        val scheduler = FakeScheduler()
+        val progress = mutableListOf<Pair<Int, Boolean>>()
+        val terminal = mutableListOf<String>()
+        val sequence = CancellableActionSequence(
+            actions = listOf("open", "read"),
+            scheduler = scheduler,
+            executeAction = { TaskStepResult(true, false, it) },
+            delayAfter = { 0L },
+            onProgress = { index, result -> progress.add(index to result.success) },
+            onTerminal = { terminal.add(it) },
+            onComplete = {}
+        )
+
+        sequence.start()
+        scheduler.runNext()
+        scheduler.runNext()
+
+        assertEquals(listOf(0 to true, 1 to true), progress)
+        assertEquals(listOf("completed"), terminal)
+    }
+
+    @Test
+    fun failedActionIsRecordedAndCancellationHasItsOwnTerminalState() {
+        val scheduler = FakeScheduler()
+        val progress = mutableListOf<Pair<Int, Boolean>>()
+        val terminal = mutableListOf<String>()
+        val failed = CancellableActionSequence(
+            actions = listOf("open", "tap"),
+            scheduler = scheduler,
+            executeAction = { value -> TaskStepResult(value != "tap", false, value) },
+            delayAfter = { 0L },
+            onProgress = { index, result -> progress.add(index to result.success) },
+            onTerminal = { terminal.add(it) },
+            onComplete = {}
+        )
+        failed.start()
+        scheduler.runNext()
+        scheduler.runNext()
+        assertEquals(listOf(0 to true, 1 to false), progress)
+        assertEquals(listOf("failed"), terminal)
+
+        val cancelScheduler = FakeScheduler()
+        val cancelTerminal = mutableListOf<String>()
+        val cancelled = CancellableActionSequence(
+            actions = listOf("open", "read"),
+            scheduler = cancelScheduler,
+            executeAction = { TaskStepResult(true, false, it) },
+            delayAfter = { 500L },
+            onTerminal = { cancelTerminal.add(it) },
+            onComplete = {}
+        )
+        cancelled.start()
+        cancelled.cancel()
+        assertEquals(listOf("cancelled"), cancelTerminal)
+    }
