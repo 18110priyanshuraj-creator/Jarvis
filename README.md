@@ -312,7 +312,7 @@ The current 32-phase roadmap uses Phase 15 for unifying Android task planning an
 - Typed Orb and one-shot voice requests resolve local commands on a background executor, then use the authenticated device planner for remaining requests.
 - The server returns one of three bounded modes: conversation, clarification or device action. Conversation and clarification plans must contain no actions.
 - Device-action plans are checked again on-device against the small action allow-list and shared UiActionPolicy. A screen-action plan is blocked before execution when the user has not enabled JARVIS Accessibility.
-- Every AI-proposed device-action plan requires a visible review dialog and explicit Approve and run choice. Dismissing or cancelling the dialog executes nothing.
+- Orb and one-shot voice device-action plans use a visible review dialog and an explicit Approve and run choice. Hands-free voice uses its existing spoken plan preview and explicit approve plan or cancel plan decision. Neither path executes actions before approval.
 - Approved tasks run through the same on-device AgentPlanRunner and bounded CancellableActionSequence used by hands-free voice. The local task journal stores generic action categories and step status only; typed content and screen text are not stored in this journal.
 - A process-wide execution gate prevents a second Orb or voice task from starting while another task is active. The Orb provides Pause, Resume and Cancel controls; hands-free keeps its spoken task controls.
 - The engine still cannot send or submit messages, delete data, purchase, pay, transfer funds, enter credentials, grant permissions, install apps, run arbitrary code or tap screen coordinates. Search-result and other consequential choices remain with the user.
