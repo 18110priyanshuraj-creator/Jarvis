@@ -11,6 +11,7 @@ import {
   recoverInterruptedWorkflowRuns,
   resumeWorkflowRun,
   retryWorkflowRun,
+  WORKFLOW_STEP_TIMEOUT_MS,
   updateWorkflowDraft,
   validateWorkflow
 } from "../services/workflow-engine.js";
@@ -334,4 +335,34 @@ test("manual retry replays only the failed step with a bounded attempt count", a
     steps: failed.steps.map((step, index) => index === 1 ? { ...step, attempts: 3 } : step)
   };
   assert.throws(() => retryWorkflowRun(exhausted), /maximum of three attempts/i);
+});
+
+
+test("workflow step timeout fails only the current step and prevents later work", async () => {
+  const workflow = approveWorkflow(validateWorkflow(createWorkflowDraft({
+    name: "Timeout workflow",
+    steps: [
+      { type: "draft_text", title: "Slow draft", content: "Prepare a draft that intentionally takes too long." },
+      { type: "draft_text", title: "Later draft", content: "This step must not run after a timeout." }
+    ]
+  })).workflow);
+  const run = createWorkflowRun(workflow);
+  let laterCalled = false;
+  const failed = await advanceWorkflowRun(run, {
+    draft_text: async (step) => {
+      if (step.title === "Slow draft") {
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        return { summary: "Late draft result." };
+      }
+      laterCalled = true;
+      return { summary: "Should not run." };
+    }
+  }, { stepTimeoutMs: 100 });
+
+  assert.equal(WORKFLOW_STEP_TIMEOUT_MS, 60_000);
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.steps[0].status, "failed");
+  assert.match(failed.steps[0].result.error, /timed out after 100 ms/i);
+  assert.equal(failed.steps[1].status, "pending");
+  assert.equal(laterCalled, false);
 });
