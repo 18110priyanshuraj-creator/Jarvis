@@ -1,8 +1,8 @@
 # Phase 11 — Screen Observation
 
-**Status:** CODE_COMPLETE — implementation, regression tests, Node audit, Android build, APK verification, and artifact upload passed; merge pending.  
+**Status:** VERIFIED — merged into `main` via PR #50; the final post-merge main CI run passed. Physical Samsung Galaxy Tab A9 acceptance remains Phase 31.  
 **Scope:** Explicit, one-shot Android screen observation combining accessibility labels with local OCR.  
-**Branch:** \`feat/phase-11-screen-observation\`
+**Branch:** `main` (merged via PR #50)
 
 ## Goal
 
@@ -11,7 +11,7 @@ Let the owner ask JARVIS what is visible on the Android display. Use the accessi
 ## User flow
 
 1. The owner explicitly starts the existing hands-free session and enables the JARVIS Accessibility service in Android Settings.
-2. The owner says a supported request such as \`read screen\`, \`describe my screen\`, \`what does this page say\`, or \`screen pe kya likha hai\`.
+2. The owner says a supported request such as `read screen`, `describe my screen`, `what does this page say`, or `screen pe kya likha hai`.
 3. JARVIS requests one screenshot of the default display through Android's AccessibilityService screenshot API (Android 11 / API 30 or later).
 4. The screenshot is converted to a bounded in-memory bitmap and processed by bundled ML Kit Latin and Devanagari text-recognition models.
 5. OCR lines are combined with the bounded accessibility-tree summary, common sensitive values are redacted, and the result is spoken locally.
@@ -35,11 +35,11 @@ The observer rejects overlapping capture requests and throttles consecutive requ
 
 ## Implementation
 
-- \`ScreenObserver\` retains bounded accessibility-tree traversal and adds \`observeOnce\` for asynchronous screenshot + OCR.
-- \`ScreenObservationText\` is a pure Kotlin formatting/redaction layer so its limits and privacy filters can be unit-tested.
-- \`LocalCommandProcessor\` recognizes explicit English and Hinglish screen-observation phrases.
-- \`VoiceControlService\` intercepts those phrases locally and speaks the result without calling the remote conversation or planner endpoints.
-- \`accessibility_service_config.xml\` remains the pre-Android-11 fallback; \`xml-v30/accessibility_service_config.xml\` opts into the screenshot capability on Android 11+.
+- `ScreenObserver` retains bounded accessibility-tree traversal and adds `observeOnce` for asynchronous screenshot + OCR.
+- `ScreenObservationText` is a pure Kotlin formatting/redaction layer so its limits and privacy filters can be unit-tested.
+- `LocalCommandProcessor` recognizes explicit English and Hinglish screen-observation phrases.
+- `VoiceControlService` intercepts those phrases locally and speaks the result without calling the remote conversation or planner endpoints.
+- `accessibility_service_config.xml` remains the pre-Android-11 fallback; `xml-v30/accessibility_service_config.xml` opts into the screenshot capability on Android 11+.
 - The setup disclosure and Android Accessibility service description explain one-shot capture and local-only processing.
 - No server API, workflow executor, external integration, production environment variable, or database schema was changed.
 
@@ -52,16 +52,25 @@ The observer rejects overlapping capture requests and throttles consecutive requ
 
 ## Automated verification results
 
-Verified on final implementation commit \`01781ea049bb6b4d7af7c7c793a885d03b1043ec\`.
+Verified on final implementation commit `01781ea049bb6b4d7af7c7c793a885d03b1043ec`.
 
 - GitHub Actions run [41426668047](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41426668047): passed.
 - Node.js: 197 tests passed, 0 failed.
 - Production dependency audit: 0 vulnerabilities found.
-- Android: \`gradle -p android --no-daemon testDebugUnitTest assembleDebug\` completed successfully.
+- Android: `gradle -p android --no-daemon testDebugUnitTest assembleDebug` completed successfully.
 - APK archive verification and SHA-256 metadata generation passed.
-- Debug APK artifact: \`jarvis-companion-debug\`, artifact ID \`13131309258\`, 23,957,436 bytes; includes APK, checksum, and build metadata. GitHub retains it through 2026-11-09.
+- Debug APK artifact: `jarvis-companion-debug`, artifact ID `13131309258`, 23,957,436 bytes; includes APK, checksum, and build metadata. GitHub retains it through 2026-11-09.
 
 Physical Samsung Galaxy Tab A9 acceptance remains scheduled for Phase 31. CI verifies the Android build and JVM unit tests, not real-device screenshot permission, secure-window fallback, OCR accuracy, or offline TTS installation.
+
+
+## Merge and final main-branch verification
+
+- Squash-merged through [PR #50](https://github.com/18110priyanshuraj-creator/Jarvis/pull/50).
+- Merge commit: \`b706a0fcbbb78cc6e8b03cc07a7e99fb6caaacb3\`.
+- Post-merge main CI [run 41427377450](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41427377450): both jobs passed.
+- Final main verification: 197 Node tests passed, 0 failed; production dependency audit found 0 vulnerabilities; Android unit tests, debug APK build, integrity checks, checksum generation, and artifact upload passed.
+- Final main debug artifact: \`jarvis-companion-debug\`, artifact ID \`13132796485\`, 23,957,412 bytes; GitHub retains it through 2026-11-09.
 
 ## Known limitations
 
