@@ -403,7 +403,7 @@ class VoiceControlService : Service() {
             } else {
                 updateVoiceStatus("Reading one screen snapshot on this tablet. Nothing is saved or sent.")
                 ScreenObserver.observeOnce(active) { observation ->
-                    if (running && requestId == requestGeneration) speak(observation)
+                    if (running && requestId == requestGeneration) speak(observation, requireLocalVoice = true)
                 }
             }
             return
@@ -573,13 +573,16 @@ class VoiceControlService : Service() {
         cancelPendingPlan("Pending plan cleared when voice work was interrupted or stopped.")
     }
 
-    private fun speak(text: String) {
+    private fun speak(text: String, requireLocalVoice: Boolean = false) {
         if (!running) return
         val engine = textToSpeech
         if (!ttsReady || engine == null) {
-            val offlineOnly = VoicePrivacyPreferences.read(this) == VoicePrivacyMode.OFFLINE_ONLY
+            val offlineOnly = requireLocalVoice ||
+                VoicePrivacyPreferences.read(this) == VoicePrivacyMode.OFFLINE_ONLY
             updateVoiceStatus(
-                if (offlineOnly) {
+                if (requireLocalVoice) {
+                    "Screen text stays on this tablet. Install an offline Hindi or English speech voice to hear it; no network voice was used."
+                } else if (offlineOnly) {
                     "Offline spoken replies are unavailable. Install a local Hindi or English text-to-speech voice; no network voice was used."
                 } else {
                     "Voice output is unavailable. Install Hindi or English text-to-speech data in Android settings."
@@ -593,11 +596,18 @@ class VoiceControlService : Service() {
         recognizer?.cancel()
         mainHandler.removeCallbacks(listenRunnable)
         val replyLanguage = if (text.any { it.code in 0x0900..0x097F }) "hi-IN" else "en-IN"
-        val offlineOnly = VoicePrivacyPreferences.read(this) == VoicePrivacyMode.OFFLINE_ONLY
+        val offlineOnly = requireLocalVoice ||
+            VoicePrivacyPreferences.read(this) == VoicePrivacyMode.OFFLINE_ONLY
         val selection = VoiceOutput.configure(engine, replyLanguage, offlineOnly = offlineOnly)
         if (!selection.available || (offlineOnly && !selection.localVoice)) {
-            ttsReady = false
-            updateVoiceStatus(selection.message)
+            if (!requireLocalVoice) ttsReady = false
+            updateVoiceStatus(
+                if (requireLocalVoice) {
+                    "Screen text stays on this tablet. Install an offline Hindi or English speech voice to hear it; no network voice fallback was used."
+                } else {
+                    selection.message
+                }
+            )
             if (stopAfterSpeech) stopSelf() else scheduleListening(900)
             return
         }
