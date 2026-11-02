@@ -128,12 +128,12 @@ object AgentPlanRunner {
         plan: JSONObject,
         handler: Handler,
         onComplete: (String) -> Unit
-    ): AgentPlanControls {
+    ): AgentPlanControls? {
         val actions = try {
             validate(plan)
         } catch (error: Exception) {
             onComplete(error.message ?: "JARVIS rejected an invalid action plan.")
-            return AgentPlanControls(cancel = {}, pause = {}, resume = {})
+            return null
         }
 
         val steps = (0 until actions.length()).map { actions.optJSONObject(it) }
@@ -144,7 +144,7 @@ object AgentPlanRunner {
             LocalTaskExecutionJournal.start(context, taskKinds)
         } catch (error: Exception) {
             onComplete(error.message ?: "JARVIS could not save task progress. No Android actions were started.")
-            return AgentPlanControls(cancel = {}, pause = {}, resume = {})
+            return null
         }
 
         val sequence = CancellableActionSequence(
