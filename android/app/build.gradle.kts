@@ -14,7 +14,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 5
-        versionName = "0.5.0-phase5"
+        versionName = "0.8.0-phase8"
     }
 
     compileOptions {
