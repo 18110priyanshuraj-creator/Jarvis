@@ -301,6 +301,7 @@ object AgentPlanRunner {
             delayAfter = { action ->
                 when (action?.optString("type")) {
                     "open_app" -> 1400L
+                    "open_web_search" -> 1800L
                     "tap_label" -> 600L
                     "back", "home" -> 700L
                     else -> 300L
