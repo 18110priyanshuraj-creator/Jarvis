@@ -19,6 +19,8 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.priyanshuraj.jarviscompanion.R
+import com.priyanshuraj.jarviscompanion.accessibility.JarvisAccessibilityService
+import com.priyanshuraj.jarviscompanion.accessibility.ScreenObserver
 import com.priyanshuraj.jarviscompanion.LocalActivityLog
 import com.priyanshuraj.jarviscompanion.JarvisApplication
 import com.priyanshuraj.jarviscompanion.CoreCommandSource
@@ -393,6 +395,19 @@ class VoiceControlService : Service() {
         pauseActivePlan = null
         resumeActivePlan = null
         val requestId = ++requestGeneration
+
+        if (LocalCommandProcessor.isScreenObservationCommand(transcript)) {
+            val active = JarvisAccessibilityService.activeService
+            if (active == null) {
+                speak("Enable the JARVIS screen assistant in Android Accessibility settings first.")
+            } else {
+                updateVoiceStatus("Reading one screen snapshot on this tablet. Nothing is saved or sent.")
+                ScreenObserver.observeOnce(active) { observation ->
+                    if (running && requestId == requestGeneration) speak(observation)
+                }
+            }
+            return
+        }
 
         val localResponse = core.handleLocalCommand(
             transcript,
