@@ -37,11 +37,11 @@ function cleanLocalIntent(value, maxLength) {
  */
 function extractGoogleSearchQuery(input) {
   const patterns = [
-    /^(?:please\\s+)?search\\s+(.+?)\\s+(?:on|using)\\s+google$/i,
-    /^(?:please\\s+)?google\\s+search\\s+(?:for\\s+)?(.+)$/i,
-    /^google\\s+(?:par|pe)\\s+(.+?)\\s+(?:search|research)(?:\\s+(?:karo|kar do))?$/i,
-    /^google\\s+se\\s+(.+?)\\s+(?:search|dhundo|dhoondo)(?:\\s+(?:karo|kar do))?$/i,
-    /^(?:internet|web)\\s+(?:par|pe)\\s+(.+?)\\s+(?:search|research|check)(?:\\s+(?:karo|kar do))?$/i
+    /^(?:please\s+)?search\s+(.+?)\s+(?:on|using)\s+google$/i,
+    /^(?:please\s+)?google\s+search\s+(?:for\s+)?(.+)$/i,
+    /^google\s+(?:par|pe)\s+(.+?)\s+(?:search|research)(?:\s+(?:karo|kar do))?$/i,
+    /^google\s+se\s+(.+?)\s+(?:search|dhundo|dhoondo)(?:\s+(?:karo|kar do))?$/i,
+    /^(?:internet|web)\s+(?:par|pe)\s+(.+?)\s+(?:search|research|check)(?:\s+(?:karo|kar do))?$/i
   ];
   for (const pattern of patterns) {
     const match = input.match(pattern);
@@ -61,7 +61,7 @@ export function createLocalAgentPlan(message) {
   const googleQuery = extractGoogleSearchQuery(input);
   if (googleQuery) {
     if (googleQuery.length > 120 || BLOCKED_SEARCH_QUERY.test(googleQuery) || NUMERIC_SECRET.test(googleQuery) ||
-      /\\b(password|passcode|otp|one.?time code|pin|cvv|cvc|bank account|card number)\\b/i.test(googleQuery)) {
+      /\b(password|passcode|otp|one.?time code|pin|cvv|cvc|bank account|card number)\b/i.test(googleQuery)) {
       return null;
     }
     return validateAgentPlan({
@@ -159,7 +159,7 @@ export function validateAgentPlan(candidate) {
     }
     if (action.type === "open_web_search" &&
       (value.length > 120 || NUMERIC_SECRET.test(value) || BLOCKED_SEARCH_QUERY.test(value) ||
-        /\\b(password|passcode|otp|one.?time code|pin|cvv|cvc|bank account|card number)\\b/i.test(value))) {
+        /\b(password|passcode|otp|one.?time code|pin|cvv|cvc|bank account|card number)\b/i.test(value))) {
       throw new TypeError("The Google search phrase is outside the safe public-research policy.");
     }
     if (action.type === "verify_screen_text" &&
