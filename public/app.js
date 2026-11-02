@@ -529,7 +529,10 @@ function renderSkills() {
     const triggerMeta = document.createElement("div");
     triggerMeta.className = "list-item-meta";
     triggerMeta.textContent = "Triggers: " + ((skill.triggers || []).join(", ") || "No trigger phrases");
-    main.append(title, status, meta, instructions, triggerMeta);
+    const applicationMeta = document.createElement("div");
+    applicationMeta.className = "list-item-meta";
+    applicationMeta.textContent = "Applications: " + ((skill.applicationIds || ["*"]).join(", ") || "No application targets");
+    main.append(title, status, meta, instructions, triggerMeta, applicationMeta);
 
     const latest = (skill.versions || []).find((version) => version.version === skill.currentVersion);
     if (latest?.validation) {
@@ -571,6 +574,7 @@ function renderSkills() {
       $("#skill-name").value = current.name || skill.name || "";
       $("#skill-instructions").value = current.instructions || skill.instructions || "";
       $("#skill-triggers").value = (current.triggers || []).join(", ");
+      $("#skill-applications").value = (current.applicationIds || skill.applicationIds || ["*"]).join(", ");
       const positive = (current.testCases || []).find((item) => item.shouldMatch);
       const negative = (current.testCases || []).find((item) => !item.shouldMatch);
       $("#skill-positive-test").value = positive?.input || "";
@@ -2209,7 +2213,7 @@ $("#chat-form").addEventListener("submit", async (event) => {
   waiting.append(mark, wrap);
   $("#chat-messages").append(waiting);
   try {
-    const data = await api("/api/chat", { method: "POST", body: JSON.stringify({ message }) });
+    const data = await api("/api/chat", { method: "POST", body: JSON.stringify({ message, applicationId: "web-dashboard" }) });
     if ($("#speak-toggle").checked || voiceModeActive) {
       const replyLanguage = /[\u0900-\u097F]/.test(data.answer)
         ? "hi-IN"
@@ -2326,6 +2330,7 @@ $("#skill-form").addEventListener("submit", async (event) => {
   const payload = {
     name: $("#skill-name").value.trim(),
     instructions: $("#skill-instructions").value.trim(),
+    applicationIds: $("#skill-applications").value.split(",").map((item) => item.trim()).filter(Boolean),
     triggers: $("#skill-triggers").value.split(",").map((item) => item.trim()).filter(Boolean),
     testCases: [
       { input: $("#skill-positive-test").value.trim(), shouldMatch: true },
@@ -2360,6 +2365,7 @@ $("#skill-form").addEventListener("submit", async (event) => {
 function resetSkillForm() {
   state.editingSkillId = null;
   $("#skill-form").reset();
+  $("#skill-applications").value = "*";
   $("#skill-form-title").textContent = "Create a skill draft";
   $("#skill-submit-button").textContent = "Save draft";
   $("#skill-cancel-edit").classList.add("hidden");
