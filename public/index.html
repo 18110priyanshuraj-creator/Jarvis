@@ -7,6 +7,7 @@
   <meta name="description" content="JARVIS orbital voice assistant">
   <title>JARVIS</title>
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/media-workspace.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
@@ -39,6 +40,7 @@
         <button class="nav-item" data-view="devices"><span class="nav-icon">▣</span> Device Control</button>
         <button class="nav-item" data-view="research"><span class="nav-icon">⌕</span> Research</button>
         <button class="nav-item" data-view="knowledge"><span class="nav-icon">▤</span> Knowledge</button>
+        <button class="nav-item" data-view="media"><span class="nav-icon">▧</span> Media Studio</button>
         <button class="nav-item" data-view="tasks"><span class="nav-icon">☷</span> Tasks <span id="task-count" class="nav-count">0</span></button>
         <button class="nav-item" data-view="memory"><span class="nav-icon">◈</span> Memory</button>
         <button class="nav-item" data-view="experience"><span class="nav-icon">✧</span> Experience</button>
@@ -373,6 +375,126 @@
         <div id="workflow-list" class="item-list"></div>
         <div class="list-heading"><h2>Execution history</h2><span class="muted small">Step results and review checkpoints</span></div>
         <div id="workflow-runs" class="item-list"></div>
+      </section>
+
+
+      <section id="view-media" class="view content-view hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">MEDIA & CONTENT CREATION</p>
+            <h1>Media Studio</h1>
+            <p class="muted">Turn a short brief into an editable storyboard, review it, then export files on this device.</p>
+          </div>
+        </div>
+        <form id="media-create-form" class="form-card media-create-card">
+          <h2>Start a media project</h2>
+          <label for="media-title">Project title <span class="muted">(optional)</span></label>
+          <input id="media-title" maxlength="90" placeholder="Example: The water cycle explained">
+          <label for="media-brief">What should the content explain or communicate?</label>
+          <textarea id="media-brief" rows="4" maxlength="1800" required placeholder="Describe the topic, key points and desired takeaway. Use your own wording and cite/check factual sources before publishing."></textarea>
+          <div class="media-form-grid">
+            <label class="field-label" for="media-format">Output format
+              <select id="media-format">
+                <option value="vertical-short">Vertical short · 9:16</option>
+                <option value="landscape-explainer">Landscape explainer · 16:9</option>
+                <option value="square-carousel">Square carousel · 1:1</option>
+              </select>
+            </label>
+            <label class="field-label" for="media-platform">Target platform
+              <select id="media-platform">
+                <option value="general">General export</option>
+                <option value="youtube-shorts">YouTube Shorts</option>
+                <option value="youtube">YouTube video</option>
+                <option value="instagram-reels">Instagram Reels</option>
+                <option value="instagram-carousel">Instagram carousel</option>
+                <option value="tiktok">TikTok</option>
+              </select>
+            </label>
+            <label class="field-label" for="media-language">Language
+              <select id="media-language">
+                <option value="en-IN">English (India)</option>
+                <option value="hi-IN">Hindi</option>
+                <option value="hinglish">Hinglish</option>
+              </select>
+            </label>
+            <label class="field-label" for="media-tone">Tone
+              <select id="media-tone">
+                <option value="clear">Clear</option>
+                <option value="friendly">Friendly</option>
+                <option value="energetic">Energetic</option>
+                <option value="calm">Calm</option>
+                <option value="documentary">Documentary</option>
+                <option value="professional">Professional</option>
+              </select>
+            </label>
+            <label class="field-label media-wide" for="media-audience">Intended audience
+              <input id="media-audience" maxlength="140" placeholder="Example: students, beginners, general audience">
+            </label>
+          </div>
+          <div class="form-row">
+            <span class="small muted">Draft only · No upload or publishing</span>
+            <button class="primary" type="submit" id="media-create-submit">Create storyboard</button>
+          </div>
+          <p id="media-status" class="media-status" aria-live="polite">A local template is always available. A configured JARVIS AI provider may improve the draft.</p>
+        </form>
+
+        <div class="media-workflow-note">
+          <strong>Review and export controls</strong>
+          <p>Projects remain in your private JARVIS workspace. Edit each scene, check all claims and approve the storyboard before exporting. PNG cards and silent WebM motion graphics are rendered in this browser. Voiceover text and SRT captions are separate exports; audio, stock footage and social publishing are not generated here.</p>
+        </div>
+
+        <div class="list-heading"><h2>Your media projects</h2><span class="muted small">Drafts and approved exports</span></div>
+        <div id="media-project-list" class="media-project-list"></div>
+
+        <section id="media-editor" class="media-editor hidden" aria-label="Media storyboard editor">
+          <div class="media-editor-main">
+            <div class="media-editor-header">
+              <div>
+                <h2 id="media-editor-title">Storyboard editor</h2>
+                <p id="media-editor-meta" class="small muted"></p>
+              </div>
+              <button type="button" class="item-action" id="media-editor-close">Close editor</button>
+            </div>
+            <p id="media-generation-note" class="small muted"></p>
+            <div class="media-editor-fields">
+              <label class="media-field"><span>Project title</span><input id="media-editor-project-title" class="media-scene-input" maxlength="90"></label>
+              <label class="media-field"><span>Audience</span><input id="media-editor-audience" class="media-scene-input" maxlength="140"></label>
+              <label class="media-field"><span>Tone</span>
+                <select id="media-editor-tone" class="media-scene-input">
+                  <option value="clear">Clear</option>
+                  <option value="friendly">Friendly</option>
+                  <option value="energetic">Energetic</option>
+                  <option value="calm">Calm</option>
+                  <option value="documentary">Documentary</option>
+                  <option value="professional">Professional</option>
+                </select>
+              </label>
+              <p id="media-scene-count" class="small muted">0 / 12 scenes</p>
+            </div>
+            <div id="media-editor-scenes" class="media-editor-scenes"></div>
+            <div class="media-editor-toolbar">
+              <button type="button" class="item-action" id="media-add-scene">Add scene</button>
+              <button type="button" class="primary" id="media-save-button">Save changes</button>
+              <button type="button" class="primary" id="media-approve-button">Approve storyboard</button>
+            </div>
+          </div>
+          <aside class="media-editor-side">
+            <div class="media-preview-wrap"><canvas id="media-preview-canvas" aria-label="Storyboard scene preview"></canvas></div>
+            <button type="button" class="item-action" id="media-preview-button">Preview storyboard</button>
+            <div class="research-hint">
+              <strong>Local exports</strong>
+              <p id="media-export-status" class="media-export-status">Approve the storyboard before exporting. Nothing will be uploaded.</p>
+            </div>
+            <div class="media-export-controls">
+              <button type="button" class="item-action" id="media-export-json">Project JSON</button>
+              <button type="button" class="item-action" id="media-export-script">Script TXT</button>
+              <button type="button" class="item-action" id="media-export-captions">Captions SRT</button>
+              <button type="button" class="item-action" id="media-export-png">Scene PNGs</button>
+              <button type="button" class="primary media-wide" id="media-export-webm">Silent WebM</button>
+            </div>
+            <p class="media-limits-note">WebM includes browser-rendered motion graphics without an audio track. It is rendered in real time, so keep this tab open until it completes.</p>
+          </aside>
+        </section>
       </section>
 
       <section id="view-actions" class="view content-view hidden">
