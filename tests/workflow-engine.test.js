@@ -4,6 +4,7 @@ import {
   advanceWorkflowRun,
   classifyWorkflowError,
   getWorkflowRecoverySummary,
+  sanitizeWorkflowRunRecord,
   approveWorkflow,
   cancelWorkflowRun,
   createWorkflowDraft,
@@ -341,6 +342,32 @@ test("failed workflow records contain sanitized error summaries rather than raw 
   assert.ok(failed.steps[0].result.error.includes("connection"));
   assert.equal(JSON.stringify(failed).includes("abcdefghijklmnop"), false);
   assert.equal(JSON.stringify(failed).includes("user@example.com"), false);
+});
+
+test("legacy failed runs are sanitized before they are returned or exported", () => {
+  const legacy = {
+    id: "legacy-failed-run",
+    workflowId: "legacy-workflow",
+    status: "failed",
+    currentStepIndex: 0,
+    nextStepIndex: 0,
+    updatedAt: "2026-11-02T10:00:00.000Z",
+    steps: [{
+      type: "draft_text",
+      title: "Old failed step",
+      status: "failed",
+      attempts: 1,
+      result: { error: "Request failed with bearer abcdefghijklmnop for user@example.com." },
+      lastFailure: { error: "Old provider response: private-raw-detail." }
+    }]
+  };
+  const sanitized = sanitizeWorkflowRunRecord(legacy);
+  assert.equal(sanitized.steps[0].result.failure.code, "unknown");
+  assert.equal(sanitized.steps[0].result.error, sanitized.failure.message);
+  assert.equal(JSON.stringify(sanitized).includes("abcdefghijklmnop"), false);
+  assert.equal(JSON.stringify(sanitized).includes("user@example.com"), false);
+  assert.equal(JSON.stringify(sanitized).includes("private-raw-detail"), false);
+  assert.equal(legacy.steps[0].result.error.includes("abcdefghijklmnop"), true);
 });
 
 test("recovery preview separates manual retries from fixes and never schedules automatic recovery", async () => {
