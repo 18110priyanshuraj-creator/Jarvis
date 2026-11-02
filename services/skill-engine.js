@@ -42,7 +42,10 @@ function normalizeApplicationIds(value, strict = false) {
   }
   const ids = [];
   for (const raw of values) {
-    if (typeof raw !== "string" || !raw.trim()) continue;
+    if (typeof raw !== "string" || !raw.trim()) {
+      if (strict) throw new TypeError("Application IDs must be non-empty strings.");
+      continue;
+    }
     const applicationId = normalizeApplicationId(raw);
     if (!applicationId) {
       if (strict) throw new TypeError("Application IDs must use letters, numbers, dots, underscores or hyphens.");
