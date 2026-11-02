@@ -4,6 +4,7 @@ const ALLOWED_ACTIONS = new Set([
   "open_app",
   "verify_app_foreground",
   "open_web_search",
+  "verify_browser_foreground",
   "read_screen",
   "tap_label",
   "type_text",
@@ -69,8 +70,8 @@ export function createLocalAgentPlan(message) {
       reply: "I will open Google in your default browser and verify that the search phrase is visible. You will choose a result; JARVIS will not sign in, submit forms or bypass challenges.",
       actions: [
         { type: "open_web_search", value: googleQuery, purpose: "Open a fixed Google HTTPS search URL in the default browser." },
-        { type: "verify_screen_text", value: googleQuery, purpose: "Confirm the requested query is visible in the browser." },
-        { type: "ask_user", value: "Google is open with your query. Choose a public result yourself. Handle any login, consent or CAPTCHA prompt manually, then return to JARVIS.", purpose: "Keep result selection and access challenges under the user's control." }
+        { type: "verify_browser_foreground", value: googleQuery, purpose: "Confirm the default browser is foregrounded after opening the fixed Google search URL." },
+        { type: "ask_user", value: "The default browser opened for your Google search request. Check that the query loaded, then choose a public result yourself. Handle any login, consent or CAPTCHA prompt manually, then return to JARVIS.", purpose: "Keep result selection and access challenges under the user's control." }
       ]
     });
   }
@@ -145,7 +146,7 @@ export function validateAgentPlan(candidate) {
     }
 
     const value = typeof action.value === "string" ? action.value.trim().slice(0, 180) : "";
-    if (["open_app", "verify_app_foreground", "open_web_search", "tap_label", "type_text", "verify_screen_text", "ask_user", "finish"].includes(action.type) && !value) {
+    if (["open_app", "verify_app_foreground", "open_web_search", "verify_browser_foreground", "tap_label", "type_text", "verify_screen_text", "ask_user", "finish"].includes(action.type) && !value) {
       throw new TypeError("A required action value is missing.");
     }
     if (action.type === "tap_label" && BLOCKED_LABEL.test(value)) {
@@ -174,6 +175,23 @@ export function validateAgentPlan(candidate) {
     };
   });
 
+  // Public Google search launch must be followed by the matching browser foreground check.
+  for (let index = 0; index < actions.length; index += 1) {
+    const action = actions[index];
+    if (action.type === "open_web_search") {
+      const verifier = actions[index + 1];
+      if (verifier?.type !== "verify_browser_foreground" || verifier.value !== action.value) {
+        throw new TypeError("Every Google search launch must be followed by a matching browser foreground verification.");
+      }
+    }
+    if (action.type === "verify_browser_foreground") {
+      const previous = actions[index - 1];
+      if (previous?.type !== "open_web_search" || previous.value !== action.value) {
+        throw new TypeError("Browser foreground verification must immediately follow its matching Google search launch.");
+      }
+    }
+  }
+
   // Every app launch must be followed immediately by a matching foreground check.
   for (let index = 0; index < actions.length; index += 1) {
     const action = actions[index];
@@ -194,7 +212,7 @@ export function validateAgentPlan(candidate) {
   }
 
   const lastUiMutation = actions.findLastIndex((action) =>
-    ["open_web_search", "tap_label", "type_text", "scroll_down", "scroll_up", "back", "home"].includes(action.type)
+    ["tap_label", "type_text", "scroll_down", "scroll_up", "back", "home"].includes(action.type)
   );
   if (lastUiMutation >= 0 &&
     !actions.slice(lastUiMutation + 1).some((action) => action.type === "verify_screen_text")) {
@@ -220,7 +238,7 @@ const RESPONSE_SCHEMA = {
         properties: {
           type: {
             type: "string",
-            enum: ["open_app", "verify_app_foreground", "open_web_search", "read_screen", "tap_label", "type_text", "scroll_down", "scroll_up", "back", "home", "verify_screen_text", "ask_user", "finish"]
+            enum: ["open_app", "verify_app_foreground", "open_web_search", "verify_browser_foreground", "read_screen", "tap_label", "type_text", "scroll_down", "scroll_up", "back", "home", "verify_screen_text", "ask_user", "finish"]
           },
           value: { type: "string" },
           purpose: { type: "string" }
@@ -238,11 +256,11 @@ const SYSTEM_INSTRUCTIONS = [
   "Use mode device_action only when the user clearly asks to operate the Android interface, such as opening an app, reading visible labels, searching, scrolling or navigating.",
   "Use mode clarification when a requested device action is ambiguous, unsafe, or outside the supported controls. Return actions as an empty array and put one short explanation or clarification question in reply.",
   "You do not control Android directly. The Android app validates and executes every device action locally.",
-  "Allowed device action types only: open_app, verify_app_foreground, open_web_search, read_screen, tap_label, type_text, scroll_down, scroll_up, back, home, verify_screen_text, ask_user, finish.",
+  "Allowed device action types only: open_app, verify_app_foreground, open_web_search, verify_browser_foreground, read_screen, tap_label, type_text, scroll_down, scroll_up, back, home, verify_screen_text, ask_user, finish.",
   "Never create actions for sending messages, submitting forms, deleting, purchasing, paying, transferring money, changing account/security settings, handling OTP/PIN/password, granting permissions, installing apps, or bypassing system dialogs.",
-  "For an explicit Google search request, use open_web_search with only the query text; Android opens a fixed HTTPS Google search URL in the user's default browser. Follow it with verify_screen_text for the same query, then ask the user to choose a result. Never claim that the result page was read. Do not bypass login, consent or CAPTCHA challenges.",
+  "For an explicit Google search request, use open_web_search with only the query text; Android opens a fixed HTTPS Google search URL in the user's default browser. Follow it immediately with verify_browser_foreground carrying the same query; this checks only that the resolved browser app is foregrounded, not that the page content/results are correct. Then ask the user to check the query and choose a public result. Never claim that the result page was read. Do not bypass login, consent or CAPTCHA challenges.",
   "For an app-specific search workflow, open the requested app and immediately verify its foreground identity, tap the visible Search label, type the query and verify that the query is visible. Do not claim that search results have loaded: tell the user to submit the query in the app and choose a result manually.",
-  "Every open_app action must be followed immediately by verify_app_foreground with the same app label. Every UI mutation (tap, type, scroll, back or home) must be followed by verify_screen_text for the expected visible result before the plan can finish.",
+  "Every open_app action must be followed immediately by verify_app_foreground with the same app label. Every open_web_search action must be followed immediately by verify_browser_foreground with the exact same query text. Every UI mutation (tap, type, scroll, back or home) must be followed by verify_screen_text for the expected visible result before the plan can finish.",
   "A verification action is an observation only; it never taps, submits, sends, purchases, deletes or changes account state. If the expected result is not visible, stop and ask the user to review the screen. Never report completion without that check.",
   "A tap_label must be a short exact UI label such as Search or Library. If uncertain, choose clarification instead of guessing.",
   "type_text is only for ordinary search or draft text in a field the user has already focused. Never produce PINs, OTPs, passwords, payment details, or long numeric codes.",
