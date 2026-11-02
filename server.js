@@ -974,6 +974,7 @@ app.get("/api/export", requireAuth, (req, res) => {
       skills: store.skills,
       workflows: store.workflows,
       workflowRuns: store.workflowRuns,
+      workflowStepEffects: store.workflowStepEffects,
       disabledIntegrations: store.disabledIntegrations,
       externalActions: store.externalActions
     },
@@ -1575,7 +1576,7 @@ app.post("/api/workflows", requireAuth, async (req, res) => {
 app.patch("/api/workflows/:id", requireAuth, async (req, res) => {
   const existing = store.workflows.find((item) => item.id === req.params.id);
   if (!existing) return res.status(404).json({ error: "Workflow not found." });
-  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["running", "waiting_review"].includes(run.status))) {
+  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["running", "waiting_review", "paused"].includes(run.status))) {
     return res.status(409).json({ error: "Stop or finish the active run before editing this workflow." });
   }
   let updated;
@@ -1615,7 +1616,7 @@ app.post("/api/workflows/:id/approve", requireAuth, async (req, res) => {
 app.post("/api/workflows/:id/pause", requireAuth, async (req, res) => {
   const existing = store.workflows.find((item) => item.id === req.params.id);
   if (!existing) return res.status(404).json({ error: "Workflow not found." });
-  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["running", "waiting_review"].includes(run.status))) {
+  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["running", "waiting_review", "paused"].includes(run.status))) {
     return res.status(409).json({ error: "Stop the active run before pausing this workflow." });
   }
   let paused;
@@ -1632,7 +1633,7 @@ app.post("/api/workflows/:id/pause", requireAuth, async (req, res) => {
 app.delete("/api/workflows/:id", requireAuth, async (req, res) => {
   const existing = store.workflows.find((item) => item.id === req.params.id);
   if (!existing) return res.status(404).json({ error: "Workflow not found." });
-  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["running", "waiting_review"].includes(run.status))) {
+  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["running", "waiting_review", "paused"].includes(run.status))) {
     return res.status(409).json({ error: "Stop the active run before deleting this workflow." });
   }
   store.workflows = store.workflows.filter((item) => item.id !== existing.id);
