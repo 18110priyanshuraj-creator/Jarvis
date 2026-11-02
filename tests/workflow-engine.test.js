@@ -7,6 +7,9 @@ import {
   createWorkflowDraft,
   createWorkflowRun,
   pauseWorkflow,
+  pauseWorkflowRun,
+  recoverInterruptedWorkflowRuns,
+  resumeWorkflowRun,
   updateWorkflowDraft,
   validateWorkflow
 } from "../services/workflow-engine.js";
@@ -176,4 +179,115 @@ test("runner cannot start a second time from a completed run", async () => {
   });
   assert.equal(completed.status, "completed");
   await assert.rejects(() => advanceWorkflowRun(completed, {}), /only a running workflow/i);
+});
+
+
+test("runner persists a pre-action and post-action checkpoint for every step", async () => {
+  const workflow = approveWorkflow(validateWorkflow(createWorkflowDraft({
+    name: "Checkpoint workflow",
+    steps: [
+      { type: "draft_text", title: "Prepare first draft", content: "Prepare a safe first draft for checkpoint testing." },
+      { type: "draft_text", title: "Prepare second draft", content: "Prepare a safe second draft for checkpoint testing." }
+    ]
+  })).workflow);
+  const run = createWorkflowRun(workflow);
+  const checkpoints = [];
+  const completed = await advanceWorkflowRun(run, {
+    draft_text: async (step) => ({ executionKey: step.executionKey, summary: "Draft prepared." })
+  }, {
+    onCheckpoint: async (snapshot) => checkpoints.push(snapshot)
+  });
+
+  assert.equal(completed.status, "completed");
+  assert.equal(checkpoints.length, 5);
+  assert.equal(checkpoints[0].steps[0].status, "running");
+  assert.equal(checkpoints[1].steps[0].status, "completed");
+  assert.equal(checkpoints[2].steps[1].status, "running");
+  assert.equal(checkpoints[3].steps[1].status, "completed");
+  assert.equal(checkpoints[4].status, "completed");
+  assert.equal(checkpoints[0].steps[0].executionKey, run.id + ":0");
+});
+
+test("pause requests are honored at the next safe checkpoint and can resume", async () => {
+  const workflow = approveWorkflow(validateWorkflow(createWorkflowDraft({
+    name: "Pause and resume workflow",
+    steps: [
+      { type: "draft_text", title: "Prepare first draft", content: "Prepare a safe first draft before pausing." },
+      { type: "draft_text", title: "Prepare second draft", content: "Prepare a safe second draft after resuming." }
+    ]
+  })).workflow);
+  const run = createWorkflowRun(workflow);
+  let pause = false;
+  const called = [];
+  const paused = await advanceWorkflowRun(run, {
+    draft_text: async (step) => { called.push(step.title); return { summary: "Draft prepared." }; }
+  }, {
+    shouldPause: () => pause,
+    onCheckpoint: async (snapshot) => {
+      if (snapshot.steps[0]?.status === "completed") pause = true;
+    }
+  });
+
+  assert.equal(paused.status, "paused");
+  assert.equal(paused.nextStepIndex, 1);
+  assert.deepEqual(called, ["Prepare first draft"]);
+  const resumed = resumeWorkflowRun(paused);
+  const completed = await advanceWorkflowRun(resumed, {
+    draft_text: async (step) => { called.push(step.title); return { summary: "Draft prepared." }; }
+  });
+  assert.equal(completed.status, "completed");
+  assert.deepEqual(called, ["Prepare first draft", "Prepare second draft"]);
+});
+
+test("restart recovery pauses active runs and preserves the next durable checkpoint", async () => {
+  const workflow = approveWorkflow(validateWorkflow(sampleWorkflow()).workflow);
+  const run = createWorkflowRun(workflow);
+  const interrupted = {
+    ...run,
+    status: "running",
+    currentStepIndex: 1,
+    nextStepIndex: 1,
+    steps: run.steps.map((step, index) => ({
+      ...step,
+      status: index === 0 ? "completed" : index === 1 ? "running" : "pending"
+    }))
+  };
+  const [recovered] = recoverInterruptedWorkflowRuns([interrupted], "2026-11-02T08:00:00.000Z");
+  assert.equal(recovered.status, "paused");
+  assert.equal(recovered.steps[0].status, "completed");
+  assert.equal(recovered.steps[1].status, "pending");
+  assert.equal(recovered.steps[1].recoveredFromInterrupted, true);
+  assert.equal(recovered.nextStepIndex, 1);
+  assert.equal(recovered.recovery.reason, "process_restart");
+  assert.equal(recovered.recovery.requiresManualResume, true);
+  assert.equal(resumeWorkflowRun(recovered).status, "running");
+  assert.deepEqual(recoverInterruptedWorkflowRuns([recovered]), [recovered]);
+});
+
+test("a stop request is observed before the next action and paused runs can be cancelled", async () => {
+  const workflow = approveWorkflow(validateWorkflow(createWorkflowDraft({
+    name: "Safe stop workflow",
+    steps: [
+      { type: "draft_text", title: "Prepare first draft", content: "Prepare a safe first draft before stopping." },
+      { type: "draft_text", title: "Prepare second draft", content: "This second draft must not execute after stop." }
+    ]
+  })).workflow);
+  const run = createWorkflowRun(workflow);
+  let stop = false;
+  const called = [];
+  const stopped = await advanceWorkflowRun(run, {
+    draft_text: async (step) => { called.push(step.title); return { summary: "Draft prepared." }; }
+  }, {
+    shouldCancel: () => stop,
+    onCheckpoint: async (snapshot) => {
+      if (snapshot.steps[0]?.status === "completed") stop = true;
+    }
+  });
+  assert.equal(stopped.status, "cancelled");
+  assert.deepEqual(called, ["Prepare first draft"]);
+  assert.throws(() => cancelWorkflowRun(stopped), /active workflow run/i);
+
+  const paused = { ...run, status: "paused" };
+  assert.equal(cancelWorkflowRun(paused).status, "cancelled");
+  assert.throws(() => pauseWorkflowRun(paused), /only a running/i);
 });
