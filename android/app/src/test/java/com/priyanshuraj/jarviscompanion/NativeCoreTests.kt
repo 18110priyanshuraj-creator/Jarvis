@@ -125,7 +125,7 @@ class CoreExecutionRecordFactoryTest {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class JarvisCoreDatabaseTest {
-    private val app = RuntimeEnvironment.getApplication<android.app.Application>()
+    private val app = RuntimeEnvironment.getApplication()
     private val databaseName = "jarvis-core-test-${UUID.randomUUID()}.db"
     private var database: JarvisCoreDatabase? = null
 
