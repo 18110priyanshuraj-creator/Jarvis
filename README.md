@@ -353,7 +353,9 @@ The read controls appear only on live search source cards after page reading is 
 - Nothing is automatically saved to Memory or Knowledge, and no model weights are trained.
 - Full implementation and verification details: `docs/PHASE16_SOURCE_BASED_ANSWERS.md`.
 
-## Persistent Knowledge Learning (Phase 17)
+## Historical component milestone — Persistent Knowledge Learning (earlier sequence)
+
+> This heading retains an older component-level phase number. The current 32-phase roadmap defines Phase 17 as the Media and Content Creation Engine; see docs/JARVIS_PHASE_ROADMAP.md.
 
 - Uses the existing Neon-backed `jarvis_app_state` JSONB store (with the existing local file fallback); no second database is created.
 - Saves capture, publication and retrieval dates, source titles, canonical HTTPS URLs, available snippets and claim-level citations.

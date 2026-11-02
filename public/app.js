@@ -1,5 +1,6 @@
 import { createVoiceController } from "./voice-controller.js";
 import { createOrbitalVisual } from "./orbital-visual.js";
+import { createMediaWorkspace } from "./media-workspace.js";
 const $ = (selector) => document.querySelector(selector);
 const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, taskPlan: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", knowledgeFilter: "all", knowledgeSummary: { total: 0, trusted: 0, unreviewed: 0, rejected: 0 }, diagnostics: null, activeView: "chat" };
 let toastTimer;
@@ -24,6 +25,8 @@ async function api(url, options = {}) {
   if (!response.ok) throw new Error(payload.error || "Request failed. Please try again.");
   return payload;
 }
+
+const mediaWorkspace = createMediaWorkspace({ api, toast });
 
 function showLogin() {
   $("#login-screen").classList.remove("hidden");
@@ -102,6 +105,7 @@ function setView(name) {
     tasks: ["ORGANIZATION", "Tasks"],
     research: ["WEB DISCOVERY", "Research"],
     knowledge: ["PERSONAL KNOWLEDGE LIBRARY", "Knowledge"],
+    media: ["MEDIA & CONTENT CREATION", "Media Studio"],
     experience: ["EXPERIENCE & SELF-IMPROVEMENT", "Experience"],
     workflows: ["AUTOMATION & EXECUTION", "Workflows"],
     integrations: ["CONNECTED SERVICES", "Connections"],
@@ -120,6 +124,7 @@ function setView(name) {
   if (name === "integrations") refreshIntegrations().catch((error) => toast(error.message, true));
   if (name === "actions") refreshExternalActions().catch((error) => toast(error.message, true));
   if (name === "system") refreshSystemDiagnostics().catch((error) => toast(error.message, true));
+  if (name === "media") mediaWorkspace.open().catch((error) => toast(error.message, true));
 }
 
 function makeEmpty(message) {
