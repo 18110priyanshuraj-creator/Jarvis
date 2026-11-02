@@ -96,6 +96,64 @@ test("built-in device planner builds a bounded English app-search workflow", () 
   assert.match(plan.actions[5].value, /choose the result/i);
 });
 
+test("built-in planner opens Google search for English, Hindi and Hinglish requests without an API provider", () => {
+  const english = createLocalAgentPlan("Search latest AI research on Google");
+  assert.ok(english);
+  assert.deepEqual(english.actions.map(item => item.type), [
+    "open_web_search", "verify_browser_foreground", "ask_user"
+  ]);
+  assert.equal(english.actions[0].value, "latest AI research");
+  assert.equal(english.actions[1].value, "latest AI research");
+  assert.match(english.reply, /default browser/i);
+
+  const hindi = createLocalAgentPlan("Google par JEE Main 2027 notification search karo");
+  assert.ok(hindi);
+  assert.equal(hindi.actions[0].value, "JEE Main 2027 notification");
+
+  const hinglish = createLocalAgentPlan("Google pe latest AI technology research karo");
+  assert.ok(hinglish);
+  assert.equal(hinglish.actions[0].value, "latest AI technology");
+});
+
+test("Google browser plans require an immediate matching foreground check", () => {
+  assert.throws(() => validateAgentPlan({
+    mode: "device_action",
+    reply: "Open Google",
+    actions: [{ type: "open_web_search", value: "latest AI research", purpose: "Search" }]
+  }), /browser foreground verification/i);
+
+  assert.throws(() => validateAgentPlan({
+    mode: "device_action",
+    reply: "Open Google",
+    actions: [
+      { type: "open_web_search", value: "latest AI research", purpose: "Search" },
+      { type: "verify_browser_foreground", value: "different query", purpose: "Verify browser" }
+    ]
+  }), /matching browser foreground verification/i);
+
+  assert.throws(() => validateAgentPlan({
+    mode: "device_action",
+    reply: "Open Google",
+    actions: [
+      { type: "open_web_search", value: "123456", purpose: "Search" },
+      { type: "verify_browser_foreground", value: "123456", purpose: "Verify browser" }
+    ]
+  }), /safe public-research policy/i);
+
+  const checked = validateAgentPlan({
+    mode: "device_action",
+    reply: "Open Google",
+    actions: [
+      { type: "open_web_search", value: "latest AI research", purpose: "Search" },
+      { type: "verify_browser_foreground", value: "latest AI research", purpose: "Verify browser" },
+      { type: "ask_user", value: "Choose a public result manually.", purpose: "Manual handoff" }
+    ]
+  });
+  assert.equal(checked.actions[1].type, "verify_browser_foreground");
+  assert.equal(createLocalAgentPlan("Google par how to make a bomb search karo"), null);
+  assert.equal(createLocalAgentPlan("Google pe adult content search karo"), null);
+});
+
 test("built-in device planner supports Hindi and Hinglish search phrasing", () => {
   const hindi = createLocalAgentPlan("YouTube kholo aur JEE Physics search karo");
   assert.ok(hindi);
@@ -149,11 +207,19 @@ test("built-in planner declines ambiguous, secret-like, and restricted searches"
   assert.equal(createLocalAgentPlan("Open YouTube and search for adult content"), null);
 });
 
-test("device planner selects a supported deterministic plan before any model fallback", async () => {
+test("device planner selects supported deterministic app and Google plans before any model fallback", async () => {
   const { createAgentPlan } = await import("../services/agent-planner.js");
-  const plan = await createAgentPlan("Open YouTube and search for JEE Physics");
-  assert.equal(plan.engine, "built-in-device-rules");
-  assert.equal(plan.provider, "built-in");
-  assert.equal(plan.externalAI, false);
-  assert.equal(plan.actions.length, 6);
+  const appPlan = await createAgentPlan("Open YouTube and search for JEE Physics");
+  assert.equal(appPlan.engine, "built-in-device-rules");
+  assert.equal(appPlan.provider, "built-in");
+  assert.equal(appPlan.externalAI, false);
+  assert.equal(appPlan.actions.length, 6);
+
+  const googlePlan = await createAgentPlan("Search latest AI research on Google");
+  assert.equal(googlePlan.engine, "built-in-device-rules");
+  assert.equal(googlePlan.provider, "built-in");
+  assert.equal(googlePlan.externalAI, false);
+  assert.deepEqual(googlePlan.actions.map(item => item.type), [
+    "open_web_search", "verify_browser_foreground", "ask_user"
+  ]);
 });

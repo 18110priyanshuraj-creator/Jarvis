@@ -3,6 +3,8 @@ package com.priyanshuraj.jarviscompanion.voice
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -33,6 +35,81 @@ class AgentPlanRunnerTest {
             "open app → verify app → tap label → type text → verify screen → ask user",
             AgentPlanRunner.actionKinds(plan)
         )
+    }
+
+    @Test
+    fun localGoogleSearchPlanSupportsWakeWordEnglishHindiAndRestrictedQueryClarification() {
+        val english = LocalCommandProcessor.createGoogleSearchPlan(
+            "Jarvis, search latest AI research on Google"
+        )
+        assertNotNull(english)
+        assertEquals("device_action", english!!.optString("mode"))
+        assertEquals(
+            listOf("open_web_search", "verify_browser_foreground", "ask_user"),
+            (0 until english.getJSONArray("actions").length()).map {
+                english.getJSONArray("actions").getJSONObject(it).optString("type")
+            }
+        )
+        assertEquals(
+            "latest AI research",
+            english.getJSONArray("actions").getJSONObject(0).optString("value")
+        )
+
+        val hindi = LocalCommandProcessor.createGoogleSearchPlan(
+            "Jarvis, Google par JEE Main 2027 notification search karo"
+        )
+        assertNotNull(hindi)
+        assertEquals("JEE Main 2027 notification",
+            hindi!!.getJSONArray("actions").getJSONObject(0).optString("value"))
+
+        val restricted = LocalCommandProcessor.createGoogleSearchPlan(
+            "Google par alcohol ke baare mein search karo"
+        )
+        assertNotNull(restricted)
+        assertEquals("clarification", restricted!!.optString("mode"))
+        assertEquals(0, restricted.getJSONArray("actions").length())
+        assertNull(LocalCommandProcessor.createGoogleSearchPlan("Open YouTube"))
+    }
+
+    @Test
+    fun validatesAndPreviewsGoogleSearchHandoffWithBrowserForegroundCheck() {
+        val plan = JSONObject(
+            """{"mode":"device_action","reply":"Open Google in the default browser.","actions":[
+                {"type":"open_web_search","value":"latest AI research","purpose":"Open Google search."},
+                {"type":"verify_browser_foreground","value":"latest AI research","purpose":"Confirm the browser is foregrounded."},
+                {"type":"ask_user","value":"Choose a public result manually.","purpose":"User selects the result."}
+            ]}"""
+        )
+        val actions = AgentPlanRunner.validate(plan)
+        assertEquals(3, actions.length())
+        assertTrue(AgentPlanRunner.describe(plan).contains("Open Google search"))
+        assertEquals("open web search → verify browser → ask user", AgentPlanRunner.actionKinds(plan))
+        assertTrue(AgentPlanRunner.requiresAccessibility(plan))
+    }
+
+    @Test
+    fun rejectsGoogleSearchPlansWithoutMatchingBrowserCheckOrWithUnsafeTerms() {
+        val missingCheck = JSONObject(
+            """{"mode":"device_action","actions":[
+                {"type":"open_web_search","value":"latest AI research"},
+                {"type":"ask_user","value":"Choose a result."}
+            ]}"""
+        )
+        val mismatchedCheck = JSONObject(
+            """{"mode":"device_action","actions":[
+                {"type":"open_web_search","value":"latest AI research"},
+                {"type":"verify_browser_foreground","value":"another query"}
+            ]}"""
+        )
+        val secretQuery = JSONObject(
+            """{"mode":"device_action","actions":[
+                {"type":"open_web_search","value":"123456"},
+                {"type":"verify_browser_foreground","value":"123456"}
+            ]}"""
+        )
+        expectIllegalArgument { AgentPlanRunner.validate(missingCheck) }
+        expectIllegalArgument { AgentPlanRunner.validate(mismatchedCheck) }
+        expectIllegalArgument { AgentPlanRunner.validate(secretQuery) }
     }
 
     @Test

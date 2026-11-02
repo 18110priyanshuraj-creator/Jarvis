@@ -22,7 +22,7 @@ This matrix describes what exists in source and what is supported by test/deploy
 | Skill registry | `services/skill-engine.js` and Skills UI | PARTIAL | Versioned instruction/trigger records, static validation, tests and approval. It does not execute newly generated code. |
 | Error detection/recovery | Workflow runner, action sequence failure checks and retry boundaries | PARTIAL | Some failures stop later steps and preserve status; no general autonomous root-cause repair engine. |
 | Full Android task integration | Device pairing, planner, accessibility, approval, cancellable sequence and local journal | PARTIAL | Typed Orb, one-shot voice and hands-free paths share planning/approval/execution. PR #55 requires app/result verification before proceeding. Current search template enters and verifies the query but leaves submission and result selection to the user; this is not full cross-app automation or Canva/YouTube automation. |
-| Internet research | `services/web-research.js`, `services/web-page-reader.js` | PARTIAL | Requires a configured trusted SearXNG JSON endpoint and optional page reader. It is not a built-in browser agent that can freely navigate arbitrary websites. |
+| Internet research | `services/web-research.js`, `services/web-page-reader.js`, `services/source-answer.js`, Android `NativeCoreRuntime` / `open_web_search` / `verify_browser_foreground` | CODE_COMPLETE (repository scope) | Authenticated SearXNG search, secure HTTPS page reads through session-bound tokens, and source-grounded multi-source answers are implemented and tested. Native English/Hindi/Hinglish Google query parsing runs before remote credentials, so the browser handoff needs no paired server or AI API; it verifies Android's resolved default HTTPS BROWSABLE handler and pauses for manual result choice. Production SearXNG readiness needs owner-selected Render workspace verification; Galaxy Tab A9 acceptance remains Phase 31. |
 | Media creation | No end-to-end media generation/export subsystem found | NOT_STARTED | No verified storyboard-to-video file creation pipeline. |
 | YouTube publishing | No YouTube publishing workflow found | NOT_STARTED | No verified upload/publish flow or publication approval gate. |
 | Independent learning | Knowledge Library and explicitly saved research | PARTIAL | Stores user-reviewed/source-backed notes. Saving notes is not model-weight training or autonomous continual learning. |
@@ -60,3 +60,8 @@ Android reads accessibility nodes when permitted. It does not currently capture 
 ### Persistence and legacy data
 
 The old production server wrote chat transcripts to the durable application JSON. The current server uses session-scoped temporary chat storage and intentionally drops the old `chats` field when normalizing legacy state. A backup/archive is required before migration.
+
+ 
+### Phase 16 browser handoff boundary
+
+The Android Google handoff is a bounded user-controlled browser launch, not an unrestricted browser agent. It creates a fixed HTTPS Google Search URI from a short query and verifies only the foreground package returned by Android's default HTTPS BROWSABLE handler resolution. It does not prove query-page load, inspect results, select result links, pass arbitrary URLs into the safe page reader, or bypass login/CAPTCHA challenges. The full contract and checklist are in `JARVIS_PHASE_16_INTERNET_RESEARCH.md`.

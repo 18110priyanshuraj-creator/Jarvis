@@ -428,11 +428,8 @@ class VoiceControlService : Service() {
             updateVoiceStatus("Speech recognition remains on-device. Conversational requests may still be sent to your paired JARVIS server.")
         }
 
-        if (!core.isRemoteConnected()) {
-            speak("That is a JARVIS chat request. Pair this device with your dashboard to send it to the assistant.")
-            return
-        }
-
+        // requestAgentPlan handles the deterministic Google browser plan locally before
+        // requiring a paired server. Other unsupported requests still use the server fallback.
         networkExecutor.execute {
             try {
                 val plan = core.requestAgentPlan(transcript)

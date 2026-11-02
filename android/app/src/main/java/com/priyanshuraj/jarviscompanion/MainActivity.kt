@@ -1459,15 +1459,7 @@ class MainActivity : Activity() {
                 return@execute
             }
 
-            if (!jarvisCore.isRemoteConnected()) {
-                runOnUiThread {
-                    if (!isFinishing && !isDestroyed && requestId == planRequestGeneration) {
-                        submitChatFallback(message, source)
-                    }
-                }
-                return@execute
-            }
-
+            // requestAgentPlan checks deterministic native plans before requiring a paired server.
             val planned = runCatching { jarvisCore.requestAgentPlan(message, source) }
             runOnUiThread {
                 if (isFinishing || isDestroyed || requestId != planRequestGeneration) return@runOnUiThread
