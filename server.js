@@ -22,7 +22,7 @@ import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, mergeDup
 import { buildMemoryContext, findExactMemory, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, parseExplicitForgetIntent, previewMemoryContext, searchMemories } from "./services/memory.js";
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeSkill, pauseSkill, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
-import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, createWorkflowDraft, createWorkflowRun, normalizeWorkflow, pauseWorkflow, recoverInterruptedWorkflowRuns, resumeWorkflowRun, retryWorkflowRun, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
+import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, createWorkflowDraft, createWorkflowRun, normalizeWorkflow, pauseWorkflow, pauseWorkflowRun, recoverInterruptedWorkflowRuns, resumeWorkflowRun, retryWorkflowRun, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
 import { createTaskPlan, TASK_PLANNER_LIMITS } from "./services/task-planner.js";
 import { getIntegrationCatalog, INTEGRATION_PROVIDER_IDS, probeIntegration, runIntegrationAction } from "./services/integrations.js";
 import { appendActionStatus, createPendingExternalAction, executeExternalAction, getExternalActionCapabilities, MAX_ACTION_HISTORY, MAX_PENDING_ACTIONS, normalizeExternalAction } from "./services/external-actions.js";
@@ -1675,6 +1675,14 @@ function workflowStepHandlers() {
     create_task: async (step) => {
       const replay = findWorkflowStepEffect(step.executionKey);
       if (replay) return { ...replay.result, replayed: true };
+      const existingTask = step.runId && Number.isInteger(step.stepIndex)
+        ? store.tasks.find((item) => item.workflowRunId === step.runId && item.workflowStepIndex === step.stepIndex)
+        : null;
+      if (existingTask) {
+        const result = { taskId: existingTask.id, summary: "Task already exists: " + existingTask.title, replayed: true };
+        await persistWorkflowStepEffect(step.executionKey, "create_task", result);
+        return result;
+      }
       if (store.tasks.length >= 200) throw new Error("Task limit reached. Remove an old task first.");
       const task = {
         id: newId(),
