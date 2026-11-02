@@ -16,14 +16,14 @@ import java.util.Locale
 
 object LocalCommandProcessor {
     private val restrictedPublicSearch = Regex(
-        """(?i)\\b(porn|xxx|adult content|vape|cigarette|tobacco|nicotine|alcohol|liquor|beer|wine|weed|marijuana|cannabis|cocaine|methamphetamine|steroids|gambling|sports betting|casino|firearms?|weapons?|ammunition|how to make a bomb|explosives?|gun|suicide|self.?harm)\\b"""
+        """(?i)\b(porn|xxx|adult content|vape|cigarette|tobacco|nicotine|alcohol|liquor|beer|wine|weed|marijuana|cannabis|cocaine|methamphetamine|steroids|gambling|sports betting|casino|firearms?|weapons?|ammunition|how to make a bomb|explosives?|gun|suicide|self.?harm)\b"""
     )
     private val googleSearchPatterns = listOf(
-        Regex("""^(?:please\\s+)?search\\s+(.+?)\\s+(?:on|using)\\s+google$""", RegexOption.IGNORE_CASE),
-        Regex("""^(?:please\\s+)?google\\s+search\\s+(?:for\\s+)?(.+)$""", RegexOption.IGNORE_CASE),
-        Regex("""^google\\s+(?:par|pe)\\s+(.+?)\\s+(?:search|research)(?:\\s+(?:karo|kar do))?$""", RegexOption.IGNORE_CASE),
-        Regex("""^google\\s+se\\s+(.+?)\\s+(?:search|dhundo|dhoondo)(?:\\s+(?:karo|kar do))?$""", RegexOption.IGNORE_CASE),
-        Regex("""^(?:internet|web)\\s+(?:par|pe)\\s+(.+?)\\s+(?:search|research|check)(?:\\s+(?:karo|kar do))?$""", RegexOption.IGNORE_CASE)
+        Regex("""^(?:please\s+)?search\s+(.+?)\s+(?:on|using)\s+google$""", RegexOption.IGNORE_CASE),
+        Regex("""^(?:please\s+)?google\s+search\s+(?:for\s+)?(.+)$""", RegexOption.IGNORE_CASE),
+        Regex("""^google\s+(?:par|pe)\s+(.+?)\s+(?:search|research)(?:\s+(?:karo|kar do))?$""", RegexOption.IGNORE_CASE),
+        Regex("""^google\s+se\s+(.+?)\s+(?:search|dhundo|dhoondo)(?:\s+(?:karo|kar do))?$""", RegexOption.IGNORE_CASE),
+        Regex("""^(?:internet|web)\s+(?:par|pe)\s+(.+?)\s+(?:search|research|check)(?:\s+(?:karo|kar do))?$""", RegexOption.IGNORE_CASE)
     )
 
     /**
@@ -32,7 +32,7 @@ object LocalCommandProcessor {
      */
     fun createGoogleSearchPlan(message: String): JSONObject? {
         val input = message.trim()
-            .replace(Regex("""(?i)^jarvis[\\s,:;-]+"""), "")
+            .replace(Regex("""(?i)^jarvis[\s,:;-]+"""), "")
             .trim()
             .trimEnd('.', '!', '?', '।', '॥')
         if (input.isBlank()) return null
@@ -40,7 +40,7 @@ object LocalCommandProcessor {
         val query = googleSearchPatterns.firstNotNullOfOrNull { pattern ->
             pattern.find(input)?.groupValues?.getOrNull(1)?.trim()
         }?.trim('"', '\'', '“', '”', '‘', '’')
-            ?.replace(Regex("""\\s+"""), " ")
+            ?.replace(Regex("""\s+"""), " ")
             ?.trim()
             ?: return null
 
@@ -48,7 +48,7 @@ object LocalCommandProcessor {
             query.length <= 120 &&
             UiActionPolicy.validateTextPayload(query, 120).allowed &&
             !restrictedPublicSearch.containsMatchIn(query) &&
-            !Regex("""(?i)\\b(password|passcode|otp|one.?time code|pin|cvv|cvc|bank account|card number)\\b""")
+            !Regex("""(?i)\b(password|passcode|otp|one.?time code|pin|cvv|cvc|bank account|card number)\b""")
                 .containsMatchIn(query)
 
         if (!safe) {
