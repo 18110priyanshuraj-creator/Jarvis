@@ -242,7 +242,9 @@ object LocalCommandProcessor {
             )
         val query = rawQuery.trim()
         if (query.isBlank() || query.length > 120 ||
-            !UiActionPolicy.validateTextPayload(query, 120).allowed
+            !UiActionPolicy.validateTextPayload(query, 120).allowed ||
+            Regex("""(?i)\b(porn|xxx|adult content|vape|cigarette|tobacco|nicotine|alcohol|liquor|beer|wine|weed|marijuana|cannabis|cocaine|methamphetamine|steroids|gambling|sports betting|casino|firearms?|weapons?|ammunition|how to make a bomb|explosives?|gun|suicide|self.?harm)\b""")
+                .containsMatchIn(query)
         ) {
             return PlannedActionResult(true, true, "The browser handoff could not be safely verified. Check the screen manually.")
         }
