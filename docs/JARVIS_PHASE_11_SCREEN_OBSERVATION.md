@@ -25,6 +25,7 @@ The observer rejects overlapping capture requests and throttles consecutive requ
 - Accessibility must be enabled manually by the owner. Android 11+ has the screenshot capability declared in the versioned accessibility-service configuration.
 - Both OCR models are bundled with the Android app; recognition does not require a network request or a first-use model download.
 - Raw screenshot pixels and recognized text remain in process memory on the device. They are not written to files, preferences, the Room database, activity logs, analytics, or the JARVIS server.
+- Spoken screen results force an installed offline Android TTS voice. If none is available, JARVIS does not pass the screen text to a network voice; it asks the owner to install local Hindi or English speech data.
 - Screen output is bounded to 32 lines and 1,800 characters. Traversal is capped at 150 accessibility nodes and depth 18; OCR input is resized to a maximum 1,920-pixel dimension.
 - The output sanitizer hides detected email addresses, long numeric strings, formatted phone-like numbers, and values following common password/PIN/OTP labels. This is a best-effort safeguard, not a guarantee that every personal detail can be identified.
 - Password accessibility nodes and visible password/PIN/OTP/verification/CVV labels block visual screenshot capture entirely; JARVIS falls back to accessible labels only. Editable values are not read from the accessibility tree.
