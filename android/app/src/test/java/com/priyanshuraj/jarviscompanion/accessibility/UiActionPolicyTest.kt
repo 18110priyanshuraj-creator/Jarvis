@@ -29,7 +29,7 @@ class UiActionPolicyTest {
 
     @Test
     fun consequentialControlsAreBlockedEvenWhenNestedUnderSafeLabels() {
-        listOf("Send", "Delete account", "Pay now", "Allow", "Confirm", "Uninstall").forEach { label ->
+        listOf("Send", "Delete account", "Pay now", "Allow", "Confirm", "Uninstall", "Approve", "Authorize", "Sign in").forEach { label ->
             val decision = UiActionPolicy.validateTap(label, emptyList(), true, true, true)
             assertFalse(label, decision.allowed)
             assertEquals(UiActionPolicyCode.PROTECTED_CONTROL, decision.code)
@@ -48,6 +48,8 @@ class UiActionPolicyTest {
         assertTrue(UiActionPolicy.isProtectedScreen(listOf("Enter your password")))
         assertTrue(UiActionPolicy.isProtectedScreen(listOf("One-time verification code")))
         assertTrue(UiActionPolicy.isProtectedScreen(listOf("Card number and CVV")))
+        assertTrue(UiActionPolicy.isProtectedScreen(listOf("Add a credit card")))
+        assertTrue(UiActionPolicy.isProtectedScreen(listOf("Sign in to your account")))
         assertFalse(UiActionPolicy.isProtectedScreen(listOf("Welcome to JARVIS")))
 
         val decision = UiActionPolicy.validateTextTarget(
