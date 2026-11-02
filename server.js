@@ -633,7 +633,7 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
     try {
       const knowledgeContext = buildKnowledgeContext(store.knowledge, message, 3);
       const approvedMemoryContext = buildMemoryContext(memories, message, 5);
-      const activeSkillContext = getActiveSkillContext(store.skills, message, 3);
+      const activeSkillContext = getActiveSkillContext(store.skills, message, 3, applicationId);
       const approvedExperienceContext = getActiveExperienceContext(store.experiencePreferences, 5);
       const answer = await createConversationReply(message, history, approvedMemoryContext, knowledgeContext, activeSkillContext, approvedExperienceContext);
       return {
@@ -651,7 +651,7 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
     message,
     memories: store.memories,
     tasks: store.tasks,
-    skills: getActiveSkillContext(store.skills, message, 3),
+    skills: getActiveSkillContext(store.skills, message, 3, applicationId),
     feedback: store.feedback,
     knowledge: buildKnowledgeContext(store.knowledge, message, 3)
   });
