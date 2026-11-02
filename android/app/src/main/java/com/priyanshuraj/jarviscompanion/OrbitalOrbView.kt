@@ -62,6 +62,11 @@ class OrbitalOrbView(context: Context) : View(context) {
     fun setListening(active: Boolean) {
         if (listening == active) return
         listening = active
+        contentDescription = if (active) {
+            "JARVIS orb. Voice session is active."
+        } else {
+            "JARVIS animated orb. Tap to start voice recognition."
+        }
         invalidate()
     }
 

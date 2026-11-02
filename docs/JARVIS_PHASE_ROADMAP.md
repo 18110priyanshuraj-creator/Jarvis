@@ -9,6 +9,7 @@
 - `VERIFIED` — acceptance evidence exists for the stated scope.
 - `PARTIAL` — some implementation exists, but the new phase acceptance criteria are not met.
 - `IN_PROGRESS` — active work is underway.
+- `CODE_COMPLETE` — repository implementation and automated checks are complete; required physical-device acceptance may still be pending.
 - `BLOCKED` — work depends on an unresolved external or preservation gate.
 - `NOT_STARTED` — no material implementation found.
 - `NEEDS_REVIEW` — present but requires focused validation.
@@ -33,8 +34,8 @@ See:
 
 | Phase | Target scope | Current status | Existing evidence and remaining gap |
 |---|---|---|---|
-| 1 | Central Orb Interface | IN_PROGRESS | Native Android orb launcher is being added while the original pairing and permission screen is preserved under Setup. |
-| 2 | Unified All-in-One Application Shell | PARTIAL | Browser views are integrated; Android remains a separate Companion app. |
+| 1 | Central Orb Interface | CODE_COMPLETE | Native Android orb home is responsive, keyboard-send enabled and accessibility-aware; CI verifies code/build. Physical Galaxy Tab A9 acceptance remains scheduled under Phase 31. |
+| 2 | Unified All-in-One Application Shell | IN_PROGRESS | Bring the existing authenticated browser workspace into the Android app shell through a restricted HTTPS WebView; retain the native orb and setup flows. |
 | 3 | Native Android Core | PARTIAL | Kotlin APK builds; not yet the unified application. |
 | 4 | Local System Controller | PARTIAL | Modular Node/Android services exist; not one complete on-device runtime. |
 | 5 | Offline Voice System | PARTIAL | Native SpeechRecognizer/TTS paths exist; offline recognition is provider/device dependent. |
@@ -69,8 +70,9 @@ See:
 ## Development order and gates
 
 1. Phase 0 audit and current Render source reconciliation are complete. Legacy data recovery remains a hard gate before migrations or storage cutovers.
-2. Begin Phase 1 on the existing Android application package. Preserve browser orbital assets as reference; do not replace the current backend.
-3. Complete and test each phase against the phase-specific acceptance criteria before advancing.
+2. Phase 1 native orb implementation is code-complete; keep its physical Galaxy Tab A9 checks in Phase 31.
+3. Begin Phase 2 by embedding the existing authenticated workspace inside the native Android shell, using the configured HTTPS server origin and preserving the existing backend and browser app.
+4. Complete and test each phase against the phase-specific acceptance criteria before advancing.
 4. Retain all current tests and add new regression/acceptance tests.
 5. Keep `main` as the release source of truth; use short-lived branches only when useful.
 6. Do not delete branches with unreviewed unique work or mark a phase verified because a file exists.

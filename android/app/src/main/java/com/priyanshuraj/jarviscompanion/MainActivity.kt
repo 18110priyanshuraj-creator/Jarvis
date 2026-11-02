@@ -13,6 +13,8 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
+import android.widget.FrameLayout
+import android.view.inputmethod.EditorInfo
 import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -262,10 +264,17 @@ class MainActivity : Activity() {
             )
         }
 
+        val screenWidthDp = resources.configuration.screenWidthDp
+        val horizontalPadding = if (screenWidthDp >= 600) 32 else 24
+        val orbSizeDp = when {
+            screenWidthDp >= 900 -> 380
+            screenWidthDp >= 600 -> 340
+            else -> (screenWidthDp - horizontalPadding * 2).coerceIn(230, 310)
+        }
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(24), dp(24), dp(24), dp(24))
+            setPadding(dp(horizontalPadding), dp(24), dp(horizontalPadding), dp(24))
             minimumHeight = resources.displayMetrics.heightPixels
         }
 
@@ -301,7 +310,7 @@ class MainActivity : Activity() {
             isClickable = true
             setOnClickListener { startVoiceRecognition() }
         }
-        val orbParams = LinearLayout.LayoutParams(dp(310), dp(310)).apply {
+        val orbParams = LinearLayout.LayoutParams(dp(orbSizeDp), dp(orbSizeDp)).apply {
             topMargin = dp(12)
             bottomMargin = dp(6)
         }
@@ -320,6 +329,7 @@ class MainActivity : Activity() {
             textSize = 14f
             gravity = Gravity.CENTER
             maxLines = 3
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
             setTextColor(Color.rgb(213, 230, 239))
             setPadding(dp(18), dp(8), dp(18), dp(12))
         }
@@ -327,6 +337,15 @@ class MainActivity : Activity() {
         homeMessageInput = EditText(this).apply {
             hint = "Ask JARVIS something…"
             setSingleLine(true)
+            imeOptions = EditorInfo.IME_ACTION_SEND
+            setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == EditorInfo.IME_ACTION_SEND) {
+                    submitHomeMessage()
+                    true
+                } else {
+                    false
+                }
+            }
             textSize = 15f
             setTextColor(Color.WHITE)
             setHintTextColor(Color.rgb(132, 157, 172))
@@ -384,7 +403,22 @@ class MainActivity : Activity() {
         content.addView(messageRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         content.addView(controls, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         content.addView(footer, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        scroll.addView(content)
+        val contentFrame = FrameLayout(this).apply {
+            val contentWidth = if (screenWidthDp >= 600) {
+                dp(minOf(screenWidthDp, 720))
+            } else {
+                ViewGroup.LayoutParams.MATCH_PARENT
+            }
+            addView(
+                content,
+                FrameLayout.LayoutParams(
+                    contentWidth,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                )
+            )
+        }
+        scroll.addView(contentFrame)
         return scroll
     }
 
@@ -530,7 +564,9 @@ class MainActivity : Activity() {
         homeStatusText?.text = currentStatus
         orbitalOrbView?.setListening(
             currentStatus.contains("listening", ignoreCase = true) ||
-                currentStatus.contains("processing", ignoreCase = true)
+                currentStatus.contains("processing", ignoreCase = true) ||
+                currentStatus.contains("hands-free session started", ignoreCase = true) ||
+                currentStatus.contains("microphone is active", ignoreCase = true)
         )
     }
 
