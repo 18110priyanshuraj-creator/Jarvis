@@ -29,5 +29,17 @@ class JarvisAccessibilityService : AccessibilityService() {
             private set
         @Volatile var lastForegroundPackage: String = ""
             private set
+
+        /**
+         * Reads only the active accessibility window's package identifier.
+         * Returns null for JARVIS itself or unavailable/invalid foreground windows.
+         */
+        fun currentForegroundApplicationId(): String? {
+            val service = activeService ?: return null
+            val activePackage = runCatching {
+                service.rootInActiveWindow?.packageName?.toString()
+            }.getOrNull()
+            return ForegroundApplicationIdentity.resolve(activePackage, service.packageName)
+        }
     }
 }
