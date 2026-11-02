@@ -1,8 +1,8 @@
 # Phase 12 — Android Action Engine
 
-**Status:** IN_PROGRESS — shared policy, safer target resolution, structured outcomes, and unit tests are implemented; CI verification and merge pending.  
+**Status:** VERIFIED — merged into `main` via PR #51; final post-merge main CI passed. Physical Samsung Galaxy Tab A9 acceptance remains Phase 31.  
 **Scope:** Safe, explicit Android accessibility actions only.  
-**Branch:** \`feat/phase-12-android-action-engine\`
+**Branch:** `main` (merged via PR #51)
 
 ## Goal
 
@@ -20,7 +20,7 @@ No action sends, submits, purchases, pays, deletes, transfers, confirms, grants/
 
 ## Shared action policy
 
-\`UiActionPolicy\` is the same validator for local UI actions and AI-generated device plans.
+`UiActionPolicy` is the same validator for local UI actions and AI-generated device plans.
 
 - Label comparison collapses whitespace and ignores case, but remains exact; substring matching is not used.
 - Tap requests reject consequential controls and protected parent/ancestor contexts (including send, submit, delete, purchase, payment, transfer, confirmation, permission and account-security controls).
@@ -39,7 +39,7 @@ No action sends, submits, purchases, pays, deletes, transfers, confirms, grants/
 
 ## Structured outcomes
 
-\`UiActionResult\` preserves the existing \`ok\` and \`message\` fields and adds a stable \`UiActionCode\` plus a \`retryable\` hint. Callers can distinguish missing windows/targets, ambiguity, disabled targets, protected actions, text-policy failures, and Android action rejection.
+`UiActionResult` preserves the existing `ok` and `message` fields and adds a stable `UiActionCode` plus a `retryable` hint. Callers can distinguish missing windows/targets, ambiguity, disabled targets, protected actions, text-policy failures, and Android action rejection.
 
 Messages are deliberately honest: a successful result means Android accepted the accessibility action request; it does not claim that the app completed a server-side transaction or that a new page loaded.
 
@@ -57,6 +57,16 @@ Messages are deliberately honest: a successful result means Android accepted the
 - Agent-plan tests prove the server-supplied plan is checked against the same shared local policy before preview/approval.
 - GitHub CI must pass Node tests, production dependency audit, Android unit tests, debug APK build, APK integrity checks, and artifact upload.
 - Samsung Galaxy Tab A9 physical validation remains a Phase 31 acceptance gate.
+
+
+## Merge and final main-branch verification
+
+- Squash-merged through [PR #51](https://github.com/18110priyanshuraj-creator/Jarvis/pull/51).
+- Merge commit: \`13093c603519a1e89478384ebc52e23b53869d7a\`.
+- Post-merge main CI [run 41431242469](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41431242469): both jobs passed.
+- Node.js: 197 tests passed, 0 failed; production dependency audit found 0 vulnerabilities.
+- Android unit tests, debug APK build, APK integrity verification, SHA-256 generation, and artifact upload all passed.
+- Final main debug artifact: \`jarvis-companion-debug\`, artifact ID \`13133489329\`, 23,972,123 bytes; GitHub retains it through 2026-11-09.
 
 ## Known limitations
 
