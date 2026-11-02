@@ -1,6 +1,6 @@
 # JARVIS Phase 13 — Universal Application Skill Registry
 
-**Status:** IN_PROGRESS — implementation and automated acceptance are being completed on the Phase 13 feature branch.  
+**Status:** VERIFIED — merged via PR #52 at `d149c1d`; the merged `main` tree is identical to the fully green Phase 13 PR/push CI tree.  
 **Branch:** `feat/phase-13-universal-application-skill-registry`  
 **Base:** `1f177872cc2914353eaa08835d06142fd3e57c0a`
 
@@ -11,7 +11,7 @@ Provide one versioned instruction/trigger registry whose approved entries can be
 ## Scope delivered in this phase
 
 - Every skill version stores an `applicationIds` scope, with at most 12 targets per version.
-- Supported built-in surfaces are `web-dashboard` and `android-companion`. Stable, normalized application/package IDs such as `com.android.chrome` may be supplied for future authenticated JARVIS integrations.
+- Built-in fallback surfaces are `web-dashboard` and `android-companion`. The authenticated Android companion reports its current Accessibility active-window package ID (for example, `com.android.chrome`) for application-scoped matching; up to 12 normalized application IDs are supported per version.
 - The explicit `*` target applies to every connected JARVIS surface. Existing/legacy records without a target list migrate to `*` so prior behavior is preserved.
 - A new version inherits the previous scope unless the user explicitly selects a different scope. The prior approved version remains active until the new version is independently validated and approved.
 - Context matching filters by both the explicit trigger and the trusted application surface. Specific application matches are ordered before global matches.
@@ -35,7 +35,7 @@ Provide one versioned instruction/trigger registry whose approved entries can be
 - A skill is not activated on creation or edit. Passing positive and negative trigger tests plus explicit approval are still required.
 - Invalid application IDs and empty explicit target lists are rejected. Malformed persisted scopes fail closed instead of widening to global.
 - Old records without application scopes retain global behavior. Paused skills remain inactive. The prior active version remains active during a pending update.
-- The dashboard chat route accepts only its fixed `web-dashboard` identity. The Android surface identity is derived only from the authenticated paired-device route. The preview endpoint accepts a requested ID solely to display a read-only match preview; it does not authenticate an application or grant it capabilities.
+- The dashboard chat route accepts only its fixed `web-dashboard` identity. Android package context is read from the active Accessibility window on the paired device and accepted only on the authenticated device route; when unavailable, the server falls back to `android-companion`. This is contextual metadata, not a permission boundary. The preview endpoint accepts a requested ID solely to display a read-only match preview; it does not authenticate an application or grant it capabilities.
 
 ## Automated acceptance
 
@@ -49,11 +49,14 @@ The Phase 13 test additions cover:
 - Authenticated API catalog, static match preview, invalid preview IDs, app-only preview results, dashboard identity spoof rejection, and chat ID validation.
 - The existing skill draft, static validation, approval, pause, and version-history regression suite.
 
-The repository CI workflow is the acceptance source for Node syntax/tests/dependency audit and Android unit/build/APK verification. Physical Galaxy Tab A9 observations remain part of Phase 31; no hardware acceptance is claimed here.
+Automated acceptance passed on the Phase 13 source tree: Node CI reported 203/203 tests and 0 production dependency vulnerabilities; Android JVM unit tests, Gradle build, APK integrity verification, release metadata and artifact upload passed in push run #41434694585 and PR run #41434702832. The merged `main` commit has the identical Git tree hash `8eabf26a4ead01630c52f8a3fa660fd9869eda9f`. Post-merge main run #41435305226 also passed its Node job (203/203, 0 vulnerabilities); its separate Android job remained in progress/stale at closeout, so it is not represented as a completed post-merge run. Physical Samsung Galaxy Tab A9 behavior remains to be checked in Phase 31; no hardware acceptance is claimed here.
 
 ## Closeout record
 
-- PR: pending
-- Merge commit: pending
-- Main CI run: pending
-- Final artifact: pending
+- PR: [#52 — merged](https://github.com/18110priyanshuraj-creator/Jarvis/pull/52)
+- Merge commit: `d149c1d7420682abc3ffa411dec5e0e9d0a02c05`
+- Fully green PR CI: [run #41434702832](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41434702832)
+- Fully green source-branch CI/artifact: [run #41434694585](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41434694585)
+- Post-merge main CI: [run #41435305226](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41435305226) — Node passed; duplicate Android job remained in progress at closeout. The main tree hash matches the fully green source tree above.
+- Debug APK artifact: `13136570415`, 23,973,708 bytes; SHA-256 `1254690f2d9dcb8505ca6b155c0be206ef249864281972333ddc7aff8b677ae3`.
+- Hardware acceptance: Samsung Galaxy Tab A9 hands-on validation is still reserved for Phase 31.
