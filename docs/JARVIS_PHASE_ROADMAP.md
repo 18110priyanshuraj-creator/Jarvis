@@ -47,7 +47,7 @@ See:
 | 11 | Screen Observation | VERIFIED | Merged via PR #50 at `b706a0f`; post-merge main CI run 41427377450 passed (197 Node tests, Android unit/build/APK checks, zero production vulnerabilities). Physical Tab A9 acceptance remains Phase 31. |
 | 12 | Android Action Engine | VERIFIED | Merged via PR #51 at `13093c6`; post-merge main CI run 41431242469 passed (197 Node tests, Android unit/build/APK checks, zero production vulnerabilities). Physical Tab A9 acceptance remains Phase 31. |
 | 13 | Universal Application Skill Registry | VERIFIED | Merged via PR #52 at `d149c1d`; post-merge main CI run 41435305226 passed (Node 203 tests, zero production vulnerabilities, Android unit/build/APK verification and artifact upload). Physical Galaxy Tab A9 acceptance remains Phase 31. |
-| 14 | Error Detection and Recovery | PARTIAL | Failure stopping/cancellation and bounded retry handling; no general auto-repair. |
+| 14 | Error Detection and Recovery | IN_PROGRESS | Adding classified/sanitized failures, manual recovery guidance, transient-only bounded retry, and a read-only recovery preview; no automatic repair or silent retry. |
 | 15 | Full Android Task Integration | PARTIAL | Planner/device/accessibility paths are connected for bounded workflows only. |
 | 16 | Internet and Google Research | PARTIAL | Configurable SearXNG search and secure page reader; no general Android browser agent. |
 | 17 | Media and Content Creation Engine | NOT_STARTED | No verified end-to-end media creation/export pipeline. |
