@@ -356,8 +356,9 @@ object UIActionExecutor {
             current.text?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let(labels::add)
             current.contentDescription?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let(labels::add)
             current.hintText?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let(labels::add)
-            val parent = current.parent
-            runCatching { current.recycle() }
+            val item = current
+            val parent = item.parent
+            runCatching { item.recycle() }
             current = parent
             depth++
         }
