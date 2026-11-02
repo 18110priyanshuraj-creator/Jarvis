@@ -52,6 +52,16 @@ class LocalTaskExecutionJournalTest {
     }
 
     @Test
+    fun waitingForUserTasksAreMarkedInterruptedAfterRestart() {
+        val id = LocalTaskExecutionJournal.start(app, listOf("ask user", "read screen"))
+        LocalTaskExecutionJournal.checkpoint(app, id, 0, success = true, shouldStop = true)
+        assertEquals("waiting_user", LocalTaskExecutionJournal.history(app).single().status)
+        val recovered = LocalTaskExecutionJournal.recoverInterrupted(app).single()
+        assertEquals("interrupted", recovered.status)
+        assertTrue(recovered.requiresManualReplan)
+    }
+
+    @Test
     fun completedTasksAreNotRecoveredAndHistoryIsBounded() {
         val completedId = LocalTaskExecutionJournal.start(app, listOf("read screen"))
         LocalTaskExecutionJournal.checkpoint(app, completedId, 0, success = true, shouldStop = false)
