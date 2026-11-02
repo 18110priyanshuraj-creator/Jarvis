@@ -133,6 +133,10 @@ export function normalizeMediaProject(input = {}) {
   if (RESTRICTED_MEDIA_PATTERN.test(title + "\n" + brief)) {
     throw new TypeError("This media request is outside the supported safe-content scope.");
   }
+  const audience = cleanText(input.audience, 140) || "General audience";
+  if (SECRET_PATTERN.test(audience) || TOKEN_PATTERN.test(audience)) {
+    throw new TypeError("JARVIS will not keep audience details that appear to contain a credential or secret.");
+  }
   const selectedFormat = formatKey(input.format);
   const format = FORMATS[selectedFormat];
   const scenesInput = Array.isArray(input.scenes) ? input.scenes.slice(0, MAX_SCENES) : [];
@@ -158,7 +162,7 @@ export function normalizeMediaProject(input = {}) {
     platform: PLATFORMS.has(input.platform) ? input.platform : "general",
     language: LANGUAGES.has(input.language) ? input.language : "en-IN",
     tone: TONES.has(input.tone) ? input.tone : "clear",
-    audience: cleanText(input.audience, 140) || "General audience",
+    audience,
     scenes,
     durationSeconds,
     status: state,
@@ -177,6 +181,7 @@ export async function createMediaDraft(input = {}, options = {}) {
   const now = new Date().toISOString();
   const base = normalizeMediaProject({
     ...input,
+    id: crypto.randomUUID(),
     brief,
     title: cleanText(input.title, MAX_TITLE) || cleanText(brief.split(/[.!?\n।]/u)[0], MAX_TITLE) || "Untitled media project",
     format: selectedFormat,
