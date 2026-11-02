@@ -27,7 +27,7 @@ The observer rejects overlapping capture requests and throttles consecutive requ
 - Raw screenshot pixels and recognized text remain in process memory on the device. They are not written to files, preferences, the Room database, activity logs, analytics, or the JARVIS server.
 - Screen output is bounded to 32 lines and 1,800 characters. Traversal is capped at 150 accessibility nodes and depth 18; OCR input is resized to a maximum 1,920-pixel dimension.
 - The output sanitizer hides detected email addresses, long numeric strings, formatted phone-like numbers, and values following common password/PIN/OTP labels. This is a best-effort safeguard, not a guarantee that every personal detail can be identified.
-- Password accessibility nodes are represented as protected fields; editable values are not read from the accessibility tree.
+- Password accessibility nodes and visible password/PIN/OTP/verification/CVV labels block visual screenshot capture entirely; JARVIS falls back to accessible labels only. Editable values are not read from the accessibility tree.
 - Android secure windows may refuse screenshots. In that case, JARVIS falls back to accessible labels and says visual capture was unavailable.
 - Android 10 and earlier do not use screenshot OCR in this implementation; they retain the existing accessibility-only summary.
 - The owner can disable the Accessibility service at any time in Android Settings.
