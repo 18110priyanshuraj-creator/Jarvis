@@ -22,7 +22,7 @@ import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, mergeDup
 import { buildMemoryContext, findExactMemory, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, parseExplicitForgetIntent, previewMemoryContext, searchMemories } from "./services/memory.js";
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeApplicationId, normalizeSkill, pauseSkill, SKILL_APPLICATION_CATALOG, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
-import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, classifyWorkflowError, createWorkflowDraft, createWorkflowRun, getWorkflowRecoverySummary, normalizeWorkflow, pauseWorkflow, pauseWorkflowRun, recoverInterruptedWorkflowRuns, resumeWorkflowRun, retryWorkflowRun, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
+import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, classifyWorkflowError, createWorkflowDraft, createWorkflowRun, getWorkflowRecoverySummary, normalizeWorkflow, pauseWorkflow, pauseWorkflowRun, recoverInterruptedWorkflowRuns, resumeWorkflowRun, retryWorkflowRun, sanitizeWorkflowRunRecord, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
 import { createTaskPlan, TASK_PLANNER_LIMITS } from "./services/task-planner.js";
 import { getIntegrationCatalog, INTEGRATION_PROVIDER_IDS, probeIntegration, runIntegrationAction } from "./services/integrations.js";
 import { appendActionStatus, createPendingExternalAction, executeExternalAction, getExternalActionCapabilities, MAX_ACTION_HISTORY, MAX_PENDING_ACTIONS, normalizeExternalAction } from "./services/external-actions.js";
@@ -293,7 +293,7 @@ function normalizeStore(parsed = {}) {
       ? parsed.workflowRuns.slice(-WORKFLOW_LIMITS.runs).filter((item) =>
           item && typeof item.id === "string" && typeof item.workflowId === "string" &&
           Array.isArray(item.steps) && ["queued", "running", "waiting_review", "paused", "completed", "failed", "cancelled"].includes(item.status)
-        )
+        ).map(sanitizeWorkflowRunRecord)
       : [],
     workflowStepEffects: Array.isArray(parsed.workflowStepEffects)
       ? parsed.workflowStepEffects.slice(-WORKFLOW_LIMITS.runs * WORKFLOW_LIMITS.steps).filter((item) =>
