@@ -15,6 +15,19 @@ class UiActionPolicyTest {
     }
 
     @Test
+    fun expectedVisibleTextUsesNormalizedPhraseMatchingAndRejectsEmptyTargets() {
+        assertTrue(UiActionPolicy.containsExpectedText(
+            listOf("Search", "JEE Physics - Search results"),
+            "JEE   Physics"
+        ))
+        assertFalse(UiActionPolicy.containsExpectedText(
+            listOf("Search", "Physics results"),
+            "JEE Physics"
+        ))
+        assertFalse(UiActionPolicy.containsExpectedText(listOf("Search"), "  "))
+    }
+
+    @Test
     fun safeVisibleEnabledClickableTargetsAreAllowed() {
         val decision = UiActionPolicy.validateTap(
             requestedLabel = "Settings",
