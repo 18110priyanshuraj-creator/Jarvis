@@ -17,6 +17,7 @@ const RUN_STATUSES = new Set(["queued", "running", "waiting_review", "paused", "
 const MAX_WORKFLOWS = 50;
 const MAX_RUNS = 100;
 const MAX_STEPS = 10;
+export const WORKFLOW_STEP_TIMEOUT_MS = 60_000;
 const MAX_TITLE = 100;
 const MAX_DESCRIPTION = 600;
 
@@ -213,6 +214,10 @@ export async function advanceWorkflowRun(runInput, handlers, options = {}) {
   const onCheckpoint = typeof options.onCheckpoint === "function" ? options.onCheckpoint : async () => {};
   const shouldPause = typeof options.shouldPause === "function" ? options.shouldPause : () => false;
   const shouldCancel = typeof options.shouldCancel === "function" ? options.shouldCancel : () => false;
+  const requestedTimeout = Number(options.stepTimeoutMs);
+  const stepTimeoutMs = Number.isFinite(requestedTimeout)
+    ? Math.max(100, Math.min(120_000, Math.floor(requestedTimeout)))
+    : WORKFLOW_STEP_TIMEOUT_MS;
 
   async function checkpoint() {
     run.updatedAt = new Date().toISOString();
@@ -312,7 +317,21 @@ export async function advanceWorkflowRun(runInput, handlers, options = {}) {
     await checkpoint();
 
     try {
-      const result = await handler({ ...step, executionKey, runId: run.id, stepIndex: index });
+      let timeout;
+      const handlerPromise = Promise.resolve().then(() =>
+        handler({ ...step, executionKey, runId: run.id, stepIndex: index })
+      );
+      const timeoutPromise = new Promise((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error("Workflow step timed out after " + stepTimeoutMs + " ms."));
+        }, stepTimeoutMs);
+      });
+      let result;
+      try {
+        result = await Promise.race([handlerPromise, timeoutPromise]);
+      } finally {
+        clearTimeout(timeout);
+      }
       step.status = "completed";
       step.result = result && typeof result === "object" ? result : { summary: cleanText(result, 300) };
       run.nextStepIndex = index + 1;
