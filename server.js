@@ -603,7 +603,7 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
   if (offlineTurn) {
     return {
       ...offlineTurn,
-      answer: webNotice ? webNotice + "\\n\\n" + offlineTurn.answer : offlineTurn.answer
+      answer: webNotice ? webNotice + "\n\n" + offlineTurn.answer : offlineTurn.answer
     };
   }
 
