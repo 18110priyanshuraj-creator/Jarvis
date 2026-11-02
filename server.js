@@ -1913,9 +1913,12 @@ app.post("/api/workflow-runs/:id/pause", requireAuth, async (req, res) => {
     await saveStore();
     return res.json({ run: paused, paused: true });
   }
-  if (existing.status !== "running" || !activeWorkflowExecutions.has(existing.id)) {
+  if (existing.status !== "running") {
     return res.status(409).json({ error: "This workflow run is not currently executing." });
   }
+  // The worker persists RUNNING immediately before acquiring its in-process
+  // execution lock. Accept pause requests during that short hand-off window;
+  // the runner checks the request before its first action.
   pauseWorkflowRequests.add(existing.id);
   res.status(202).json({ run: existing, pauseRequested: true, message: "JARVIS will pause after the current safe step checkpoint." });
 });
@@ -1923,7 +1926,9 @@ app.post("/api/workflow-runs/:id/pause", requireAuth, async (req, res) => {
 app.post("/api/workflow-runs/:id/stop", requireAuth, async (req, res) => {
   const existing = store.workflowRuns.find((item) => item.id === req.params.id);
   if (!existing) return res.status(404).json({ error: "Workflow run not found." });
-  if (existing.status === "running" && activeWorkflowExecutions.has(existing.id)) {
+  if (existing.status === "running") {
+    // Also cover the worker hand-off window before executeWorkflowRun acquires
+    // the lock. The runner checks this request before starting its next action.
     stopWorkflowRequests.add(existing.id);
     return res.status(202).json({ run: existing, stopRequested: true, message: "JARVIS will stop after the current safe step checkpoint." });
   }
