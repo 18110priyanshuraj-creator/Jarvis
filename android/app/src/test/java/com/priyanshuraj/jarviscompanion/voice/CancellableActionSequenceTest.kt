@@ -222,3 +222,34 @@ class CancellableActionSequenceTest {
         cancelled.cancel()
         assertEquals(listOf("cancelled"), cancelTerminal)
     }
+
+
+    @Test
+    fun pauseRemovesTheQueuedStepAndResumeContinuesFromTheSameIndex() {
+        val scheduler = FakeScheduler()
+        val executed = mutableListOf<String>()
+        val states = mutableListOf<String>()
+        val terminal = mutableListOf<String>()
+        val sequence = CancellableActionSequence(
+            actions = listOf("open", "read", "tap"),
+            scheduler = scheduler,
+            executeAction = { executed.add(it); TaskStepResult(true, false, it) },
+            delayAfter = { 250L },
+            onState = { state, index -> states.add("$state:$index") },
+            onTerminal = { terminal.add(it) },
+            onComplete = {}
+        )
+
+        sequence.start()
+        scheduler.runNext()
+        sequence.pause()
+        assertTrue(scheduler.pending.isEmpty())
+        assertEquals(listOf("open"), executed)
+        sequence.resume()
+        scheduler.runNext()
+        scheduler.runNext()
+
+        assertEquals(listOf("open", "read", "tap"), executed)
+        assertEquals(listOf("running:0", "paused:1", "running:1"), states)
+        assertEquals(listOf("completed"), terminal)
+    }
