@@ -131,6 +131,7 @@ object SystemControlCommandParser {
         }
 
         val toggleValue = Regex("""^(?:turn|switch)\s+(?:on|off)\s+(.+)$""").matchEntire(value)?.groupValues?.get(1)
+            ?: Regex("""^(?:turn|switch)\s+(.+?)\s+(?:on|off)$""").matchEntire(value)?.groupValues?.get(1)
             ?: Regex("""^(?:enable|disable)\s+(.+)$""").matchEntire(value)?.groupValues?.get(1)
             ?: Regex("""^(.+?)\s+(?:on|off)$""").matchEntire(value)?.groupValues?.get(1)
             ?: Regex("""^(.+?)\s+(?:chalu|band)(?:\s+(?:karo|kar do))?$""").matchEntire(value)?.groupValues?.get(1)
