@@ -31,9 +31,9 @@ internal object DashboardUrlPolicy {
         val baseHost = URI(base).host?.lowercase(Locale.ROOT) ?: return false
         if (targetHost == baseHost) return true
 
-        return targetHost == "google.com" ||
-            targetHost.endsWith(".google.com") ||
-            targetHost.endsWith(".googleapis.com")
+        return targetHost == "accounts.google.com" ||
+            targetHost == "consent.google.com" ||
+            targetHost == "oauth2.googleapis.com"
     }
 
     fun isSafeExternalHttpsUrl(rawUrl: String?): Boolean {

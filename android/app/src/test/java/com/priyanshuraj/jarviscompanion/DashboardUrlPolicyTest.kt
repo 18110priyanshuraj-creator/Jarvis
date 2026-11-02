@@ -27,7 +27,10 @@ class DashboardUrlPolicyTest {
         val base = "https://jarvis.example"
         assertTrue(DashboardUrlPolicy.allowsInAppNavigation("https://jarvis.example/memory", base))
         assertTrue(DashboardUrlPolicy.allowsInAppNavigation("https://accounts.google.com/o/oauth2/auth", base))
+        assertTrue(DashboardUrlPolicy.allowsInAppNavigation("https://consent.google.com/", base))
         assertTrue(DashboardUrlPolicy.allowsInAppNavigation("https://oauth2.googleapis.com/token", base))
+        assertFalse(DashboardUrlPolicy.allowsInAppNavigation("https://evil.google.com/", base))
+        assertFalse(DashboardUrlPolicy.allowsInAppNavigation("https://evil.googleapis.com/", base))
         assertFalse(DashboardUrlPolicy.allowsInAppNavigation("https://jarvis.example.evil.test/", base))
         assertFalse(DashboardUrlPolicy.allowsInAppNavigation("http://jarvis.example/", base))
         assertFalse(DashboardUrlPolicy.allowsInAppNavigation("file:///etc/passwd", base))

@@ -33,6 +33,7 @@ import android.webkit.CookieManager
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -222,6 +223,9 @@ class MainActivity : Activity() {
             addView(content)
         }
         showHomeScreen()
+        if (savedInstanceState?.getBoolean(STATE_SHOWING_DASHBOARD, false) == true) {
+            showDashboardScreen(savedInstanceState.getBundle(STATE_DASHBOARD_WEBVIEW))
+        }
 
         textToSpeech = TextToSpeech(this) { result ->
             if (result == TextToSpeech.SUCCESS) {
@@ -254,6 +258,7 @@ class MainActivity : Activity() {
     }
 
     private fun showHomeScreen() {
+        dashboardWebView?.onPause()
         val screen = homeScreen ?: createHomeScreen().also { homeScreen = it }
         showingSetup = false
         showingDashboard = false
@@ -262,6 +267,7 @@ class MainActivity : Activity() {
     }
 
     private fun showSetupScreen() {
+        dashboardWebView?.onPause()
         showingSetup = true
         showingDashboard = false
         setContentView(setupRootView)
@@ -270,7 +276,7 @@ class MainActivity : Activity() {
         refreshActivityLog()
     }
 
-    private fun showDashboardScreen() {
+    private fun showDashboardScreen(restoreState: Bundle? = null) {
         val configuredUrl = DashboardUrlPolicy.normalizeBaseUrl(
             getSharedPreferences("jarvis_companion_settings", MODE_PRIVATE)
                 .getString("server_url", null)
@@ -291,10 +297,22 @@ class MainActivity : Activity() {
         showingDashboard = true
         setContentView(screen)
 
+        var restored = false
+        if (restoreState != null) {
+            restored = dashboardWebView?.restoreState(restoreState) != null
+            val restoredUrl = dashboardWebView?.url
+            if (restored && !DashboardUrlPolicy.allowsInAppNavigation(restoredUrl, configuredUrl)) {
+                dashboardWebView?.clearHistory()
+                restored = false
+            }
+        }
+
         val currentUrl = dashboardWebView?.url
-        if (currentUrl.isNullOrBlank() ||
-            currentUrl == "about:blank" ||
-            !DashboardUrlPolicy.allowsInAppNavigation(currentUrl, configuredUrl)
+        if (!restored && (
+                currentUrl.isNullOrBlank() ||
+                    currentUrl == "about:blank" ||
+                    !DashboardUrlPolicy.allowsInAppNavigation(currentUrl, configuredUrl)
+            )
         ) {
             dashboardStatusText?.text = "Opening your private JARVIS workspace…"
             dashboardWebView?.loadUrl(configuredUrl)
@@ -404,6 +422,26 @@ class MainActivity : Activity() {
             ) {
                 handler?.cancel()
                 dashboardStatusText?.text = "Secure connection verification failed. JARVIS blocked this page."
+            }
+
+            override fun onRenderProcessGone(
+                view: WebView?,
+                detail: RenderProcessGoneDetail?
+            ): Boolean {
+                if (view == null) return true
+                val parent = view.parent as? ViewGroup
+                parent?.removeView(view)
+                view.destroy()
+                if (dashboardWebView === view) {
+                    dashboardWebView = null
+                    dashboardScreen = null
+                    if (showingDashboard) {
+                        dashboardStatusText = null
+                        showDashboardScreen()
+                        dashboardStatusText?.text = "The workspace renderer restarted. JARVIS reopened the dashboard."
+                    }
+                }
+                return true
             }
         }
 
@@ -639,10 +677,27 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        dashboardWebView?.onResume()
         refreshStatus()
         refreshPermissionChecklist()
         refreshActivityLog()
         sendHeartbeat()
+    }
+
+    override fun onPause() {
+        dashboardWebView?.onPause()
+        super.onPause()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(STATE_SHOWING_DASHBOARD, showingDashboard)
+        if (showingDashboard) {
+            val webViewState = Bundle()
+            dashboardWebView?.saveState(webViewState)
+            outState.putBundle(STATE_DASHBOARD_WEBVIEW, webViewState)
+            CookieManager.getInstance().flush()
+        }
+        super.onSaveInstanceState(outState)
     }
 
     private fun matchWidth(): LinearLayout.LayoutParams =
@@ -960,6 +1015,8 @@ class MainActivity : Activity() {
     }
 
     companion object {
+        private const val STATE_SHOWING_DASHBOARD = "jarvis.showing_dashboard"
+        private const val STATE_DASHBOARD_WEBVIEW = "jarvis.dashboard_webview_state"
         private const val REQUEST_MICROPHONE = 7001
         private const val REQUEST_HANDS_FREE_PERMISSIONS = 7002
         private const val REQUEST_NOTIFICATIONS = 7003
