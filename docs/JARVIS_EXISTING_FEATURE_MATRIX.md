@@ -1,7 +1,7 @@
 # JARVIS Existing Feature Matrix
 
 **Snapshot:** 2026-11-02  
-**Source baseline:** `main` at `90741abf4ee5a592ff025cf26f3ab5fed62cef48` (2026-11-02); Phase 15 verification hardening is tracked separately in PR #55.
+**Source baseline:** `main` at `8b00096ea7b62611d5275656a292d5db78c07a72` (2026-11-02), including merged Phase 15 verification hardening PR #55.
 
 This matrix describes what exists in source and what is supported by test/deployment evidence. "Implemented" does not imply a physical-device or live-provider test.
 
@@ -14,7 +14,7 @@ This matrix describes what exists in source and what is supported by test/deploy
 | Offline voice input/output | Android SpeechRecognizer/TTS and browser Web Speech APIs | PARTIAL | User-started voice flows exist. Offline recognition depends on the installed Android/browser speech provider and device support. |
 | Independent offline intelligence | `brain.js`, local command rules in `services/agent-planner.js` and Android `LocalCommandProcessor.kt` | PARTIAL | Deterministic calculator, bounded rules and a small embedded knowledge pack work without a model. This is not a general-purpose trained LLM. |
 | Hindi/Hinglish/English interpretation | Regex/rule-based phrase handling and optional planner adapter | PARTIAL | Selected Hindi/Hinglish/English command patterns are covered; unrestricted mixed-language understanding is not. |
-| Persistent memory | `services/memory.js`, server state and Memory UI | PARTIAL | User-approved preference/goal/fact records support search/edit/delete. Storage is server-side JSON/Neon, not an Android-local Room database. |
+| Persistent memory | `services/memory.js`, server Memory UI, separate Android Room store `jarvis_local_memory.db` | PARTIAL | Server workspace memory remains separate from the user-controlled Android-local Room database. Local memory records are AES-GCM encrypted with an Android Keystore key; no automatic merge, cloud sync or import is performed. Physical Keystore/UI acceptance remains Phase 31. |
 | Task planning | `services/agent-planner.js` | PARTIAL | Optional provider planner plus bounded deterministic app-search patterns; current plan is capped and validates allow-listed actions. |
 | Persistent task/workflow execution | `services/workflow-engine.js`, `LocalTaskExecutionJournal.kt`, `CancellableActionSequence.kt` | PARTIAL | Server workflows have durable checkpoints/retry; Android sequences persist generic per-step checkpoints and stop safely after interruption, requiring manual replan rather than automatic replay. Android journal is bounded and local. |
 | Screen perception | `ScreenObserver.kt`, `JarvisAccessibilityService.kt` | PARTIAL | Explicit one-shot accessibility summaries and on-device OCR/screenshot reading are present with sensitive-screen protection. Not a continuous or general visual-understanding engine. |
