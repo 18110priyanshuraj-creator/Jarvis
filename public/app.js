@@ -1739,6 +1739,31 @@ function renderWorkflows() {
         });
         actions.append(continueButton);
       }
+      if (run.status === "failed") {
+        const retryButton = document.createElement("button");
+        retryButton.type = "button";
+        retryButton.className = "item-action";
+        retryButton.textContent = "Retry failed step";
+        retryButton.addEventListener("click", async () => {
+          if (!confirm("Retry only the failed step? Previously completed steps will remain completed. A step is limited to three attempts.")) return;
+          retryButton.disabled = true;
+          try {
+            const data = await api("/api/workflow-runs/" + encodeURIComponent(run.id) + "/retry", {
+              method: "POST",
+              headers: { Prefer: "respond-async" },
+              body: JSON.stringify({})
+            });
+            state.workflowRuns = state.workflowRuns.map((item) => item.id === run.id ? data.run : item);
+            renderWorkflows();
+            toast("Retry started from the failed step.");
+            void watchWorkflowRun(run.id).catch((error) => toast(error.message, true));
+          } catch (error) {
+            toast(error.message, true);
+            retryButton.disabled = false;
+          }
+        });
+        actions.append(retryButton);
+      }
       if (run.status === "paused") {
         const resumeButton = document.createElement("button");
         resumeButton.type = "button";
