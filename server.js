@@ -995,8 +995,13 @@ app.get("/api/export", requireAuth, (req, res) => {
 app.post("/api/chat", requireAuth, async (req, res) => {
   const message = cleanText(req.body?.message, 4000);
   if (!message) return res.status(400).json({ error: "Enter a message first." });
-  const applicationId = normalizeApplicationId(req.body?.applicationId || "web-dashboard");
-  if (!applicationId || applicationId === "*") return res.status(400).json({ error: "Application ID is invalid." });
+  const requestedApplicationId = req.body?.applicationId === undefined
+    ? "web-dashboard"
+    : normalizeApplicationId(req.body.applicationId);
+  if (requestedApplicationId !== "web-dashboard") {
+    return res.status(400).json({ error: "Dashboard chat can only use the web-dashboard application ID." });
+  }
+  const applicationId = "web-dashboard";
   try {
     const result = await processAssistantTurn(message, "session:" + req.sessionToken, applicationId);
     res.json(result);
