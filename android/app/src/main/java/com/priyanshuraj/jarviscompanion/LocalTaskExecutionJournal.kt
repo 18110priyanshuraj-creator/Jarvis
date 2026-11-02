@@ -160,10 +160,11 @@ object LocalTaskExecutionJournal {
     }
 
     private fun writeJson(context: Context, records: JSONArray) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_RECORDS, records.toString())
-            .apply()
+            .commit()
+        check(saved) { "The on-device task checkpoint could not be saved." }
     }
 
     private fun find(records: JSONArray, id: String): JSONObject? {
