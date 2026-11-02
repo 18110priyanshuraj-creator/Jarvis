@@ -2,6 +2,7 @@ package com.priyanshuraj.jarviscompanion.voice
 
 import android.content.Context
 import android.os.Handler
+import com.priyanshuraj.jarviscompanion.LocalTaskExecutionJournal
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -132,6 +133,13 @@ object AgentPlanRunner {
         val steps = (0 until actions.length()).map { actions.optJSONObject(it) }
         val intro = plan.optString("reply").trim()
         val initialMessages = if (intro.isBlank()) emptyList() else listOf(intro.take(180))
+        val taskKinds = actionKinds(plan).split(" → ")
+        val journalId = try {
+            LocalTaskExecutionJournal.start(context, taskKinds)
+        } catch (error: Exception) {
+            onComplete(error.message ?: "JARVIS could not save task progress. No Android actions were started.")
+            return {}
+        }
 
         val sequence = CancellableActionSequence(
             actions = steps,
@@ -155,6 +163,16 @@ object AgentPlanRunner {
                 }
             },
             initialMessages = initialMessages,
+            onProgress = { index, result ->
+                runCatching {
+                    LocalTaskExecutionJournal.checkpoint(
+                        context, journalId, index, result.success, result.shouldStop
+                    )
+                }
+            },
+            onTerminal = { status ->
+                runCatching { LocalTaskExecutionJournal.finish(context, journalId, status) }
+            },
             onComplete = { messages ->
                 onComplete(messages.joinToString(". ").take(1200))
             }
