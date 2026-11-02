@@ -929,7 +929,7 @@ class MainActivity : Activity() {
             setPadding(dp(18), dp(8), dp(18), dp(12))
         }
 
-        taskControlPanel = LinearLayout(this).apply {
+        val taskControlPanelView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(10), dp(14), dp(10))
             background = GradientDrawable().apply {
@@ -937,37 +937,42 @@ class MainActivity : Activity() {
                 cornerRadius = dp(16).toFloat()
                 setStroke(dp(1), Color.rgb(38, 111, 134))
             }
-            taskControlStatusText = TextView(this@MainActivity).apply {
+            val statusLabel = TextView(this@MainActivity).apply {
                 text = "No active Android task."
                 textSize = 13f
                 setTextColor(Color.rgb(183, 226, 237))
                 setPadding(0, 0, 0, dp(8))
                 accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
             }
-            addView(taskControlStatusText, matchWidth())
+            taskControlStatusText = statusLabel
+            addView(statusLabel, matchWidth())
             val row = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
-            taskPauseButton = homeButton("Pause").apply {
+            val pauseButton = homeButton("Pause").apply {
                 setOnClickListener { pauseApprovedAgentTask() }
             }
-            taskResumeButton = homeButton("Resume").apply {
+            taskPauseButton = pauseButton
+            val resumeButton = homeButton("Resume").apply {
                 setOnClickListener { resumeApprovedAgentTask() }
             }
-            taskCancelButton = homeButton("Cancel task").apply {
+            taskResumeButton = resumeButton
+            val cancelButton = homeButton("Cancel task").apply {
                 setOnClickListener { confirmCancelApprovedAgentTask() }
             }
-            row.addView(taskPauseButton, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
+            taskCancelButton = cancelButton
+            row.addView(pauseButton, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
                 marginEnd = dp(6)
             })
-            row.addView(taskResumeButton, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
+            row.addView(resumeButton, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
                 marginEnd = dp(6)
             })
-            row.addView(taskCancelButton, LinearLayout.LayoutParams(0, dp(46), 1f))
+            row.addView(cancelButton, LinearLayout.LayoutParams(0, dp(46), 1f))
             addView(row, matchWidth())
             visibility = View.GONE
         }
+        taskControlPanel = taskControlPanelView
 
         homeMessageInput = EditText(this).apply {
             hint = "Ask JARVIS something…"
@@ -1035,7 +1040,7 @@ class MainActivity : Activity() {
         content.addView(orbitalOrbView, orbParams)
         content.addView(prompt, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         content.addView(homeStatusText, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        content.addView(taskControlPanel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+        content.addView(taskControlPanelView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(8)
             bottomMargin = dp(8)
         })
