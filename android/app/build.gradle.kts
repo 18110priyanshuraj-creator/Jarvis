@@ -36,6 +36,9 @@ kotlin {
 
 dependencies {
     implementation("androidx.room:room-runtime:2.8.5")
+    // Bundled OCR models keep screen text recognition on-device and available offline.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")
     ksp("androidx.room:room-compiler:2.8.5")
 
     testImplementation("org.robolectric:robolectric:4.17")

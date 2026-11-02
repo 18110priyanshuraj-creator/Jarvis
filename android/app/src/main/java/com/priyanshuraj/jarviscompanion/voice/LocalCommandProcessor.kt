@@ -17,6 +17,19 @@ object LocalCommandProcessor {
     private val tapSuffix = Regex("""^(.+?)\s+par\s+(?:tap|click|dabao)\s+karo$""", RegexOption.IGNORE_CASE)
     private val typePrefix = Regex("""^(?:type|enter text|likho|text likho)\s+(.+)$""", RegexOption.IGNORE_CASE)
 
+    fun isScreenObservationCommand(message: String): Boolean {
+        val value = normalize(message.replace('’', '\''))
+        return value in setOf(
+            "read screen", "read the screen", "read my screen", "please read the screen",
+            "what is on screen", "what's on screen", "what is on my screen", "what's on my screen",
+            "tell me what is on screen", "please describe my screen",
+            "screen batao", "kya dikh raha hai", "screen par kya hai",
+            "describe screen", "describe the screen", "describe my screen",
+            "read visible text", "what does this page say", "page read karo",
+            "screen pe kya likha hai", "screen par kya likha hai", "screen ko padh kar batao"
+        )
+    }
+
     fun isStopCommand(message: String): Boolean {
         val value = normalize(message)
         return value in setOf(
@@ -53,10 +66,7 @@ object LocalCommandProcessor {
         val lower = normalize(original)
         val service = JarvisAccessibilityService.activeService
 
-        if (lower in setOf(
-                "read screen", "read the screen", "what is on screen", "what's on screen",
-                "screen batao", "kya dikh raha hai", "screen par kya hai"
-            )) {
+        if (isScreenObservationCommand(original)) {
             val active = service
                 ?: return "Enable the JARVIS screen assistant in Android Accessibility settings first."
             val summary = ScreenObserver.describe(active.rootInActiveWindow)

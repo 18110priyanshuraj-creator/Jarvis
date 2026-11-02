@@ -1,16 +1,39 @@
 package com.priyanshuraj.jarviscompanion.accessibility
 
+import android.accessibilityservice.AccessibilityService
+import android.graphics.Bitmap
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.view.Display
 import android.view.accessibility.AccessibilityNodeInfo
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
+import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import java.util.concurrent.Executor
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Reads a bounded summary only after an explicit user request.
- * The returned text is never written to preferences, logs, or the JARVIS server.
+ * A visual read uses one screenshot and bundled on-device OCR. Nothing is saved or uploaded.
  */
 object ScreenObserver {
     private const val MAX_NODES = 150
-    private const val MAX_LINES = 24
-    private const val MAX_LENGTH = 1400
-    private val longNumber = Regex("""(?<!\d)\d{4,10}(?!\d)""")
+    private const val MAX_TREE_LINES = 24
+    private const val MAX_DEPTH = 18
+    private const val MAX_IMAGE_DIMENSION = 1920
+    private const val MIN_CAPTURE_INTERVAL_MS = 1500L
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val mainExecutor = Executor { command -> mainHandler.post(command) }
+    private val ocrExecutor = Executors.newSingleThreadExecutor()
+    private val captureInProgress = AtomicBoolean(false)
+    private val lastCaptureAt = AtomicLong(0L)
 
     fun describe(root: AccessibilityNodeInfo?): String {
         if (root == null) {
@@ -21,7 +44,7 @@ object ScreenObserver {
         var visited = 0
 
         fun visit(node: AccessibilityNodeInfo, depth: Int) {
-            if (visited >= MAX_NODES || depth > 18 || !node.isVisibleToUser) return
+            if (visited >= MAX_NODES || depth > MAX_DEPTH || !node.isVisibleToUser) return
             visited++
 
             val line = when {
@@ -34,30 +57,211 @@ object ScreenObserver {
                     val text = node.text?.toString()?.trim().orEmpty()
                     val description = node.contentDescription?.toString()?.trim().orEmpty()
                     (if (text.isNotBlank()) text else description).take(180)
-                        .replace(longNumber, "••••")
                 }
             }
 
             if (line.isNotBlank()) lines.add(line)
-            if (lines.size < MAX_LINES) {
+            if (lines.size < MAX_TREE_LINES) {
                 for (index in 0 until node.childCount) {
                     val child = node.getChild(index) ?: continue
                     visit(child, depth + 1)
-                    if (lines.size >= MAX_LINES || visited >= MAX_NODES) break
+                    if (lines.size >= MAX_TREE_LINES || visited >= MAX_NODES) break
                 }
             }
         }
 
         visit(root, 0)
-        if (lines.isEmpty()) {
-            return "This app does not expose readable screen labels to Android accessibility."
+        return ScreenObservationText.format(lines.joinToString("\n"), emptyList())
+    }
+
+    /**
+     * Captures at most one display frame after a direct voice request. Screenshot and OCR work
+     * stays in memory on the device; callbacks are delivered on the main thread.
+     */
+    private fun isSensitiveScreen(root: AccessibilityNodeInfo?): Boolean {
+        if (root == null) return true
+        val visibleLabels = mutableListOf<String>()
+        var visited = 0
+        var containsPasswordField = false
+
+        fun visit(node: AccessibilityNodeInfo, depth: Int) {
+            if (visited >= MAX_NODES || depth > MAX_DEPTH || !node.isVisibleToUser) return
+            visited++
+            if (node.isPassword) containsPasswordField = true
+            visibleLabels += listOf(
+                node.text?.toString().orEmpty(),
+                node.contentDescription?.toString().orEmpty(),
+                node.hintText?.toString().orEmpty()
+            )
+            if (!containsPasswordField) {
+                for (index in 0 until node.childCount) {
+                    val child = node.getChild(index) ?: continue
+                    visit(child, depth + 1)
+                    if (containsPasswordField || visited >= MAX_NODES) break
+                }
+            }
         }
 
-        val summary = lines.joinToString(separator = "\n") { "• " + it }
-        return if (summary.length > MAX_LENGTH) {
-            summary.take(MAX_LENGTH).trimEnd() + "…"
-        } else {
-            summary
+        visit(root, 0)
+        return containsPasswordField || ScreenObservationText.containsProtectedScreenLabel(visibleLabels)
+    }
+
+    fun observeOnce(service: AccessibilityService, onComplete: (String) -> Unit) {
+        val root = service.rootInActiveWindow
+        val treeSummary = describe(root)
+        if (isSensitiveScreen(root)) {
+            deliver(
+                onComplete,
+                "This screen may contain a password, PIN, or verification detail. For privacy, I will not capture its image. " +
+                    "Here are only the accessible labels: " + treeSummary
+            )
+            return
         }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            deliver(onComplete, "Visual screen reading needs Android 11 or later. " + treeSummary)
+            return
+        }
+
+        val now = SystemClock.elapsedRealtime()
+        val previous = lastCaptureAt.get()
+        if (previous > 0L && now - previous < MIN_CAPTURE_INTERVAL_MS) {
+            deliver(onComplete, "Please wait a moment before requesting another screen read. " + treeSummary)
+            return
+        }
+        if (!captureInProgress.compareAndSet(false, true)) {
+            deliver(onComplete, "A screen read is already in progress. " + treeSummary)
+            return
+        }
+        lastCaptureAt.set(now)
+
+        val delivered = AtomicBoolean(false)
+        fun finish(message: String) {
+            if (!delivered.compareAndSet(false, true)) return
+            captureInProgress.set(false)
+            deliver(onComplete, message)
+        }
+
+        try {
+            service.takeScreenshot(
+                Display.DEFAULT_DISPLAY,
+                mainExecutor,
+                object : AccessibilityService.TakeScreenshotCallback {
+                    override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {
+                        ocrExecutor.execute {
+                            try {
+                                val hardwareBuffer = screenshot.hardwareBuffer
+                                val bitmap = try {
+                                    val hardwareBitmap = Bitmap.wrapHardwareBuffer(
+                                        hardwareBuffer,
+                                        screenshot.colorSpace
+                                    )
+                                    val softwareBitmap = hardwareBitmap?.copy(Bitmap.Config.ARGB_8888, false)
+                                    hardwareBitmap?.recycle()
+                                    softwareBitmap
+                                } finally {
+                                    hardwareBuffer.close()
+                                }
+
+                                if (bitmap == null) {
+                                    finish("Android captured the screen but could not prepare the image. " + treeSummary)
+                                    return@execute
+                                }
+                                runOcr(scaleForOcr(bitmap), treeSummary, ::finish)
+                            } catch (_: Exception) {
+                                finish("Visual screen reading was unavailable. Accessible labels only: " + treeSummary)
+                            }
+                        }
+                    }
+
+                    override fun onFailure(errorCode: Int) {
+                        finish(
+                            "Android did not provide a screenshot. The app may protect its window, or visual capture may be unavailable. " +
+                                "Accessible labels only: " + treeSummary
+                        )
+                    }
+                }
+            )
+        } catch (_: Exception) {
+            finish("Android could not start a one-time screen capture. Accessible labels only: " + treeSummary)
+        }
+    }
+
+    private fun scaleForOcr(bitmap: Bitmap): Bitmap {
+        val largest = maxOf(bitmap.width, bitmap.height)
+        if (largest <= MAX_IMAGE_DIMENSION) return bitmap
+        val scale = MAX_IMAGE_DIMENSION.toFloat() / largest.toFloat()
+        val width = (bitmap.width * scale).toInt().coerceAtLeast(1)
+        val height = (bitmap.height * scale).toInt().coerceAtLeast(1)
+        val scaled = Bitmap.createScaledBitmap(bitmap, width, height, true)
+        if (scaled !== bitmap) bitmap.recycle()
+        return scaled
+    }
+
+    private fun runOcr(
+        bitmap: Bitmap,
+        treeSummary: String,
+        finish: (String) -> Unit
+    ) {
+        val latin: TextRecognizer
+        val devanagari: TextRecognizer
+        val input: InputImage
+        try {
+            latin = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+            devanagari = TextRecognition.getClient(DevanagariTextRecognizerOptions.Builder().build())
+            input = InputImage.fromBitmap(bitmap, 0)
+        } catch (_: Exception) {
+            bitmap.recycle()
+            finish("On-device text recognition could not start. Accessible labels only: " + treeSummary)
+            return
+        }
+
+        val released = AtomicBoolean(false)
+        fun complete(latinLines: List<String>, devanagariLines: List<String>) {
+            if (!released.compareAndSet(false, true)) return
+            runCatching { latin.close() }
+            runCatching { devanagari.close() }
+            bitmap.recycle()
+
+            val visualLines = latinLines + devanagariLines
+            val summary = ScreenObservationText.format(treeSummary, visualLines)
+            val preface = if (visualLines.isEmpty()) {
+                "I checked one screen image on this device but could not recognize readable visual text. OCR may miss text. "
+            } else {
+                "I read one screen image on this device. OCR can miss or misread text. Nothing was saved or uploaded. "
+            }
+            finish(preface + summary)
+        }
+
+        fun runDevanagari(latinLines: List<String>) {
+            try {
+                devanagari.process(input).addOnCompleteListener(ocrExecutor) { task ->
+                    val lines = if (task.isSuccessful) {
+                        task.result.textBlocks.flatMap { block -> block.lines.map { line -> line.text } }
+                    } else {
+                        emptyList()
+                    }
+                    complete(latinLines, lines)
+                }
+            } catch (_: Exception) {
+                complete(latinLines, emptyList())
+            }
+        }
+
+        try {
+            latin.process(input).addOnCompleteListener(ocrExecutor) { task ->
+                val lines = if (task.isSuccessful) {
+                    task.result.textBlocks.flatMap { block -> block.lines.map { line -> line.text } }
+                } else {
+                    emptyList()
+                }
+                runDevanagari(lines)
+            }
+        } catch (_: Exception) {
+            runDevanagari(emptyList())
+        }
+    }
+
+    private fun deliver(onComplete: (String) -> Unit, message: String) {
+        mainHandler.post { onComplete(message) }
     }
 }
