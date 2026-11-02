@@ -24,6 +24,7 @@ internal class CancellableActionSequence<T>(
     private val executeAction: (T) -> TaskStepResult,
     private val delayAfter: (T) -> Long,
     initialMessages: List<String> = emptyList(),
+    private val onState: (String, Int) -> Unit = { _, _ -> },
     private val onProgress: (Int, TaskStepResult) -> Unit = { _, _ -> },
     private val onTerminal: (String) -> Unit = {},
     private val onComplete: (List<String>) -> Unit
@@ -31,6 +32,7 @@ internal class CancellableActionSequence<T>(
     private val messages = initialMessages.toMutableList()
     private var index = 0
     private var cancelled = false
+    private var paused = false
     private var completed = false
 
     private val runner = Runnable { runNext() }
@@ -40,18 +42,36 @@ internal class CancellableActionSequence<T>(
     }
 
     fun start() {
-        if (!cancelled && !completed) scheduler.post(runner, 0L)
+        if (cancelled || completed || paused) return
+        onState("running", index)
+        scheduler.post(runner, 0L)
+    }
+
+    fun pause() {
+        if (cancelled || completed || paused) return
+        paused = true
+        scheduler.remove(runner)
+        onState("paused", index)
+    }
+
+    fun resume() {
+        if (cancelled || completed || !paused) return
+        paused = false
+        onState("running", index)
+        scheduler.post(runner, 0L)
     }
 
     fun cancel() {
         if (cancelled || completed) return
         cancelled = true
+        paused = false
         scheduler.remove(runner)
+        onState("cancelled", index)
         onTerminal("cancelled")
     }
 
     private fun runNext() {
-        if (cancelled || completed) return
+        if (cancelled || completed || paused) return
         if (index >= actions.size) {
             finish("completed")
             return
