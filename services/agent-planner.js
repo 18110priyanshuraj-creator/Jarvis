@@ -108,7 +108,7 @@ export function validateAgentPlan(candidate) {
     }
 
     const value = typeof action.value === "string" ? action.value.trim().slice(0, 180) : "";
-    if (["open_app", "tap_label", "type_text", "ask_user", "finish"].includes(action.type) && !value) {
+    if (["open_app", "verify_app_foreground", "tap_label", "type_text", "verify_screen_text", "ask_user", "finish"].includes(action.type) && !value) {
       throw new TypeError("A required action value is missing.");
     }
     if (action.type === "tap_label" && BLOCKED_LABEL.test(value)) {
