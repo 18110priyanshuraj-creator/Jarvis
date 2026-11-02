@@ -19,7 +19,7 @@ The existing server-side research stack is not replaced:
 
 ## New Android browser handoff
 
-The review-branch change adds a narrow, deterministic action for explicit public Google searches.
+The review-branch change adds a narrow, deterministic action for explicit public Google searches. The query parser lives in the native Android `LocalCommandProcessor`; `NativeCoreRuntime.requestAgentPlan()` evaluates it before looking up remote pairing credentials. The Orb and hands-free voice service use this same runtime method, so this specific Google browser handoff can be planned without a paired server or AI API. Google itself still needs an internet connection to load public results.
 
 Supported intent examples include:
 
@@ -35,7 +35,7 @@ The validated plan is exactly:
 
 The server-side plan validator and Android `AgentPlanRunner` independently require the browser verification to immediately follow the matching search action and carry the same query. The Android executor does not accept a browser URL from a model or user; it builds the Google HTTPS URL itself.
 
-The Android manifest declares visibility for HTTPS BROWSABLE handlers. On Android versions with `RoleManager`, verification uses the Android default-browser role. If no unique default browser is configured, the Accessibility window is unavailable, or the expected browser is not foregrounded, execution stops for user review. JARVIS does not choose an app in the system chooser.
+The Android manifest declares visibility for HTTPS BROWSABLE handlers. On Android versions with `RoleManager`, verification uses the Android default-browser role. If no unique default browser is configured, the Accessibility window is unavailable, or the expected browser is not foregrounded, execution stops for user review. JARVIS does not choose an app in the system chooser. The Orb and hands-free paths still show their existing plan preview and wait for explicit approval before launching the browser.
 
 The local task journal stores only generic action categories (`open web search`, `verify browser`, `ask user`). It does not persist the search text or URL.
 
@@ -62,13 +62,14 @@ The local task journal stores only generic action categories (`open web search`,
 
 - [x] Audit existing SearXNG search, page reader, source-answer and Research UI.
 - [x] Preserve the existing token-bound safe page-reader and source-answer path.
-- [x] Add deterministic English/Hindi/Hinglish Google query patterns.
+- [x] Add native deterministic English/Hindi/Hinglish Google query patterns before remote credential checks.
 - [x] Add fixed HTTPS Google search intent; never accept an arbitrary URL.
 - [x] Add a distinct default-browser foreground verification action.
 - [x] Require matching browser verification in server and Android validators.
 - [x] Stop when no default browser/accessibility window is available.
 - [x] Add generic privacy-minimized browser action journal category.
-- [x] Add regression tests for local intent parsing, restricted queries, browser-check pairing and journal categories.
+- [x] Add server and Android regression tests for local intent parsing, restricted queries, browser-check pairing and journal categories.
+- [x] Route native Google plan generation through the shared runtime for Orb and hands-free voice without requiring a paired server.
 - [ ] Pass current PR Node syntax/tests and production dependency audit.
 - [ ] Pass current PR Android unit tests, debug build and APK integrity checks.
 - [ ] Merge verified implementation into `main` and verify post-merge CI.
