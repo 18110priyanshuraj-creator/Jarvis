@@ -1,6 +1,7 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
 import crypto from "node:crypto";
+import { normalizeApplicationId } from "../services/skill-engine.js";
 
 const PAIRING_CODE_TTL_MS = 3 * 60 * 1000;
 const pairingChallenges = new Map();
@@ -165,8 +166,14 @@ export function createDevicesRouter({ getStore, saveStore, requireAuth, runDevic
   router.post("/voice-command", requireDeviceAuth, async (req, res) => {
     const message = cleanText(req.body?.message, 4000);
     if (!message) return res.status(400).json({ error: "Voice transcript cannot be empty." });
+    const applicationId = req.body?.applicationId === undefined
+      ? "android-companion"
+      : normalizeApplicationId(req.body.applicationId);
+    if (!applicationId || applicationId === "*") {
+      return res.status(400).json({ error: "Foreground application ID is invalid." });
+    }
     try {
-      const result = await runDeviceVoiceCommand(message, req.jarvisDevice);
+      const result = await runDeviceVoiceCommand(message, req.jarvisDevice, applicationId);
       res.json(typeof result === "string"
         ? { answer: result, engine: "built-in-offline", externalAI: false }
         : result);

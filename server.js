@@ -20,7 +20,7 @@ import { createSourceBasedAnswer, SOURCE_ANSWER_LIMITS } from "./services/source
 import { getAIProviderStatus } from "./services/ai-provider.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, mergeDuplicateKnowledge, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { buildMemoryContext, findExactMemory, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, parseExplicitForgetIntent, previewMemoryContext, searchMemories } from "./services/memory.js";
-import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeSkill, pauseSkill, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
+import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeApplicationId, normalizeSkill, pauseSkill, SKILL_APPLICATION_CATALOG, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
 import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, createWorkflowDraft, createWorkflowRun, normalizeWorkflow, pauseWorkflow, pauseWorkflowRun, recoverInterruptedWorkflowRuns, resumeWorkflowRun, retryWorkflowRun, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
 import { createTaskPlan, TASK_PLANNER_LIMITS } from "./services/task-planner.js";
@@ -525,7 +525,7 @@ function parseExplicitMemoryIntent(message) {
   return { content, category, blocked: false };
 }
 
-async function processAssistantTurn(message, conversationKey) {
+async function processAssistantTurn(message, conversationKey, applicationId = "web-dashboard") {
   const history = (await getConversationMessages(conversationKey))
     .filter((item) => item.role === "user" || item.role === "assistant")
     .slice(-10)
@@ -577,7 +577,7 @@ async function processAssistantTurn(message, conversationKey) {
       result = { answer: "I’ll remember this preference or fact because you explicitly asked me to. You can review or delete it in Memory.", engine: "memory", externalAI: false };
     }
   } else {
-    result = await generateAssistantAnswer(message, history, store.memories);
+    result = await generateAssistantAnswer(message, history, store.memories, applicationId);
   }
 
   const enrichedResult = { ...result, nlu: classifyIntent(message) };
@@ -590,7 +590,7 @@ function cleanText(value, maxLength) {
   return value.trim().slice(0, maxLength);
 }
 
-async function generateAssistantAnswer(message, history = [], memories = store.memories) {
+async function generateAssistantAnswer(message, history = [], memories = store.memories, applicationId = "web-dashboard") {
   const useLiveWeb = shouldUseLiveWebResearch(message);
   let webNotice = "";
 
@@ -617,7 +617,7 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
     message,
     memories: store.memories,
     tasks: store.tasks,
-    skills: getActiveSkillContext(store.skills, message, 3),
+    skills: getActiveSkillContext(store.skills, message, 3, applicationId),
     feedback: store.feedback,
     knowledge: buildKnowledgeContext(store.knowledge, message, 3)
   });
@@ -633,7 +633,7 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
     try {
       const knowledgeContext = buildKnowledgeContext(store.knowledge, message, 3);
       const approvedMemoryContext = buildMemoryContext(memories, message, 5);
-      const activeSkillContext = getActiveSkillContext(store.skills, message, 3);
+      const activeSkillContext = getActiveSkillContext(store.skills, message, 3, applicationId);
       const approvedExperienceContext = getActiveExperienceContext(store.experiencePreferences, 5);
       const answer = await createConversationReply(message, history, approvedMemoryContext, knowledgeContext, activeSkillContext, approvedExperienceContext);
       return {
@@ -651,7 +651,7 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
     message,
     memories: store.memories,
     tasks: store.tasks,
-    skills: getActiveSkillContext(store.skills, message, 3),
+    skills: getActiveSkillContext(store.skills, message, 3, applicationId),
     feedback: store.feedback,
     knowledge: buildKnowledgeContext(store.knowledge, message, 3)
   });
@@ -995,8 +995,15 @@ app.get("/api/export", requireAuth, (req, res) => {
 app.post("/api/chat", requireAuth, async (req, res) => {
   const message = cleanText(req.body?.message, 4000);
   if (!message) return res.status(400).json({ error: "Enter a message first." });
+  const requestedApplicationId = req.body?.applicationId === undefined
+    ? "web-dashboard"
+    : normalizeApplicationId(req.body.applicationId);
+  if (requestedApplicationId !== "web-dashboard") {
+    return res.status(400).json({ error: "Dashboard chat can only use the web-dashboard application ID." });
+  }
+  const applicationId = "web-dashboard";
   try {
-    const result = await processAssistantTurn(message, "session:" + req.sessionToken);
+    const result = await processAssistantTurn(message, "session:" + req.sessionToken, applicationId);
     res.json(result);
   } catch (error) {
     console.error("Assistant reply failed:", safeErrorMetadata(error));
@@ -1154,7 +1161,23 @@ app.delete("/api/feedback/:id", requireAuth, async (req, res) => {
 });
 
 app.get("/api/skills", requireAuth, (_req, res) => {
-  res.json({ skills: store.skills, total: store.skills.length });
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    skills: store.skills,
+    total: store.skills.length,
+    applicationCatalog: SKILL_APPLICATION_CATALOG,
+    limits: SKILL_LIMITS
+  });
+});
+
+app.post("/api/skills/preview", requireAuth, (req, res) => {
+  const message = cleanText(req.body?.message, 4000);
+  if (!message) return res.status(400).json({ error: "Enter a message to preview skill matching." });
+  const applicationId = normalizeApplicationId(req.body?.applicationId || "web-dashboard");
+  if (!applicationId || applicationId === "*") return res.status(400).json({ error: "Application ID is invalid." });
+  const matches = getActiveSkillContext(store.skills, message, 5, applicationId);
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ applicationId, matches, total: matches.length, mode: "static-trigger-preview" });
 });
 
 app.get("/api/skills/:id/versions", requireAuth, (req, res) => {
@@ -2180,10 +2203,11 @@ app.delete("/api/research/saved/:id", requireAuth, async (req, res) => {
 });
 
 
-async function runDeviceVoiceCommand(message, device = {}) {
+async function runDeviceVoiceCommand(message, device = {}, applicationId = "android-companion") {
   const deviceKey = "device:" + (device.id || "unpaired");
+  const resolvedApplicationId = normalizeApplicationId(applicationId) || "android-companion";
   try {
-    return await processAssistantTurn(message, deviceKey);
+    return await processAssistantTurn(message, deviceKey, resolvedApplicationId);
   } catch (error) {
     console.error("Device voice command failed:", error?.name || "Error");
     throw new Error("The JARVIS assistant could not process this voice request.");

@@ -5,6 +5,7 @@ const MAX_NAME = 80;
 const MAX_INSTRUCTIONS = 2500;
 const MAX_TRIGGERS = 8;
 const MAX_TEST_CASES = 12;
+const MAX_APPLICATION_IDS = 12;
 const VALID_STATUSES = new Set(["draft", "active", "update-pending", "paused"]);
 const UNSAFE_SKILL_PATTERN = /\b(?:ignore (?:all )?(?:previous )?(?:system )?instructions|reveal (?:the )?(?:password|api key|secret|credentials)|bypass (?:authentication|security|permissions|the lock)|steal (?:data|credentials)|exfiltrat\w*|execute (?:arbitrary )?(?:code|shell)|run (?:shell|terminal|powershell) commands?|delete (?:all )?(?:files|data)|transfer money|make (?:a )?payment|place (?:an )?order|send (?:a )?(?:message|email|sms) automatically)\b/i;
 
@@ -18,6 +19,48 @@ function normalizePhrase(value) {
 
 function safeContent(value) {
   return !UNSAFE_SKILL_PATTERN.test(value);
+}
+
+export function normalizeApplicationId(value) {
+  if (typeof value !== "string") return "";
+  const applicationId = cleanText(value, 80).normalize("NFKC").toLocaleLowerCase();
+  if (applicationId === "*") return "*";
+  return /^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/.test(applicationId) ? applicationId : "";
+}
+
+function normalizeApplicationIds(value, strict = false) {
+  if (value === undefined) return ["*"];
+  const provided = Array.isArray(value) || typeof value === "string";
+  if (!provided) {
+    if (strict) throw new TypeError("Application targets must be a list of application IDs.");
+    return [];
+  }
+  const values = Array.isArray(value) ? value : value.split(",");
+  if (!values.length) {
+    if (strict) throw new TypeError("Choose at least one application target.");
+    return [];
+  }
+  const ids = [];
+  for (const raw of values) {
+    if (typeof raw !== "string" || !raw.trim()) {
+      if (strict) throw new TypeError("Application IDs must be non-empty strings.");
+      continue;
+    }
+    const applicationId = normalizeApplicationId(raw);
+    if (!applicationId) {
+      if (strict) throw new TypeError("Application IDs must use letters, numbers, dots, underscores or hyphens.");
+      continue;
+    }
+    if (applicationId === "*") return ["*"];
+    if (!ids.includes(applicationId)) ids.push(applicationId);
+    if (ids.length > MAX_APPLICATION_IDS) {
+      if (strict) throw new TypeError("A skill can target at most 12 applications.");
+      return ids.slice(0, MAX_APPLICATION_IDS);
+    }
+  }
+  return ids.length ? ids : strict
+    ? (() => { throw new TypeError("Choose at least one application target."); })()
+    : [];
 }
 
 function normalizeTriggers(value) {
@@ -49,6 +92,7 @@ function makeSnapshot(input, version, createdAt) {
     version,
     name: cleanText(input.name, MAX_NAME),
     instructions: cleanText(input.instructions, MAX_INSTRUCTIONS),
+    applicationIds: normalizeApplicationIds(input.applicationIds),
     triggers: normalizeTriggers(input.triggers),
     testCases: normalizeTests(input.testCases),
     createdAt,
@@ -103,6 +147,7 @@ export function normalizeSkill(input = {}) {
     id,
     name: current.name,
     instructions: current.instructions,
+    applicationIds: current.applicationIds,
     triggers: current.triggers,
     testCases: current.testCases,
     versions,
@@ -127,7 +172,8 @@ export function createSkillCandidate(input = {}) {
     throw new TypeError("This skill contains an unsafe instruction and cannot be saved.");
   }
   const now = new Date().toISOString();
-  const snapshot = makeSnapshot({ ...input, name, instructions }, 1, now);
+  const applicationIds = normalizeApplicationIds(input.applicationIds, true);
+  const snapshot = makeSnapshot({ ...input, name, instructions, applicationIds }, 1, now);
   return normalizeSkill({
     id: crypto.randomUUID(),
     versions: [snapshot],
@@ -150,9 +196,10 @@ export function createSkillVersion(skillInput, input = {}) {
     throw new TypeError("This skill contains an unsafe instruction and cannot be saved.");
   }
 
+  const applicationIds = normalizeApplicationIds(input.applicationIds === undefined ? skill.applicationIds : input.applicationIds, true);
   const now = new Date().toISOString();
   const nextVersion = skill.versions.reduce((max, item) => Math.max(max, item.version), 0) + 1;
-  const snapshot = makeSnapshot({ ...input, name, instructions }, nextVersion, now);
+  const snapshot = makeSnapshot({ ...input, name, instructions, applicationIds }, nextVersion, now);
   return normalizeSkill({
     ...skill,
     name,
@@ -189,6 +236,12 @@ export function validateSkill(skillInput) {
   checks.push({
     name: "Safe instruction text",
     passed: safeContent(current.name + "\n" + current.instructions)
+  });
+  checks.push({
+    name: "Application scope",
+    passed: Array.isArray(current.applicationIds) && current.applicationIds.length >= 1 &&
+      current.applicationIds.length <= MAX_APPLICATION_IDS &&
+      current.applicationIds.every((id) => id === "*" || normalizeApplicationId(id) === id)
   });
   checks.push({
     name: "Positive and negative test coverage",
@@ -253,28 +306,47 @@ export function pauseSkill(skillInput) {
   return normalizeSkill({ ...skill, paused: true, updatedAt: new Date().toISOString() });
 }
 
-export function getActiveSkillContext(skills, message, limit = 3) {
+export function getActiveSkillContext(skills, message, limit = 3, applicationId = "web-dashboard") {
   const input = cleanText(message, 4000);
-  if (!Array.isArray(skills) || !input) return [];
-  return skills.flatMap((raw) => {
+  const requestedApplicationId = normalizeApplicationId(applicationId);
+  if (!Array.isArray(skills) || !input || !requestedApplicationId) return [];
+  const matches = skills.flatMap((raw) => {
     let skill;
     try { skill = normalizeSkill(raw); } catch { return []; }
     if (skill.paused || !skill.activeVersion) return [];
     const active = skill.versions.find((entry) => entry.version === skill.activeVersion);
-    if (!active || !safeContent(active.name + "\n" + active.instructions) || !matchesTrigger(input, active.triggers)) return [];
+    if (!active || !Array.isArray(active.applicationIds) || !active.applicationIds.length) return [];
+    if (!active.applicationIds.includes("*") && !active.applicationIds.includes(requestedApplicationId)) return [];
+    if (!safeContent(active.name + "\n" + active.instructions) || !matchesTrigger(input, active.triggers)) return [];
     return [{
+      id: skill.id,
       name: active.name,
       version: active.version,
+      applicationId: requestedApplicationId,
+      applicationIds: active.applicationIds,
       instructions: active.instructions,
       triggers: active.triggers
     }];
-  }).slice(0, Math.min(5, Math.max(1, limit)));
+  });
+  matches.sort((left, right) =>
+    Number(left.applicationIds.includes("*")) - Number(right.applicationIds.includes("*")) ||
+    left.name.localeCompare(right.name)
+  );
+  const safeLimit = Number.isInteger(limit) ? Math.min(5, Math.max(1, limit)) : 3;
+  return matches.slice(0, safeLimit);
 }
+
+export const SKILL_APPLICATION_CATALOG = Object.freeze([
+  Object.freeze({ id: "*", label: "All JARVIS application surfaces" }),
+  Object.freeze({ id: "web-dashboard", label: "JARVIS Web Dashboard" }),
+  Object.freeze({ id: "android-companion", label: "JARVIS Android Companion" })
+]);
 
 export const SKILL_LIMITS = Object.freeze({
   skills: MAX_SKILLS,
   name: MAX_NAME,
   instructions: MAX_INSTRUCTIONS,
   triggers: MAX_TRIGGERS,
-  testCases: MAX_TEST_CASES
+  testCases: MAX_TEST_CASES,
+  applicationIds: MAX_APPLICATION_IDS
 });

@@ -828,6 +828,65 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   const approvedSkill = await approveSkill.json();
   assert.equal(approvedSkill.skill.status, "active");
   assert.equal(approvedSkill.skill.activeVersion, 1);
+  assert.deepEqual(approvedSkill.skill.applicationIds, ["*"]);
+
+  const registryResponse = await request("/api/skills");
+  assert.equal(registryResponse.status, 200);
+  const registryPayload = await registryResponse.json();
+  assert.ok(registryPayload.applicationCatalog.some((item) => item.id === "web-dashboard"));
+  assert.ok(registryPayload.applicationCatalog.some((item) => item.id === "android-companion"));
+  assert.equal(registryPayload.limits.applicationIds, 12);
+
+  const globalPreview = await request("/api/skills/preview", {
+    method: "POST",
+    body: JSON.stringify({ message: "Please explain in simple Hinglish", applicationId: "android-companion" })
+  });
+  assert.equal(globalPreview.status, 200);
+  const globalPreviewPayload = await globalPreview.json();
+  assert.equal(globalPreviewPayload.applicationId, "android-companion");
+  assert.equal(globalPreviewPayload.mode, "static-trigger-preview");
+  assert.ok(globalPreviewPayload.matches.some((item) => item.id === skillPayload.skill.id));
+
+  const scopedSkillResponse = await request("/api/skills", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Android-only skill",
+      instructions: "Explain Android companion questions clearly, state assumptions, and keep answers accurate.",
+      applicationIds: ["android-companion"],
+      triggers: ["explain Android companion"],
+      testCases: [
+        { input: "Please explain Android companion", shouldMatch: true },
+        { input: "What is the weather today?", shouldMatch: false }
+      ]
+    })
+  });
+  assert.equal(scopedSkillResponse.status, 201);
+  const scopedSkill = (await scopedSkillResponse.json()).skill;
+  assert.deepEqual(scopedSkill.applicationIds, ["android-companion"]);
+  const scopedValidation = await request("/api/skills/" + scopedSkill.id + "/validate", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal((await scopedValidation.json()).validation.passed, true);
+  const scopedApproval = await request("/api/skills/" + scopedSkill.id + "/approve", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(scopedApproval.status, 200);
+
+  const dashboardPreview = await request("/api/skills/preview", {
+    method: "POST",
+    body: JSON.stringify({ message: "Please explain Android companion", applicationId: "web-dashboard" })
+  });
+  assert.equal((await dashboardPreview.json()).matches.some((item) => item.id === scopedSkill.id), false);
+  const androidPreview = await request("/api/skills/preview", {
+    method: "POST",
+    body: JSON.stringify({ message: "Please explain Android companion", applicationId: "android-companion" })
+  });
+  assert.equal((await androidPreview.json()).matches.some((item) => item.id === scopedSkill.id), true);
+  const invalidPreview = await request("/api/skills/preview", {
+    method: "POST",
+    body: JSON.stringify({ message: "Please explain Android companion", applicationId: "com.example/app" })
+  });
+  assert.equal(invalidPreview.status, 400);
 
   const skillContextMatched = await request("/api/skills");
   assert.equal(skillContextMatched.status, 200);
@@ -884,6 +943,7 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
 
   assert.equal((await request("/api/feedback/" + feedbackPayload.feedback.id, { method: "DELETE" })).status, 200);
   assert.equal((await request("/api/experience/preferences/" + promotedPayload.preference.id, { method: "DELETE" })).status, 200);
+  assert.equal((await request("/api/skills/" + scopedSkill.id, { method: "DELETE" })).status, 200);
   assert.equal((await request("/api/skills/" + skillPayload.skill.id, { method: "DELETE" })).status, 200);
 
   const disabledWebResearch = await request("/api/research", {
@@ -898,9 +958,20 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(localSearchPayload.externalSearch, false);
   assert.ok(localSearchPayload.results.some((item) => item.title === "Mole concept"));
 
+  const invalidApplicationChat = await request("/api/chat", {
+    method: "POST",
+    body: JSON.stringify({ message: "What is 2 + 2?", applicationId: "com.example/app" })
+  });
+  assert.equal(invalidApplicationChat.status, 400);
+  const spoofedApplicationChat = await request("/api/chat", {
+    method: "POST",
+    body: JSON.stringify({ message: "What is 2 + 2?", applicationId: "android-companion" })
+  });
+  assert.equal(spoofedApplicationChat.status, 400);
+
   const localChat = await request("/api/chat", {
     method: "POST",
-    body: JSON.stringify({ message: "What is 2 + 2?" })
+    body: JSON.stringify({ message: "What is 2 + 2?", applicationId: "web-dashboard" })
   });
   assert.equal(localChat.status, 200);
   const chatPayload = await localChat.json();

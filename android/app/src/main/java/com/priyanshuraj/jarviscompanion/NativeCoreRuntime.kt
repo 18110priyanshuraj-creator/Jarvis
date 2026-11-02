@@ -16,6 +16,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.priyanshuraj.jarviscompanion.device.DeviceConnector
 import com.priyanshuraj.jarviscompanion.device.DeviceTokenStore
+import com.priyanshuraj.jarviscompanion.accessibility.JarvisAccessibilityService
 import com.priyanshuraj.jarviscompanion.voice.LocalCommandProcessor
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -214,6 +215,9 @@ class NativeCoreRuntime(context: Context) {
 
     private data class RemoteCredentials(val serverUrl: String, val token: String)
 
+    private fun currentApplicationId(): String =
+        JarvisAccessibilityService.currentForegroundApplicationId() ?: "android-companion"
+
     private fun remoteCredentials(): RemoteCredentials? {
         val token = DeviceTokenStore.read(appContext)?.takeIf { it.isNotBlank() } ?: return null
         val serverUrl = preferences.getString("server_url", null)
@@ -244,7 +248,7 @@ class NativeCoreRuntime(context: Context) {
                 remoteAssistant = { text ->
                     val credentials = remoteCredentials()
                         ?: throw IllegalStateException("Pair this device before requesting a remote assistant reply.")
-                    DeviceConnector.voiceCommand(credentials.serverUrl, credentials.token, text)
+                    DeviceConnector.voiceCommand(credentials.serverUrl, credentials.token, text, currentApplicationId())
                 }
             )
             val result = try {
@@ -324,7 +328,7 @@ class NativeCoreRuntime(context: Context) {
             ?: throw IllegalStateException("Pair this device with JARVIS before requesting a remote reply.")
         val startedAt = System.currentTimeMillis()
         return try {
-            val answer = DeviceConnector.voiceCommand(credentials.serverUrl, credentials.token, message)
+            val answer = DeviceConnector.voiceCommand(credentials.serverUrl, credentials.token, message, currentApplicationId())
             ledger.record(
                 source, CoreCommandRoute.REMOTE, CoreCommandOutcome.SUCCESS,
                 message.trim().length, System.currentTimeMillis() - startedAt
