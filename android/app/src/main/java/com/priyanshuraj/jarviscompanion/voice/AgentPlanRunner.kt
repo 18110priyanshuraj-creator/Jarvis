@@ -46,7 +46,7 @@ object AgentPlanExecutionGate {
 
 object AgentPlanRunner {
     private val allowed = setOf(
-        "open_app", "verify_app_foreground", "open_web_search", "read_screen", "tap_label", "type_text",
+        "open_app", "verify_app_foreground", "open_web_search", "verify_browser_foreground", "read_screen", "tap_label", "type_text",
         "scroll_down", "scroll_up", "back", "home", "verify_screen_text", "ask_user", "finish"
     )
 
@@ -82,7 +82,7 @@ object AgentPlanRunner {
     fun requiresAccessibility(plan: JSONObject): Boolean {
         val actions = validate(plan)
         val accessibilityActions = setOf(
-            "verify_app_foreground", "read_screen", "tap_label", "type_text",
+            "verify_app_foreground", "verify_browser_foreground", "read_screen", "tap_label", "type_text",
             "scroll_down", "scroll_up", "back", "home", "verify_screen_text"
         )
         return (0 until actions.length()).any { index ->
@@ -113,7 +113,7 @@ object AgentPlanRunner {
             if (type !in allowed || value.length > 180) {
                 throw IllegalArgumentException("The plan contains an unsupported action.")
             }
-            if (type in setOf("open_app", "verify_app_foreground", "open_web_search", "tap_label", "type_text", "verify_screen_text", "ask_user", "finish") && value.isBlank()) {
+            if (type in setOf("open_app", "verify_app_foreground", "open_web_search", "verify_browser_foreground", "tap_label", "type_text", "verify_screen_text", "ask_user", "finish") && value.isBlank()) {
                 throw IllegalArgumentException("A required action value is missing.")
             }
             if (type == "tap_label" && UiActionPolicy.isProtectedControl(value)) {
@@ -136,6 +136,28 @@ object AgentPlanRunner {
                 !UiActionPolicy.validateTextPayload(value, 160).allowed
             ) {
                 throw IllegalArgumentException("The expected visible result is outside the safe verification policy.")
+            }
+        }
+
+        // A public Google search must be followed by a matching browser foreground check.
+        for (index in 0 until actions.length()) {
+            val action = actions.getJSONObject(index)
+            val type = action.optString("type")
+            if (type == "open_web_search") {
+                val verifier = actions.optJSONObject(index + 1)
+                if (verifier?.optString("type") != "verify_browser_foreground" ||
+                    verifier.optString("value") != action.optString("value")
+                ) {
+                    throw IllegalArgumentException("Every Google search launch must be followed by a matching browser foreground check.")
+                }
+            }
+            if (type == "verify_browser_foreground") {
+                val previous = actions.optJSONObject(index - 1)
+                if (previous?.optString("type") != "open_web_search" ||
+                    previous.optString("value") != action.optString("value")
+                ) {
+                    throw IllegalArgumentException("Browser foreground verification must immediately follow its matching Google search launch.")
+                }
             }
         }
 
@@ -192,6 +214,7 @@ object AgentPlanRunner {
                 "open_app" -> "Open " + value.take(40)
                 "verify_app_foreground" -> "Verify that " + value.take(40) + " is the foreground app"
                 "open_web_search" -> "Open Google search for " + value.take(100)
+                "verify_browser_foreground" -> "Verify the browser app is in the foreground"
                 "read_screen" -> "Read the visible screen locally"
                 "tap_label" -> "Tap the visible control " + value.take(30)
                 "type_text" -> "Enter this text into the field you focused: " + value.take(160)
@@ -222,6 +245,7 @@ object AgentPlanRunner {
                     "open_app" -> "open app"
                     "verify_app_foreground" -> "verify app"
                     "open_web_search" -> "open web search"
+                    "verify_browser_foreground" -> "verify browser"
                     "read_screen" -> "read screen"
                     "tap_label" -> "tap label"
                     "type_text" -> "type text"
