@@ -16,11 +16,11 @@
 ## Phase 0 — Existing project audit and preservation gate
 
 
-**Status: BLOCKED**
+**Status: COMPLETE FOR AUDIT / PHASE 1 ENTRY (legacy data migration guard remains open)**
 
-Completed: repository/main identification, current branch/PR inventory, old production snapshot comparison, code/technology inventory, CI evidence, Android capability boundary and initial security review.
+Completed: repository/main identification, current branch/PR inventory, old production snapshot comparison, code/technology inventory, CI evidence, Android capability boundary, security review, successful CI on the closeout commit, Render deployment reconciliation to main, Neon schema inventory and verified Neon snapshot.
 
-Open: old production data backup and migration dry-run; decision on legacy chat retention; active Render storage/environment verification; deployment reconciliation; branch protection policy.
+Carry-forward guards before any data migration or source-of-truth cutover: recover/archive legacy JSON and chat history, verify Render's active DATABASE_URL without exposing it, reconcile Blueprint settings before applying them, and choose branch protection. Physical Samsung tablet acceptance remains Phase 31.
 
 See:
 - `JARVIS_PHASE_0_AUDIT.md`
@@ -33,7 +33,7 @@ See:
 
 | Phase | Target scope | Current status | Existing evidence and remaining gap |
 |---|---|---|---|
-| 1 | Central Orb Interface | PARTIAL | Browser orb exists; native Android launcher is still a pairing/permissions screen. |
+| 1 | Central Orb Interface | IN_PROGRESS | Native Android orb launcher is being added while the original pairing and permission screen is preserved under Setup. |
 | 2 | Unified All-in-One Application Shell | PARTIAL | Browser views are integrated; Android remains a separate Companion app. |
 | 3 | Native Android Core | PARTIAL | Kotlin APK builds; not yet the unified application. |
 | 4 | Local System Controller | PARTIAL | Modular Node/Android services exist; not one complete on-device runtime. |
@@ -68,7 +68,7 @@ See:
 
 ## Development order and gates
 
-1. Close Phase 0 production-data and deployment preservation gates.
+1. Phase 0 audit and current Render source reconciliation are complete. Legacy data recovery remains a hard gate before migrations or storage cutovers.
 2. Begin Phase 1 on the existing Android application package. Preserve browser orbital assets as reference; do not replace the current backend.
 3. Complete and test each phase against the phase-specific acceptance criteria before advancing.
 4. Retain all current tests and add new regression/acceptance tests.
@@ -80,3 +80,12 @@ See:
 ## Reconciliation of historical phases
 
 The existing repository has historical documents labelled Phase 11–23, including two different historical Phase 13 documents. They describe work completed under an earlier roadmap. They are retained for provenance. This new roadmap maps only actual functionality to the requested Phase 1–32 acceptance criteria and does not claim that the old phase numbers are equivalent.
+
+
+## Phase 0 closeout evidence
+
+- Closeout main commit: `7eb5a88a49b4984347b298c9b385ad85c6a209e8`.
+- GitHub Actions run `41382218139`: both Node and Android jobs passed.
+- Render service `jarvis-personal-assistant`: configured branch `main`, auto-deploy enabled, current deployment live on the closeout main SHA.
+- Neon production snapshot: `snap-broad-breeze-b5vd7iie`.
+- Legacy JSON/chat recovery and active Render DATABASE_URL confirmation remain explicit prerequisites before data migration; they are not claimed complete.

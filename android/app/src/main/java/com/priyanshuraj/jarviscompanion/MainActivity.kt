@@ -8,6 +8,11 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.view.Gravity
+import android.view.View
 import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -38,6 +43,12 @@ class MainActivity : Activity() {
     private lateinit var permissionChecklistText: TextView
     private lateinit var activityLogText: TextView
     private lateinit var voiceButton: Button
+    private lateinit var setupRootView: View
+    private var homeScreen: View? = null
+    private var homeStatusText: TextView? = null
+    private var homeMessageInput: EditText? = null
+    private var orbitalOrbView: OrbitalOrbView? = null
+    private var showingSetup = false
     private var speechRecognizer: SpeechRecognizer? = null
     private var textToSpeech: TextToSpeech? = null
     private var recognitionLanguage = "hi-IN"
@@ -148,18 +159,13 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 24, 24, 24)
             addView(TextView(this@MainActivity).apply {
-                text = "JARVIS Companion"
+                text = "JARVIS setup and controls"
                 textSize = 26f
             })
             addView(TextView(this@MainActivity).apply {
-                text = "Natural Hindi / English voice conversation with user-started Android Companion controls."
+                text = "The central orb is the home screen. This page keeps the original pairing, voice, permissions and activity tools."
                 textSize = 14f
-                setPadding(0, 8, 0, 8)
-            })
-            addView(TextView(this@MainActivity).apply {
-                text = "Screen labels are read locally only when requested. This phase does not upload screen content and will not activate send, delete, payment, password or verification controls."
-                textSize = 12f
-                setPadding(0, 0, 0, 16)
+                setPadding(0, 8, 0, 16)
             })
             addView(serverUrlInput, matchWidth())
             addView(pairingCodeInput, matchWidth())
@@ -169,7 +175,7 @@ class MainActivity : Activity() {
             addView(stopHandsFreeButton, matchWidth())
             addView(accessibilityButton, matchWidth())
             addView(TextView(this@MainActivity).apply {
-                text = "SETUP & PERMISSIONS"
+                text = "PERMISSIONS"
                 textSize = 18f
                 setPadding(0, 24, 0, 8)
             })
@@ -195,7 +201,11 @@ class MainActivity : Activity() {
             addView(clearActivityButton, matchWidth())
             addView(statusText, matchWidth())
         }
-        setContentView(ScrollView(this).apply { addView(content) })
+        setupRootView = ScrollView(this).apply {
+            isFillViewport = true
+            addView(content)
+        }
+        showHomeScreen()
 
         textToSpeech = TextToSpeech(this) { result ->
             if (result == TextToSpeech.SUCCESS) {
@@ -207,6 +217,200 @@ class MainActivity : Activity() {
             }
         }
         refreshStatus()
+    }
+
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
+    private fun homeButton(label: String): Button = Button(this).apply {
+        text = label
+        isAllCaps = false
+        textSize = 13f
+        setTextColor(Color.WHITE)
+        minHeight = dp(48)
+        setPadding(dp(14), dp(8), dp(14), dp(8))
+        background = GradientDrawable().apply {
+            setColor(Color.rgb(16, 45, 67))
+            cornerRadius = dp(24).toFloat()
+            setStroke(dp(1), Color.rgb(39, 143, 178))
+        }
+    }
+
+    private fun showHomeScreen() {
+        val screen = homeScreen ?: createHomeScreen().also { homeScreen = it }
+        showingSetup = false
+        setContentView(screen)
+        refreshStatus()
+    }
+
+    private fun showSetupScreen() {
+        showingSetup = true
+        setContentView(setupRootView)
+        refreshStatus()
+        refreshPermissionChecklist()
+        refreshActivityLog()
+    }
+
+    private fun createHomeScreen(): View {
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(4, 13, 29), Color.rgb(2, 6, 17), Color.rgb(3, 18, 31))
+            )
+        }
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(24), dp(24), dp(24), dp(24))
+            minimumHeight = resources.displayMetrics.heightPixels
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val brand = TextView(this).apply {
+            text = "J A R V I S"
+            textSize = 24f
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            letterSpacing = 0.08f
+            setTextColor(Color.rgb(222, 248, 255))
+        }
+        val setupButton = homeButton("Setup")
+        setupButton.contentDescription = "Open pairing, voice and permission setup"
+        setupButton.setOnClickListener { showSetupScreen() }
+        header.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        header.addView(setupButton, LinearLayout.LayoutParams(dp(96), dp(44)))
+
+        val subtitle = TextView(this).apply {
+            text = "YOUR PERSONAL ASSISTANT"
+            textSize = 11f
+            letterSpacing = 0.18f
+            setTextColor(Color.rgb(112, 177, 198))
+            gravity = Gravity.CENTER
+            setPadding(0, dp(8), 0, dp(2))
+        }
+
+        orbitalOrbView = OrbitalOrbView(this).apply {
+            contentDescription = "JARVIS animated orb. Tap to start voice recognition."
+            isFocusable = true
+            isClickable = true
+            setOnClickListener { startVoiceRecognition() }
+        }
+        val orbParams = LinearLayout.LayoutParams(dp(310), dp(310)).apply {
+            topMargin = dp(12)
+            bottomMargin = dp(6)
+        }
+
+        val prompt = TextView(this).apply {
+            text = "TAP THE ORB TO SPEAK"
+            textSize = 12f
+            letterSpacing = 0.16f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(121, 205, 224))
+            setPadding(0, dp(4), 0, dp(10))
+        }
+
+        homeStatusText = TextView(this).apply {
+            text = "Ready. Tap the orb or type a message."
+            textSize = 14f
+            gravity = Gravity.CENTER
+            maxLines = 3
+            setTextColor(Color.rgb(213, 230, 239))
+            setPadding(dp(18), dp(8), dp(18), dp(12))
+        }
+
+        homeMessageInput = EditText(this).apply {
+            hint = "Ask JARVIS something…"
+            setSingleLine(true)
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.rgb(132, 157, 172))
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            background = GradientDrawable().apply {
+                setColor(Color.argb(190, 9, 25, 39))
+                cornerRadius = dp(18).toFloat()
+                setStroke(dp(1), Color.rgb(35, 88, 110))
+            }
+        }
+        val sendButton = homeButton("Send")
+        sendButton.contentDescription = "Send the typed message to JARVIS"
+        sendButton.setOnClickListener { submitHomeMessage() }
+        val messageRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(homeMessageInput, LinearLayout.LayoutParams(0, dp(54), 1f).apply {
+                marginEnd = dp(8)
+            })
+            addView(sendButton, LinearLayout.LayoutParams(dp(82), dp(54)))
+        }
+
+        val controls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(14), 0, dp(4))
+        }
+        val speakButton = homeButton("Speak")
+        speakButton.contentDescription = "Start one-time voice recognition"
+        speakButton.setOnClickListener { startVoiceRecognition() }
+        val handsFreeButton = homeButton("Hands-free")
+        handsFreeButton.contentDescription = "Start user-controlled hands-free voice mode"
+        handsFreeButton.setOnClickListener { startHandsFreeControl() }
+        controls.addView(speakButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply {
+            marginEnd = dp(6)
+        })
+        controls.addView(handsFreeButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply {
+            marginStart = dp(6)
+        })
+
+        val footer = TextView(this).apply {
+            text = "Microphone use starts only when you choose Speak or Hands-free. Setup keeps the existing pairing and permission controls."
+            textSize = 11f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(104, 137, 153))
+            setPadding(dp(12), dp(14), dp(12), dp(8))
+        }
+
+        content.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        content.addView(subtitle, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        content.addView(orbitalOrbView, orbParams)
+        content.addView(prompt, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        content.addView(homeStatusText, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        content.addView(messageRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        content.addView(controls, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        content.addView(footer, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        scroll.addView(content)
+        return scroll
+    }
+
+    private fun submitHomeMessage() {
+        val message = homeMessageInput?.text?.toString()?.trim().orEmpty()
+        if (message.isBlank()) {
+            refreshStatus("Type a message first.")
+            return
+        }
+        homeMessageInput?.text?.clear()
+        val localResponse = LocalCommandProcessor.handle(this, message, allowUiActions = false)
+        if (localResponse != null) {
+            refreshStatus(localResponse)
+            speakReply(localResponse)
+        } else {
+            sendVoiceCommand(message)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        if (showingSetup) {
+            showHomeScreen()
+        } else {
+            super.onBackPressed()
+        }
     }
 
     override fun onResume() {
@@ -306,7 +510,7 @@ class MainActivity : Activity() {
             try {
                 DeviceConnector.heartbeat(serverUrl, token, accessibilityEnabled)
             } catch (error: Exception) {
-                runOnUiThread { statusText.text = "Paired locally. Server heartbeat failed: " + (error.message ?: "connection error") }
+                runOnUiThread { refreshStatus("Paired locally. Server heartbeat failed: " + (error.message ?: "connection error")) }
             }
         }
     }
@@ -316,12 +520,18 @@ class MainActivity : Activity() {
         voiceButton.isEnabled = true
         val accessibility = if (PermissionSetup.isAccessibilityEnabled(this)) "enabled" else "not enabled"
         refreshPermissionChecklist()
-        statusText.text = message ?: buildString {
+        val currentStatus = message ?: buildString {
             append(if (paired) "Paired with JARVIS server." else "Not paired with the JARVIS server.")
             append(" Screen access: ")
             append(accessibility)
-            append(". Use Start hands-free control to keep voice commands available while another app is open.")
+            append(". Use Setup to review pairing and permissions.")
         }
+        statusText.text = currentStatus
+        homeStatusText?.text = currentStatus
+        orbitalOrbView?.setListening(
+            currentStatus.contains("listening", ignoreCase = true) ||
+                currentStatus.contains("processing", ignoreCase = true)
+        )
     }
 
     private fun showAccessibilityDisclosure() {
