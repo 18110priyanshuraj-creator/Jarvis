@@ -1217,7 +1217,8 @@ class MainActivity : Activity() {
             .setTitle("JARVIS screen access")
             .setMessage(
                 "Android Accessibility lets JARVIS inspect visible app labels and perform the specific action you speak. " +
-                    "Screen content is processed locally on this tablet and is not sent to the JARVIS server in this phase. " +
+                    "When you explicitly ask it to read the screen, JARVIS takes one screenshot for on-device text recognition. " +
+                    "Screen images and recognized text remain in memory on this tablet; they are not saved or sent to the JARVIS server. This is not continuous screen recording. " +
                     "Password and verification fields, plus send, delete, payment and confirmation controls are blocked. " +
                     "You can disable this service anytime in Android Settings."
             )
