@@ -1513,7 +1513,7 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Review Android task")
             .setMessage(
-                preview + "\\n\\nNothing will run until you approve. " +
+                preview + "\n\nNothing will run until you approve. " +
                     "JARVIS cannot send or submit messages, delete data, purchase, pay, transfer money, " +
                     "enter credentials, or grant permissions. Search results and app-specific decisions stay with you."
             )
@@ -1544,6 +1544,7 @@ class MainActivity : Activity() {
             return
         }
 
+        var executionStarted = false
         val controls = AgentPlanRunner.execute(
             context = this,
             plan = plan,
@@ -1555,10 +1556,12 @@ class MainActivity : Activity() {
                 )
             },
             onComplete = { result ->
-                activeAgentPlanControls = null
-                agentTaskPaused = false
-                updateAgentTaskControls()
-                LocalActivityLog.record(this, "Android task ended", categories)
+                if (executionStarted) {
+                    activeAgentPlanControls = null
+                    agentTaskPaused = false
+                    updateAgentTaskControls()
+                    LocalActivityLog.record(this, "Android task ended", categories)
+                }
                 showAssistantReply(result)
             }
         )
@@ -1568,6 +1571,7 @@ class MainActivity : Activity() {
             updateAgentTaskControls()
             return
         }
+        executionStarted = true
         agentTaskPaused = false
         updateAgentTaskControls("Task approved · running locally on this tablet.")
         refreshStatus("Android task approved. JARVIS is executing the bounded steps on this tablet.")
