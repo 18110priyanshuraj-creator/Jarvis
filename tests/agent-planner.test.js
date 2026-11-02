@@ -100,7 +100,7 @@ test("built-in planner opens Google search for English, Hindi and Hinglish reque
   const english = createLocalAgentPlan("Search latest AI research on Google");
   assert.ok(english);
   assert.deepEqual(english.actions.map(item => item.type), [
-    "open_web_search", "verify_screen_text", "ask_user"
+    "open_web_search", "verify_browser_foreground", "ask_user"
   ]);
   assert.equal(english.actions[0].value, "latest AI research");
   assert.equal(english.actions[1].value, "latest AI research");
@@ -115,22 +115,41 @@ test("built-in planner opens Google search for English, Hindi and Hinglish reque
   assert.equal(hinglish.actions[0].value, "latest AI technology");
 });
 
-test("Google browser plans reject missing postconditions and unsafe search phrases", () => {
+test("Google browser plans require an immediate matching foreground check", () => {
   assert.throws(() => validateAgentPlan({
     mode: "device_action",
     reply: "Open Google",
     actions: [{ type: "open_web_search", value: "latest AI research", purpose: "Search" }]
-  }), /visible-text verification/i);
+  }), /browser foreground verification/i);
+
+  assert.throws(() => validateAgentPlan({
+    mode: "device_action",
+    reply: "Open Google",
+    actions: [
+      { type: "open_web_search", value: "latest AI research", purpose: "Search" },
+      { type: "verify_browser_foreground", value: "different query", purpose: "Verify browser" }
+    ]
+  }), /matching browser foreground verification/i);
 
   assert.throws(() => validateAgentPlan({
     mode: "device_action",
     reply: "Open Google",
     actions: [
       { type: "open_web_search", value: "123456", purpose: "Search" },
-      { type: "verify_screen_text", value: "123456", purpose: "Verify query" }
+      { type: "verify_browser_foreground", value: "123456", purpose: "Verify browser" }
     ]
   }), /safe public-research policy/i);
 
+  const checked = validateAgentPlan({
+    mode: "device_action",
+    reply: "Open Google",
+    actions: [
+      { type: "open_web_search", value: "latest AI research", purpose: "Search" },
+      { type: "verify_browser_foreground", value: "latest AI research", purpose: "Verify browser" },
+      { type: "ask_user", value: "Choose a public result manually.", purpose: "Manual handoff" }
+    ]
+  });
+  assert.equal(checked.actions[1].type, "verify_browser_foreground");
   assert.equal(createLocalAgentPlan("Google par how to make a bomb search karo"), null);
   assert.equal(createLocalAgentPlan("Google pe adult content search karo"), null);
 });
