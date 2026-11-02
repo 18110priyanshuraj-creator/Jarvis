@@ -8,6 +8,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -44,8 +46,13 @@ import android.webkit.WebViewClient
 import com.priyanshuraj.jarviscompanion.accessibility.JarvisAccessibilityService
 import com.priyanshuraj.jarviscompanion.LocalActivityLog
 import com.priyanshuraj.jarviscompanion.device.DeviceTokenStore
+import com.priyanshuraj.jarviscompanion.voice.AgentPlanControls
+import com.priyanshuraj.jarviscompanion.voice.AgentPlanExecutionGate
+import com.priyanshuraj.jarviscompanion.voice.AgentPlanMode
+import com.priyanshuraj.jarviscompanion.voice.AgentPlanRunner
 import com.priyanshuraj.jarviscompanion.voice.VoiceControlService
 import com.priyanshuraj.jarviscompanion.voice.VoiceOutput
+import org.json.JSONObject
 import com.priyanshuraj.jarviscompanion.voice.VoicePrivacyMode
 import com.priyanshuraj.jarviscompanion.voice.VoicePrivacyPreferences
 import com.priyanshuraj.jarviscompanion.voice.VoiceRecognitionPolicy
@@ -54,6 +61,15 @@ import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var activeAgentPlanControls: AgentPlanControls? = null
+    private var agentTaskPaused = false
+    private var planRequestGeneration = 0L
+    private var taskControlPanel: LinearLayout? = null
+    private var taskControlStatusText: TextView? = null
+    private var taskPauseButton: Button? = null
+    private var taskResumeButton: Button? = null
+    private var taskCancelButton: Button? = null
     private val jarvisCore by lazy(LazyThreadSafetyMode.NONE) {
         (application as JarvisApplication).core
     }
@@ -913,6 +929,46 @@ class MainActivity : Activity() {
             setPadding(dp(18), dp(8), dp(18), dp(12))
         }
 
+        taskControlPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            background = GradientDrawable().apply {
+                setColor(Color.rgb(8, 31, 45))
+                cornerRadius = dp(16).toFloat()
+                setStroke(dp(1), Color.rgb(38, 111, 134))
+            }
+            taskControlStatusText = TextView(this@MainActivity).apply {
+                text = "No active Android task."
+                textSize = 13f
+                setTextColor(Color.rgb(183, 226, 237))
+                setPadding(0, 0, 0, dp(8))
+                accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            }
+            addView(taskControlStatusText, matchWidth())
+            val row = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            taskPauseButton = homeButton("Pause").apply {
+                setOnClickListener { pauseApprovedAgentTask() }
+            }
+            taskResumeButton = homeButton("Resume").apply {
+                setOnClickListener { resumeApprovedAgentTask() }
+            }
+            taskCancelButton = homeButton("Cancel task").apply {
+                setOnClickListener { confirmCancelApprovedAgentTask() }
+            }
+            row.addView(taskPauseButton, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
+                marginEnd = dp(6)
+            })
+            row.addView(taskResumeButton, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
+                marginEnd = dp(6)
+            })
+            row.addView(taskCancelButton, LinearLayout.LayoutParams(0, dp(46), 1f))
+            addView(row, matchWidth())
+            visibility = View.GONE
+        }
+
         homeMessageInput = EditText(this).apply {
             hint = "Ask JARVIS something…"
             setSingleLine(true)
@@ -979,6 +1035,10 @@ class MainActivity : Activity() {
         content.addView(orbitalOrbView, orbParams)
         content.addView(prompt, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         content.addView(homeStatusText, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        content.addView(taskControlPanel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(8)
+            bottomMargin = dp(8)
+        })
         content.addView(messageRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         content.addView(controls, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         content.addView(footer, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -1364,19 +1424,194 @@ class MainActivity : Activity() {
     }
 
     private fun dispatchCoreCommand(message: String, source: CoreCommandSource) {
+        val localReply = jarvisCore.handleLocalCommand(message, source, allowUiActions = false)
+        if (!localReply.isNullOrBlank()) {
+            showAssistantReply(localReply)
+            return
+        }
+
         val notice = if (source == CoreCommandSource.SPEAK_ONCE &&
             VoicePrivacyPreferences.read(this) == VoicePrivacyMode.OFFLINE_ONLY
         ) {
-            "Voice input was recognized on-device. Conversational replies may still use your paired JARVIS server."
+            "Voice was recognized on-device. JARVIS is checking whether this needs a local Android task; remote planning sends text only."
         } else {
-            "JARVIS is processing your request…"
+            "JARVIS is checking whether this request needs an Android task…"
         }
         refreshStatus(notice)
+
+        if (!jarvisCore.isRemoteConnected()) {
+            submitChatFallback(message, source)
+            return
+        }
+
+        val requestId = ++planRequestGeneration
+        executor.execute {
+            val planned = runCatching { jarvisCore.requestAgentPlan(message, source) }
+            runOnUiThread {
+                if (isFinishing || isDestroyed || requestId != planRequestGeneration) return@runOnUiThread
+                val plan = planned.getOrNull()
+                if (plan == null) {
+                    submitChatFallback(message, source)
+                    return@runOnUiThread
+                }
+
+                val mode = runCatching { AgentPlanRunner.mode(plan) }.getOrElse {
+                    submitChatFallback(message, source)
+                    return@runOnUiThread
+                }
+                when (mode) {
+                    AgentPlanMode.DEVICE_ACTION -> showAgentPlanApproval(plan)
+                    AgentPlanMode.CONVERSATION -> {
+                        val reply = plan.optString("reply").trim()
+                        if (reply.isBlank()) submitChatFallback(message, source)
+                        else showAssistantReply(reply)
+                    }
+                    AgentPlanMode.CLARIFICATION -> {
+                        val question = plan.optString("reply").trim()
+                            .ifBlank { "Please clarify what you want JARVIS to do." }
+                        showAssistantReply(question)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun submitChatFallback(message: String, source: CoreCommandSource) {
         jarvisCore.submitCommand(message, source, allowUiActions = false) { result ->
             if (isFinishing || isDestroyed) return@submitCommand
-            refreshStatus(result.reply)
-            speakReply(result.reply)
+            showAssistantReply(result.reply)
         }
+    }
+
+    private fun showAssistantReply(reply: String) {
+        refreshStatus(reply)
+        speakReply(reply)
+    }
+
+    private fun showAgentPlanApproval(plan: JSONObject) {
+        if (AgentPlanExecutionGate.isBusy()) {
+            refreshStatus("Another Android task is already active. Pause, finish or cancel it before starting another.")
+            return
+        }
+        val preview = try {
+            AgentPlanRunner.describe(plan)
+        } catch (_: Exception) {
+            refreshStatus("JARVIS returned an invalid Android task plan. No action was run.")
+            return
+        }
+        val categories = AgentPlanRunner.actionKinds(plan)
+        LocalActivityLog.record(this, "Android task ready", categories)
+        AlertDialog.Builder(this)
+            .setTitle("Review Android task")
+            .setMessage(
+                preview + "\\n\\nNothing will run until you approve. " +
+                    "JARVIS cannot send or submit messages, delete data, purchase, pay, transfer money, " +
+                    "enter credentials, or grant permissions. Search results and app-specific decisions stay with you."
+            )
+            .setNegativeButton("Cancel") { _, _ ->
+                LocalActivityLog.record(this, "Android task cancelled", "The task was rejected before execution.")
+                refreshStatus("Task cancelled. No Android action was run.")
+            }
+            .setPositiveButton("Approve and run") { _, _ ->
+                runApprovedAgentPlan(plan, categories)
+            }
+            .setOnCancelListener {
+                LocalActivityLog.record(this, "Android task dismissed", "The approval dialog was dismissed; no action was run.")
+            }
+            .show()
+    }
+
+    private fun runApprovedAgentPlan(plan: JSONObject, categories: String) {
+        val blockedReason = AgentPlanRunner.executionBlockReason(plan)
+        if (blockedReason != null) {
+            AlertDialog.Builder(this)
+                .setTitle("Screen permission required")
+                .setMessage(blockedReason)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Open Accessibility Settings") { _, _ ->
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                }
+                .show()
+            return
+        }
+
+        val controls = AgentPlanRunner.execute(
+            context = this,
+            plan = plan,
+            handler = mainHandler,
+            onProgress = { index, success ->
+                updateAgentTaskControls(
+                    if (success) "Task running · step " + (index + 1) + " completed."
+                    else "Task stopped · step " + (index + 1) + " failed."
+                )
+            },
+            onComplete = { result ->
+                activeAgentPlanControls = null
+                agentTaskPaused = false
+                updateAgentTaskControls()
+                LocalActivityLog.record(this, "Android task ended", categories)
+                showAssistantReply(result)
+            }
+        )
+        activeAgentPlanControls = controls
+        if (controls == null) {
+            agentTaskPaused = false
+            updateAgentTaskControls()
+            return
+        }
+        agentTaskPaused = false
+        updateAgentTaskControls("Task approved · running locally on this tablet.")
+        refreshStatus("Android task approved. JARVIS is executing the bounded steps on this tablet.")
+    }
+
+    private fun pauseApprovedAgentTask() {
+        val controls = activeAgentPlanControls ?: return
+        controls.pause()
+        agentTaskPaused = true
+        updateAgentTaskControls("Task paused at a saved step boundary.")
+        refreshStatus("Android task paused. Resume or cancel it from the task controls.")
+    }
+
+    private fun resumeApprovedAgentTask() {
+        val controls = activeAgentPlanControls ?: return
+        controls.resume()
+        agentTaskPaused = false
+        updateAgentTaskControls("Task resumed from the saved step boundary.")
+        refreshStatus("Android task resumed.")
+    }
+
+    private fun confirmCancelApprovedAgentTask() {
+        if (activeAgentPlanControls == null) return
+        AlertDialog.Builder(this)
+            .setTitle("Cancel Android task?")
+            .setMessage("No later steps will run. The current task progress remains in the on-device history.")
+            .setNegativeButton("Keep task", null)
+            .setPositiveButton("Cancel task") { _, _ ->
+                activeAgentPlanControls?.cancel()
+                activeAgentPlanControls = null
+                agentTaskPaused = false
+                updateAgentTaskControls()
+                refreshStatus("Android task cancelled. No later steps will run.")
+            }
+            .show()
+    }
+
+    private fun updateAgentTaskControls(message: String? = null) {
+        val panel = taskControlPanel ?: return
+        val controls = activeAgentPlanControls
+        if (controls == null) {
+            panel.visibility = View.GONE
+            return
+        }
+        panel.visibility = View.VISIBLE
+        taskControlStatusText?.text = message ?: if (agentTaskPaused) {
+            "Task paused at a saved step boundary."
+        } else {
+            "Android task is active."
+        }
+        taskPauseButton?.visibility = if (agentTaskPaused) View.GONE else View.VISIBLE
+        taskResumeButton?.visibility = if (agentTaskPaused) View.VISIBLE else View.GONE
+        taskCancelButton?.visibility = View.VISIBLE
     }
 
     @Deprecated("Use the Activity Result API in a later UI refactor.")
@@ -1409,6 +1644,9 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        // Do not let an Activity-owned action sequence continue after its owner is destroyed.
+        activeAgentPlanControls?.cancel()
+        activeAgentPlanControls = null
         speechRecognizer?.destroy()
         textToSpeech?.stop()
         textToSpeech?.shutdown()
