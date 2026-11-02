@@ -42,7 +42,7 @@ See:
 | 6 | Independent Intelligence Engine | CODE_COMPLETE | Deterministic offline-first routing, local-first device planning, secret-safe capability status and optional model fallback are tested; no general local LLM is claimed. |
 | 7 | Natural Language Understanding | CODE_COMPLETE | Shared deterministic English/Hindi/Hinglish intent labels, heuristic confidence metadata and 18 multilingual regression examples; classification alone cannot execute Android actions. |
 | 8 | Local Memory System | CODE_COMPLETE | Separate on-device Room v1 store, Android Keystore AES-GCM encryption, explicit local remember/recall/exact-forget, and native add/search/edit/pause/resume/delete UI. CI run 41400751209 passed Node (183/183, 0 audit vulnerabilities) and Android testDebugUnitTest assembleDebug plus APK verification/upload. Physical Tab A9 Keystore/UI checks remain Phase 31. |
-| 9 | Autonomous Task Planner | PARTIAL | Optional model planner plus bounded local plans; not unrestricted autonomous planning. |
+| 9 | Autonomous Task Planner | IN_PROGRESS | Goal-to-workflow planner with deterministic local templates, optional server-configured model fallback, explicit assumptions/clarifications, allow-listed steps and review-gated drafts. CI and live-deployment verification pending. |
 | 10 | Persistent Execution Engine | PARTIAL | Workflows and cancellable sequences exist; full Android task recovery after restart is not verified. |
 | 11 | Screen Observation | PARTIAL | Bounded accessibility-tree inspection; no screenshot/vision perception. |
 | 12 | Android Action Engine | PARTIAL | Safe exact-label and navigation operations; no broad app automation or arbitrary gestures. |
@@ -77,11 +77,12 @@ See:
 6. Phase 5 offline voice system is code-complete: both Android voice input paths use one on-device selection policy, offline-only mode blocks online speech fallbacks, and TTS honors local-voice requirements. Device-specific model and audio acceptance remains Phase 31.
 7. Phase 6 is code-complete: supported deterministic requests route offline before the optional model adapter, current-information requests retain live-research precedence, and bounded Android device plans prefer local rules. See `JARVIS_PHASE_6_INDEPENDENT_INTELLIGENCE_ENGINE.md`.
 8. Phase 8 is code-complete at the repository/CI level: a separate Android-local encrypted memory store and native CRUD UI pass Node and Android CI. Local memories are never automatically sent to the server; no server-state import or migration was performed. See `JARVIS_PHASE_8_LOCAL_MEMORY.md`.
-9. Retain all current tests and add new regression/acceptance tests.
-10. Keep `main` as the release source of truth; use short-lived branches only when useful.
-11. Do not delete branches with unreviewed unique work or mark a phase verified because a file exists.
-12. Device-only acceptance must be marked blocked until an actual Galaxy Tab A9 observation is recorded.
-13. The final release must be a signed, installable Android build with migration, offline behavior and real-device evidence.
+9. Phase 9 adds a goal-to-workflow planner. It uses deterministic local templates first, an optional server-configured model only for unsupported goals, strict step allow-lists, and an explicit draft/validate/approve/run lifecycle. Creating a plan must never execute it. See `JARVIS_PHASE_9_AUTONOMOUS_TASK_PLANNER.md`.
+10. Retain all current tests and add new regression/acceptance tests.
+11. Keep `main` as the release source of truth; use short-lived branches only when useful.
+12. Do not delete branches with unreviewed unique work or mark a phase verified because a file exists.
+13. Device-only acceptance must be marked blocked until an actual Galaxy Tab A9 observation is recorded.
+14. The final release must be a signed, installable Android build with migration, offline behavior and real-device evidence.
 
 ## Phase 8 closeout evidence
 

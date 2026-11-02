@@ -32,8 +32,16 @@ export function getIntelligenceStatus(aiProvider = {}) {
         "bundled study, science and debugging notes",
         "read user-saved tasks and enabled memory notes",
         "search the user-reviewed Knowledge Library",
-        "bounded local intent and Android app-search planning"
+        "bounded local intent and Android app-search planning",
+        "goal decomposition into reviewed workflow drafts"
       ]
+    },
+    taskPlanning: {
+      available: true,
+      mode: "deterministic-local-first-with-optional-model",
+      maximumSteps: 10,
+      requiresWorkflowApproval: true,
+      executesWhenPlanIsCreated: false
     },
     routing: {
       conversation: "offline-first for covered requests; optional configured model for unsupported requests",

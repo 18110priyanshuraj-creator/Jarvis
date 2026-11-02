@@ -23,6 +23,7 @@ import { buildMemoryContext, findExactMemory, isDuplicateMemory, isSafeMemoryCon
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeSkill, pauseSkill, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
 import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, createWorkflowDraft, createWorkflowRun, normalizeWorkflow, pauseWorkflow, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
+import { createTaskPlan, TASK_PLANNER_LIMITS } from "./services/task-planner.js";
 import { getIntegrationCatalog, INTEGRATION_PROVIDER_IDS, probeIntegration, runIntegrationAction } from "./services/integrations.js";
 import { appendActionStatus, createPendingExternalAction, executeExternalAction, getExternalActionCapabilities, MAX_ACTION_HISTORY, MAX_PENDING_ACTIONS, normalizeExternalAction } from "./services/external-actions.js";
 import {
@@ -102,6 +103,13 @@ const sourceAnswerLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Source-based answer limit reached. Please try again later." }
+});
+const taskPlanningLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Task planning limit reached. Please try again later." }
 });
 const integrationTestLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -1512,6 +1520,21 @@ app.post("/api/integrations/:provider/enable", requireAuth, async (req, res) => 
   store.disabledIntegrations = store.disabledIntegrations.filter((item) => item !== provider);
   await saveStore();
   res.json({ ok: true, ...integrationCatalogResponse() });
+});
+
+
+app.post("/api/planner/plan", requireAuth, taskPlanningLimiter, async (req, res) => {
+  try {
+    const plan = await createTaskPlan(req.body?.goal, req.body?.constraints);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ ...plan, limits: TASK_PLANNER_LIMITS });
+  } catch (error) {
+    if (error instanceof TypeError) {
+      return res.status(400).json({ error: error.message || "The task-planning request is invalid." });
+    }
+    console.error("Task planning failed:", error?.code || error?.name || "Error");
+    res.status(502).json({ error: "JARVIS could not create a safe task plan." });
+  }
 });
 
 app.get("/api/workflows", requireAuth, (_req, res) => {

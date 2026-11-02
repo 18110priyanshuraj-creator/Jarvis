@@ -1,7 +1,7 @@
 import { createVoiceController } from "./voice-controller.js";
 import { createOrbitalVisual } from "./orbital-visual.js";
 const $ = (selector) => document.querySelector(selector);
-const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", knowledgeFilter: "all", knowledgeSummary: { total: 0, trusted: 0, unreviewed: 0, rejected: 0 }, diagnostics: null, activeView: "chat" };
+const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, taskPlan: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", knowledgeFilter: "all", knowledgeSummary: { total: 0, trusted: 0, unreviewed: 0, rejected: 0 }, diagnostics: null, activeView: "chat" };
 let toastTimer;
 
 function toast(message, isError = false) {
@@ -1306,6 +1306,120 @@ function renderWorkflowBuilderSteps() {
   });
 }
 
+
+function renderTaskPlan(plan) {
+  const target = $("#task-plan-result");
+  if (!target) return;
+  target.replaceChildren();
+  target.classList.toggle("hidden", !plan);
+  if (!plan) return;
+
+  const heading = document.createElement("h3");
+  heading.textContent = plan.mode === "clarification" ? "More detail needed" : "Proposed plan";
+  const objective = document.createElement("p");
+  objective.textContent = plan.objective || "No objective was returned.";
+  const source = document.createElement("div");
+  source.className = "list-item-meta";
+  source.textContent = plan.source === "optional-model"
+    ? "Generated with the server-configured planning model · review before saving"
+    : "Generated locally · review before saving";
+  target.append(heading, objective, source);
+
+  const appendList = (label, items) => {
+    if (!Array.isArray(items) || !items.length) return;
+    const title = document.createElement("strong");
+    title.textContent = label;
+    const list = document.createElement("ul");
+    for (const value of items) {
+      const item = document.createElement("li");
+      item.textContent = value;
+      list.append(item);
+    }
+    target.append(title, list);
+  };
+  appendList("Constraints", plan.constraints);
+  appendList("Assumptions", plan.assumptions);
+  appendList("Questions to resolve", plan.clarifyingQuestions);
+
+  if (plan.mode === "plan") {
+    const list = document.createElement("ol");
+    list.className = "workflow-step-list";
+    for (const step of plan.steps || []) {
+      const item = document.createElement("li");
+      const title = document.createElement("strong");
+      title.textContent = step.title + " · " + workflowStepLabel(step.type);
+      const detail = document.createElement("p");
+      detail.textContent = workflowStepDetail(step);
+      item.append(title, detail);
+      list.append(item);
+    }
+    target.append(list);
+    const validation = document.createElement("div");
+    validation.className = "list-item-meta";
+    validation.textContent = "Draft structure checks: " +
+      (plan.validation?.passed ? "passed" : "needs review") +
+      " · " + (plan.steps?.length || 0) + " proposed steps";
+    target.append(validation);
+
+    const save = document.createElement("button");
+    save.type = "button";
+    save.className = "primary";
+    save.textContent = "Save as workflow draft";
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      try {
+        const data = await api("/api/workflows", {
+          method: "POST",
+          body: JSON.stringify({
+            name: plan.name,
+            description: plan.objective,
+            steps: plan.steps
+          })
+        });
+        state.workflows.unshift(data.workflow);
+        state.taskPlan = null;
+        renderTaskPlan(null);
+        renderWorkflows();
+        toast("Workflow draft saved. Validate and approve it before running.");
+      } catch (error) {
+        toast(error.message, true);
+        save.disabled = false;
+      }
+    });
+    target.append(save);
+    const note = document.createElement("p");
+    note.className = "small muted";
+    note.textContent = "Saving creates an unapproved workflow draft only. It does not create tasks or execute any step.";
+    target.append(note);
+  }
+}
+
+$("#task-plan-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = $("#task-plan-submit");
+  const goal = $("#task-plan-goal").value.trim();
+  const constraints = $("#task-plan-constraints").value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  button.disabled = true;
+  button.textContent = "Planning…";
+  try {
+    const plan = await api("/api/planner/plan", {
+      method: "POST",
+      body: JSON.stringify({ goal, constraints })
+    });
+    state.taskPlan = plan;
+    renderTaskPlan(plan);
+    toast(plan.mode === "plan" ? "Plan ready for your review." : "JARVIS needs one clarification before it can plan.");
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Generate plan";
+  }
+});
+
 async function refreshWorkflows() {
   const data = await api("/api/workflows");
   state.workflows = data.workflows || [];
@@ -1741,6 +1855,8 @@ $("#logout-button").addEventListener("click", async () => {
   state.workflows = [];
   state.workflowRuns = [];
   state.workflowSteps = [];
+  state.taskPlan = null;
+  renderTaskPlan(null);
   state.integrations = [];
   state.integrationResults = {};
   state.externalActions = [];
@@ -2210,6 +2326,8 @@ $("#workflow-add-step").addEventListener("click", () => {
   renderWorkflowBuilderSteps();
   toast("Workflow step added to the draft builder.");
 });
+
+renderTaskPlan(null);
 
 $("#workflow-form").addEventListener("submit", async (event) => {
   event.preventDefault();

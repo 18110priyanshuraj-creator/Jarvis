@@ -304,9 +304,25 @@
             <p class="muted">Build reusable local workflows, validate them, approve them and run them only when you choose.</p>
           </div>
         </div>
+        <section class="form-card task-planner-card">
+          <h2>Plan a goal with JARVIS</h2>
+          <p class="muted">Describe the result you want. JARVIS will propose an ordered, editable workflow draft. Planning does not create tasks, contact services or run actions.</p>
+          <p class="small muted">Recognized goals use local planning rules. Other goals may be sent to the optional AI provider configured by your server. Never include passwords, API keys or private contact details.</p>
+          <form id="task-plan-form">
+            <label for="task-plan-goal">Your goal</label>
+            <textarea id="task-plan-goal" rows="3" maxlength="1000" required placeholder="Example: Create a four-week JEE revision plan for circular motion and mole concept."></textarea>
+            <label for="task-plan-constraints">Constraints <span class="muted">(optional; one per line, up to five)</span></label>
+            <textarea id="task-plan-constraints" rows="2" maxlength="1000" placeholder="Example: Keep study blocks short&#10;Use my saved Knowledge notes first"></textarea>
+            <div class="form-row">
+              <span class="small muted">Up to 10 steps · review required before approval</span>
+              <button type="submit" class="primary" id="task-plan-submit">Generate plan</button>
+            </div>
+          </form>
+          <div id="task-plan-result" class="task-plan-result hidden" aria-live="polite"></div>
+        </section>
         <div class="workflow-safety">
           <strong>Approval and execution boundaries</strong>
-          <p>Only the five listed local step types are supported. Every workflow starts as a draft; validation does not execute it. You must explicitly approve the workflow and press Run. Review checkpoints pause execution. No shell/code execution, message sending, publishing, payments, purchases, or security-sensitive actions are supported.</p>
+          <p>Only the allow-listed local workflow step types are supported. Every workflow starts as a draft; validation does not execute it. You must explicitly approve the workflow and press Run. Review checkpoints pause execution. No shell/code execution, message sending, publishing, payments, purchases, or security-sensitive actions are supported.</p>
         </div>
         <form id="workflow-form" class="form-card">
           <h2 id="workflow-form-title">Create a workflow draft</h2>
