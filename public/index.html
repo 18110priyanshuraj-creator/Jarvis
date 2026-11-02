@@ -168,7 +168,7 @@
         <div class="list-heading"><h2>Learning & Skills</h2><span class="muted small">Draft → Test → Approve → Activate</span></div>
         <div class="research-hint">
           <strong>Safe skill learning</strong>
-          <p>Skills are reusable instruction profiles, not executable code. Tests only check whether trigger phrases match example requests; they do not run device actions or arbitrary scripts. A skill affects online AI replies only after you approve it and only when a trigger matches.</p>
+          <p>Skills are versioned instruction profiles, not executable code. Choose which JARVIS application surfaces may use each skill. Static tests check trigger matching only; they do not run device actions, scripts or application code. A skill affects online AI replies only after you approve it and a trigger matches in an allowed application.</p>
         </div>
         <form id="skill-form" class="form-card">
           <h2 id="skill-form-title">Create a skill draft</h2>
@@ -176,6 +176,9 @@
           <input id="skill-name" maxlength="80" required placeholder="Example: JEE physics tutor">
           <label for="skill-instructions">Instructions for JARVIS</label>
           <textarea id="skill-instructions" rows="3" maxlength="2500" required placeholder="Explain the user's JEE physics question step by step, state assumptions, and check units and the final answer."></textarea>
+          <label for="skill-applications">Application targets <span class="muted">(comma separated IDs; use * for all)</span></label>
+          <input id="skill-applications" maxlength="900" required value="*" placeholder="*, web-dashboard, android-companion, com.android.chrome">
+          <p class="small muted">Use web-dashboard, android-companion, or a stable app/package ID such as com.android.chrome. The * target applies to every connected JARVIS surface.</p>
           <label for="skill-triggers">Trigger phrases <span class="muted">(comma separated)</span></label>
           <input id="skill-triggers" maxlength="700" required placeholder="explain JEE physics, solve physics question">
           <label for="skill-positive-test">Example that SHOULD match a trigger</label>
