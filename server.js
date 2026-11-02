@@ -2203,10 +2203,11 @@ app.delete("/api/research/saved/:id", requireAuth, async (req, res) => {
 });
 
 
-async function runDeviceVoiceCommand(message, device = {}) {
+async function runDeviceVoiceCommand(message, device = {}, applicationId = "android-companion") {
   const deviceKey = "device:" + (device.id || "unpaired");
+  const resolvedApplicationId = normalizeApplicationId(applicationId) || "android-companion";
   try {
-    return await processAssistantTurn(message, deviceKey, "android-companion");
+    return await processAssistantTurn(message, deviceKey, resolvedApplicationId);
   } catch (error) {
     console.error("Device voice command failed:", error?.name || "Error");
     throw new Error("The JARVIS assistant could not process this voice request.");
