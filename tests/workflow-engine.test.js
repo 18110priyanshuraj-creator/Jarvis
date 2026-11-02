@@ -292,6 +292,9 @@ test("a stop request is observed before the next action and paused runs can be c
   const paused = { ...run, status: "paused" };
   assert.equal(cancelWorkflowRun(paused).status, "cancelled");
   assert.throws(() => pauseWorkflowRun(paused), /queued or running/i);
+  const queuedPaused = pauseWorkflowRun({ ...run, status: "queued" });
+  assert.equal(queuedPaused.status, "paused");
+  assert.equal(queuedPaused.nextStepIndex, run.nextStepIndex);
 });
 
 
