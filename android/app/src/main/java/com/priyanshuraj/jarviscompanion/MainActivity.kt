@@ -299,6 +299,7 @@ class MainActivity : Activity() {
         showingSetup = false
         showingDashboard = true
         setContentView(screen)
+        dashboardWebView?.onResume()
 
         var restored = false
         if (restoreState != null) {
@@ -740,7 +741,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        dashboardWebView?.onResume()
+        if (showingDashboard) dashboardWebView?.onResume()
         refreshStatus()
         refreshPermissionChecklist()
         refreshActivityLog()
