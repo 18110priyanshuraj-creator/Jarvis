@@ -17,6 +17,13 @@ internal object ScreenObservationText {
     private val separatedNumber = Regex("""(?<![A-Za-z0-9])\+?\d[\d\s().-]{7,}\d(?![A-Za-z0-9])""")
     private val longNumber = Regex("""(?<!\d)\d{4,10}(?!\d)""")
     private val whitespace = Regex("""\s+""")
+    private val protectedScreenLabel = Regex(
+        """(?i)\b(password|passcode|pin|otp|one[- ]time (?:password|code)|verification code|security code|recovery code|cvv|cvc)\b"""
+    )
+
+    fun containsProtectedScreenLabel(lines: Iterable<String>): Boolean =
+        lines.any { protectedScreenLabel.containsMatchIn(it) }
+
 
     fun format(accessibilityText: String, visualLines: Iterable<String>): String {
         val accessible = cleanLines(accessibilityText.lineSequence())
