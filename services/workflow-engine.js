@@ -290,6 +290,21 @@ export async function advanceWorkflowRun(runInput, handlers, options = {}) {
     }
 
     const executionKey = run.id + ":" + index;
+    step.attempts = Math.max(0, Number(step.attempts) || 0) + 1;
+    if (step.attempts > 3) {
+      step.status = "failed";
+      run.status = "failed";
+      run.currentStepIndex = index;
+      addLog(run, {
+        stepIndex: index,
+        stepTitle: step.title,
+        status: "failed",
+        summary: "The step reached the maximum of three attempts. Review it before changing the workflow."
+      });
+      run.finishedAt = new Date().toISOString();
+      await checkpoint();
+      return run;
+    }
     step.status = "running";
     step.executionKey = executionKey;
     run.currentStepIndex = index;
@@ -355,6 +370,32 @@ export function resumeWorkflowRun(runInput) {
     stepTitle: "Workflow resumed",
     status: "running",
     summary: "Execution resumed from the last durable checkpoint."
+  });
+  return run;
+}
+
+export function retryWorkflowRun(runInput) {
+  const run = structuredClone(runInput);
+  if (run.status !== "failed") throw new Error("Only a failed workflow run can be retried.");
+  const index = Number.isInteger(run.currentStepIndex)
+    ? run.currentStepIndex
+    : Number.isInteger(run.nextStepIndex) ? run.nextStepIndex : -1;
+  const step = run.steps?.[index];
+  if (!step || step.status !== "failed") throw new Error("The failed step could not be identified safely.");
+  if ((Number(step.attempts) || 0) >= 3) throw new Error("This step reached the maximum of three attempts.");
+  step.lastFailure = step.result || null;
+  step.result = null;
+  step.status = "pending";
+  run.status = "running";
+  run.nextStepIndex = index;
+  run.currentStepIndex = null;
+  run.finishedAt = "";
+  run.updatedAt = new Date().toISOString();
+  addLog(run, {
+    stepIndex: index,
+    stepTitle: step.title,
+    status: "running",
+    summary: "A manual retry was approved. The runner will replay the same idempotency key for this step."
   });
   return run;
 }
