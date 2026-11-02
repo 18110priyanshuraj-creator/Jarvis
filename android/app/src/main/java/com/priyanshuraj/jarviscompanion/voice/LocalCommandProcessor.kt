@@ -217,7 +217,9 @@ object LocalCommandProcessor {
             .appendQueryParameter("q", query)
             .build()
         return try {
-            val intent = Intent(Intent.ACTION_VIEW, searchUri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val intent = Intent(Intent.ACTION_VIEW, searchUri)
+                .addCategory(Intent.CATEGORY_BROWSABLE)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
             PlannedActionResult(
                 true, false,
@@ -259,6 +261,7 @@ object LocalCommandProcessor {
             .appendQueryParameter("q", query)
             .build()
         val viewIntent = Intent(Intent.ACTION_VIEW, searchUri)
+            .addCategory(Intent.CATEGORY_BROWSABLE)
         val resolvedInfo = resolveViewActivity(context.packageManager, viewIntent)
         val expectedPackage = resolvedInfo?.activityInfo?.packageName.orEmpty()
         if (expectedPackage.isBlank() ||
