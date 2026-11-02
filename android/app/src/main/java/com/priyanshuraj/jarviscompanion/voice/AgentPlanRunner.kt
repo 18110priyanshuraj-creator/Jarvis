@@ -127,7 +127,7 @@ object AgentPlanRunner {
             }
             if (type == "open_web_search" &&
                 (!UiActionPolicy.validateTextPayload(value, 120).allowed ||
-                    Regex("""(?i)\\b(porn|xxx|adult content|vape|cigarette|weed|marijuana|cocaine|methamphetamine|steroids|how to make a bomb|explosive|weapon|gun|suicide|self.?harm)\\b""")
+                    Regex("""(?i)\b(porn|xxx|adult content|vape|cigarette|weed|marijuana|cocaine|methamphetamine|steroids|how to make a bomb|explosive|weapon|gun|suicide|self.?harm)\b""")
                         .containsMatchIn(value))
             ) {
                 throw IllegalArgumentException("The Google search phrase is outside the safe research policy.")
