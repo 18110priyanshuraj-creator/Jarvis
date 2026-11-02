@@ -39,7 +39,7 @@ Keep the native JARVIS orb as the Android launch screen, then expose the existin
 
 ## Lifecycle and recovery hardening
 
-- Save and restore the active dashboard WebView navigation state during Android activity recreation; restored URLs are re-checked against the same configured-origin/OAuth allow-list before display.
+- Save and restore the active dashboard WebView navigation state during Android activity recreation; restored URLs are re-checked against the configured JARVIS workspace-origin allow-list before display.
 - Flush WebView-managed cookies during instance-state save without copying credentials or cookies into application preferences or URL parameters.
 - Pause WebView timers and rendering when the Activity pauses or the user returns to the native orb/Setup, then resume when the Activity returns.
 - If Android reports that the WebView renderer process has exited, discard the destroyed WebView and recreate the dashboard on the configured server origin.
