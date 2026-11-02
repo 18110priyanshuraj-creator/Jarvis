@@ -1433,11 +1433,6 @@ class MainActivity : Activity() {
             refreshStatus("An Android task is active. Pause, resume or cancel it before starting another request.")
             return
         }
-        val localReply = jarvisCore.handleLocalCommand(message, source, allowUiActions = false)
-        if (!localReply.isNullOrBlank()) {
-            showAssistantReply(localReply)
-            return
-        }
 
         val notice = if (source == CoreCommandSource.SPEAK_ONCE &&
             VoicePrivacyPreferences.read(this) == VoicePrivacyMode.OFFLINE_ONLY
@@ -1448,13 +1443,31 @@ class MainActivity : Activity() {
         }
         refreshStatus(notice)
 
-        if (!jarvisCore.isRemoteConnected()) {
-            submitChatFallback(message, source)
-            return
-        }
-
         val requestId = ++planRequestGeneration
         executor.execute {
+            // The local memory Room database is not configured for main-thread reads.
+            val localReply = runCatching {
+                jarvisCore.handleLocalCommand(message, source, allowUiActions = false)
+            }.getOrElse { it.message ?: "The local Android command could not be completed." }
+
+            if (!localReply.isNullOrBlank()) {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed && requestId == planRequestGeneration) {
+                        showAssistantReply(localReply)
+                    }
+                }
+                return@execute
+            }
+
+            if (!jarvisCore.isRemoteConnected()) {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed && requestId == planRequestGeneration) {
+                        submitChatFallback(message, source)
+                    }
+                }
+                return@execute
+            }
+
             val planned = runCatching { jarvisCore.requestAgentPlan(message, source) }
             runOnUiThread {
                 if (isFinishing || isDestroyed || requestId != planRequestGeneration) return@runOnUiThread
