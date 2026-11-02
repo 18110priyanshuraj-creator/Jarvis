@@ -67,7 +67,7 @@ This is an old production snapshot, not an ancestor of current main. Comparing i
 
 The old snapshot contains 18 tree entries / 14 blobs. Current main contains 119 entries. Of the 14 old blobs, 12 have different content in main, one (`.gitignore`) is identical, and one old workflow file is absent. The older `.github/workflows/local-first-checks.yml` only ran Node syntax/tests; current `.github/workflows/check.yml` has the broader Node + dependency-audit + Android-build pipeline.
 
-The old production snapshot's application files are smaller earlier versions of files that exist in current main. Current main has a substantially expanded web/server application, modular backend services, Android source, and more tests. **The old files must not be overlaid onto main as a bulk merge.**
+The old production snapshot's application files are smaller earlier versions of files that exist in current main. Current main has a substantially expanded web/server application, modular backend services, Android source, and more tests. **The old files must not be overlaid onto main as a bulk merge.** The old data schema also contains durable chat transcripts and feedback prompt/note fields that the current schema deliberately does not retain. A data migration/backup is required independently of source-code reconciliation.
 
 However, the old data format matters: the previous server persisted a `chats` array in `data/state.json`. The current main normalizer omits `chats` and migrates the other supported collections. This creates a data-preservation gate before deploying main against the old production store. See `JARVIS_PHASE_0_AUDIT.md`.
 
