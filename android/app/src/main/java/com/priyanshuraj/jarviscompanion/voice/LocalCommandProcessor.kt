@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import com.priyanshuraj.jarviscompanion.accessibility.JarvisAccessibilityService
 import com.priyanshuraj.jarviscompanion.accessibility.ScreenObserver
@@ -172,6 +173,7 @@ object LocalCommandProcessor {
                     PlannedActionResult(result.ok, !result.ok, result.message)
                 }
             }
+            "open_web_search" -> openGoogleSearch(context, value)
             "verify_app_foreground" -> verifyAppForeground(context, value)
             "verify_screen_text" -> {
                 if (service == null) {
@@ -194,6 +196,37 @@ object LocalCommandProcessor {
             "ask_user" -> PlannedActionResult(true, true, value)
             "finish" -> PlannedActionResult(true, true, value)
             else -> PlannedActionResult(false, true, "JARVIS rejected an unsupported action.")
+        }
+    }
+
+    private fun openGoogleSearch(context: Context, rawQuery: String): PlannedActionResult {
+        val query = rawQuery.trim()
+        if (query.isBlank() || query.length > 120) {
+            return PlannedActionResult(false, true, "Enter a short Google search phrase.")
+        }
+        if (!UiActionPolicy.validateTextPayload(query, 120).allowed ||
+            Regex("""(?i)\\b(porn|xxx|adult content|vape|cigarette|weed|marijuana|cocaine|methamphetamine|steroids|how to make a bomb|explosive|weapon|gun|suicide|self.?harm)\\b""")
+                .containsMatchIn(query)
+        ) {
+            return PlannedActionResult(false, true, "This search phrase is outside JARVIS's safe public-research policy.")
+        }
+
+        val searchUri = Uri.parse("https://www.google.com/search")
+            .buildUpon()
+            .appendQueryParameter("q", query)
+            .build()
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW, searchUri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            PlannedActionResult(
+                true, false,
+                "Opened Google in the default browser. JARVIS has not selected a result or submitted a form."
+            )
+        } catch (_: Exception) {
+            PlannedActionResult(
+                false, true,
+                "Android could not open the default browser. Check that a browser is available and try again."
+            )
         }
     }
 
