@@ -29,10 +29,17 @@ export function normalizeApplicationId(value) {
 }
 
 function normalizeApplicationIds(value, strict = false) {
+  if (value === undefined) return ["*"];
   const provided = Array.isArray(value) || typeof value === "string";
-  if (!provided) return ["*"];
+  if (!provided) {
+    if (strict) throw new TypeError("Application targets must be a list of application IDs.");
+    return [];
+  }
   const values = Array.isArray(value) ? value : value.split(",");
-  if (!values.length) return ["*"];
+  if (!values.length) {
+    if (strict) throw new TypeError("Choose at least one application target.");
+    return [];
+  }
   const ids = [];
   for (const raw of values) {
     if (typeof raw !== "string" || !raw.trim()) continue;
