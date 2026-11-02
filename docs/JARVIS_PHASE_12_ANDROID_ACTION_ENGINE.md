@@ -62,11 +62,11 @@ Messages are deliberately honest: a successful result means Android accepted the
 ## Merge and final main-branch verification
 
 - Squash-merged through [PR #51](https://github.com/18110priyanshuraj-creator/Jarvis/pull/51).
-- Merge commit: \`13093c603519a1e89478384ebc52e23b53869d7a\`.
+- Merge commit: `13093c603519a1e89478384ebc52e23b53869d7a`.
 - Post-merge main CI [run 41431242469](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41431242469): both jobs passed.
 - Node.js: 197 tests passed, 0 failed; production dependency audit found 0 vulnerabilities.
 - Android unit tests, debug APK build, APK integrity verification, SHA-256 generation, and artifact upload all passed.
-- Final main debug artifact: \`jarvis-companion-debug\`, artifact ID \`13133489329\`, 23,972,123 bytes; GitHub retains it through 2026-11-09.
+- Final main debug artifact: `jarvis-companion-debug`, artifact ID `13133489329`, 23,972,123 bytes; GitHub retains it through 2026-11-09.
 
 ## Known limitations
 
