@@ -22,7 +22,7 @@ import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, mergeDup
 import { buildMemoryContext, findExactMemory, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, parseExplicitForgetIntent, previewMemoryContext, searchMemories } from "./services/memory.js";
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeSkill, pauseSkill, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
-import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, createWorkflowDraft, createWorkflowRun, normalizeWorkflow, pauseWorkflow, recoverInterruptedWorkflowRuns, resumeWorkflowRun, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
+import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, createWorkflowDraft, createWorkflowRun, normalizeWorkflow, pauseWorkflow, recoverInterruptedWorkflowRuns, resumeWorkflowRun, retryWorkflowRun, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
 import { createTaskPlan, TASK_PLANNER_LIMITS } from "./services/task-planner.js";
 import { getIntegrationCatalog, INTEGRATION_PROVIDER_IDS, probeIntegration, runIntegrationAction } from "./services/integrations.js";
 import { appendActionStatus, createPendingExternalAction, executeExternalAction, getExternalActionCapabilities, MAX_ACTION_HISTORY, MAX_PENDING_ACTIONS, normalizeExternalAction } from "./services/external-actions.js";
@@ -1829,6 +1829,26 @@ app.post("/api/workflow-runs/:id/resume", requireAuth, async (req, res) => {
     return res.status(409).json({ error: error.message || "Workflow run cannot be resumed." });
   }
   store.workflowRuns = store.workflowRuns.map((item) => item.id === existing.id ? resumed : item);
+  await saveStore();
+  if (req.get("Prefer") === "respond-async") {
+    scheduleWorkflowExecution(existing.id);
+    return res.status(202).json({ run: store.workflowRuns.find((item) => item.id === existing.id) });
+  }
+  const result = await executeWorkflowRun(existing.id);
+  res.json({ run: result });
+});
+
+app.post("/api/workflow-runs/:id/retry", requireAuth, async (req, res) => {
+  const existing = store.workflowRuns.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Workflow run not found." });
+  if (activeWorkflowExecutions.has(existing.id)) return res.status(409).json({ error: "This workflow run is already executing." });
+  let retried;
+  try {
+    retried = retryWorkflowRun(existing);
+  } catch (error) {
+    return res.status(409).json({ error: error.message || "Workflow run cannot be retried." });
+  }
+  store.workflowRuns = store.workflowRuns.map((item) => item.id === existing.id ? retried : item);
   await saveStore();
   if (req.get("Prefer") === "respond-async") {
     scheduleWorkflowExecution(existing.id);
