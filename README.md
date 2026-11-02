@@ -37,13 +37,17 @@ JARVIS is a private, single-owner assistant with a web dashboard and an Android 
 - Editing an approved skill creates a new draft version. The previous approved version remains active until the new version passes validation and is approved.
 - Skills can be paused or deleted. Paused skills are not added to conversation context.
 - Only approved, safe, trigger-matching skills are supplied as optional guidance to configured AI chat. They cannot override system/safety instructions or authorize external actions.
-- Legacy saved skills are migrated to version 1 to preserve their existing content. Skills with no trigger phrases are not automatically applied.
+- Legacy saved skills are migrated to version 1 to preserve their existing content. Skills created before application targeting default to the global `*` scope, retaining their previous behavior.
+- Each version has an explicit application scope: `*`, `web-dashboard`, `android-companion`, or up to 12 stable lower-case application/package IDs (for example, `com.android.chrome`). Editing a version preserves its existing scope unless the user explicitly changes it.
+- Trigger matching is evaluated only within the requested application scope. Web dashboard chat identifies itself as `web-dashboard`; the authenticated Android device voice route is assigned `android-companion` by the server rather than trusting a client-provided application ID.
+- The Skills screen displays and edits application targets. The authenticated `POST /api/skills/preview` endpoint reports which already-approved skills match a message and application ID without executing them.
 - The offline rule-based brain cannot interpret arbitrary skill instructions; without a configured conversational AI model, skills are stored and validated but are not executed as open-ended reasoning.
 
 ### Skill API
 
-- GET /api/skills — list skills.
-- POST /api/skills — create a draft.
+- GET /api/skills — list skills, application-surface catalog and limits.
+- POST /api/skills/preview — preview approved trigger matches for a message and application ID; read-only and static.
+- POST /api/skills — create a draft (optional `applicationIds`; omitted targets preserve legacy global behavior).
 - PATCH /api/skills/:id — create a new draft version.
 - POST /api/skills/:id/validate — run static trigger tests for the current version.
 - POST /api/skills/:id/approve — approve and activate a passing current version.
