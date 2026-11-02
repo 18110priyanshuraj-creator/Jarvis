@@ -16,8 +16,10 @@ class AgentPlanRunnerTest {
               "reply": "I will open Chrome and search for JEE Physics.",
               "actions": [
                 {"type":"open_app","value":"Chrome","purpose":"Open the requested app."},
+                {"type":"verify_app_foreground","value":"Chrome","purpose":"Confirm the requested app is foregrounded."},
                 {"type":"tap_label","value":"Search","purpose":"Open visible search."},
                 {"type":"type_text","value":"JEE Physics","purpose":"Enter search phrase."},
+                {"type":"verify_screen_text","value":"JEE Physics","purpose":"Confirm the expected query is visible."},
                 {"type":"ask_user","value":"Choose the result yourself.","purpose":"Keep result choice with the user."}
               ]
             }
@@ -25,10 +27,10 @@ class AgentPlanRunnerTest {
         )
 
         val actions = AgentPlanRunner.validate(plan)
-        assertEquals(4, actions.length())
+        assertEquals(6, actions.length())
         assertTrue(AgentPlanRunner.describe(plan).contains("Open Chrome"))
         assertEquals(
-            "open app → tap label → type text → ask user",
+            "open app → verify app → tap label → type text → verify screen → ask user",
             AgentPlanRunner.actionKinds(plan)
         )
     }
@@ -137,22 +139,49 @@ class AgentPlanRunnerTest {
     @Test
     fun requiresAccessibilityOnlyForActionsThatInspectOrOperateTheVisibleUi() {
         val openOnly = JSONObject(
-            """{"mode":"device_action","actions":[{"type":"open_app","value":"Calculator"}]}"""
+            """{"mode":"device_action","actions":[
+                {"type":"open_app","value":"Calculator"},
+                {"type":"verify_app_foreground","value":"Calculator"}
+            ]}"""
         )
         val searchPlan = JSONObject(
             """{"mode":"device_action","actions":[
                 {"type":"open_app","value":"Chrome"},
+                {"type":"verify_app_foreground","value":"Chrome"},
                 {"type":"tap_label","value":"Search"},
-                {"type":"type_text","value":"weather"}
+                {"type":"type_text","value":"weather"},
+                {"type":"verify_screen_text","value":"weather"}
             ]}"""
         )
         val askOnly = JSONObject(
             """{"mode":"device_action","actions":[{"type":"ask_user","value":"Choose a result manually."}]}"""
         )
 
-        assertFalse(AgentPlanRunner.requiresAccessibility(openOnly))
+        assertTrue(AgentPlanRunner.requiresAccessibility(openOnly))
         assertTrue(AgentPlanRunner.requiresAccessibility(searchPlan))
         assertFalse(AgentPlanRunner.requiresAccessibility(askOnly))
+    }
+
+    @Test
+    fun rejectsPlansThatCouldFinishWithoutCheckingTheRequestedOutcome() {
+        val unverifiedApp = JSONObject(
+            """{"mode":"device_action","actions":[{"type":"open_app","value":"YouTube"}]}"""
+        )
+        val mismatchedAppCheck = JSONObject(
+            """{"mode":"device_action","actions":[
+                {"type":"open_app","value":"YouTube"},
+                {"type":"verify_app_foreground","value":"Chrome"}
+            ]}"""
+        )
+        val unverifiedUiMutation = JSONObject(
+            """{"mode":"device_action","actions":[
+                {"type":"tap_label","value":"Search"},
+                {"type":"type_text","value":"JEE Physics"}
+            ]}"""
+        )
+        expectIllegalArgument { AgentPlanRunner.validate(unverifiedApp) }
+        expectIllegalArgument { AgentPlanRunner.validate(mismatchedAppCheck) }
+        expectIllegalArgument { AgentPlanRunner.validate(unverifiedUiMutation) }
     }
 
     @Test
