@@ -166,7 +166,8 @@ test("legacy skills migrate to the global application scope without losing activ
   const legacy = normalizeSkill({
     id: "legacy-global-skill",
     name: "Legacy global skill",
-    instructions: "Explain matching requests clearly and verify the final response."
+    instructions: "Explain matching requests clearly and verify the final response.",
+    triggers: ["explain matching requests"]
   });
   assert.deepEqual(legacy.applicationIds, ["*"]);
   assert.deepEqual(legacy.versions[0].applicationIds, ["*"]);
