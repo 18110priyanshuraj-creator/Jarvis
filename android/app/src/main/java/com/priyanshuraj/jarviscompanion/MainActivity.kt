@@ -79,6 +79,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingOAuthBrowserReturn = savedInstanceState
+            ?.getBoolean(STATE_PENDING_OAUTH_BROWSER_RETURN, false) ?: false
 
         val prefs = getSharedPreferences("jarvis_companion_settings", MODE_PRIVATE)
         serverUrlInput = EditText(this).apply {
@@ -769,11 +771,13 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         dashboardWebView?.onPause()
+        CookieManager.getInstance().flush()
         super.onPause()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean(STATE_SHOWING_DASHBOARD, showingDashboard)
+        outState.putBoolean(STATE_PENDING_OAUTH_BROWSER_RETURN, pendingOAuthBrowserReturn)
         if (showingDashboard) {
             val webViewState = Bundle()
             dashboardWebView?.saveState(webViewState)
@@ -1100,6 +1104,7 @@ class MainActivity : Activity() {
     companion object {
         private const val STATE_SHOWING_DASHBOARD = "jarvis.showing_dashboard"
         private const val STATE_DASHBOARD_WEBVIEW = "jarvis.dashboard_webview_state"
+        private const val STATE_PENDING_OAUTH_BROWSER_RETURN = "jarvis.pending_oauth_browser_return"
         private const val REQUEST_MICROPHONE = 7001
         private const val REQUEST_HANDS_FREE_PERMISSIONS = 7002
         private const val REQUEST_NOTIFICATIONS = 7003

@@ -65,3 +65,9 @@ Keep the native JARVIS orb as the Android launch screen, then expose the existin
 ## Return from Google sign-in
 
 When the Android Activity resumes after the external browser flow, the embedded dashboard reloads once so its existing authenticated session fetches the updated server-side Connections state. If the user cancels or leaves the browser before completing authorization, the reload is harmless and no connection is created.
+
+
+### Process recreation during OAuth
+
+- Persist the pending external-browser return flag in the Activity saved state. If Android recreates the app while Google sign-in is in the foreground, JARVIS still refreshes the dashboard when the user returns.
+- Flush WebView-managed cookies when the Activity pauses as well as during state save; application code never copies raw cookie values into app preferences or saved-state bundles.
