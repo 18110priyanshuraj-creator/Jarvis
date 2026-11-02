@@ -220,7 +220,7 @@ const RESPONSE_SCHEMA = {
         properties: {
           type: {
             type: "string",
-            enum: ["open_app", "verify_app_foreground", "read_screen", "tap_label", "type_text", "scroll_down", "scroll_up", "back", "home", "verify_screen_text", "ask_user", "finish"]
+            enum: ["open_app", "verify_app_foreground", "open_web_search", "read_screen", "tap_label", "type_text", "scroll_down", "scroll_up", "back", "home", "verify_screen_text", "ask_user", "finish"]
           },
           value: { type: "string" },
           purpose: { type: "string" }
