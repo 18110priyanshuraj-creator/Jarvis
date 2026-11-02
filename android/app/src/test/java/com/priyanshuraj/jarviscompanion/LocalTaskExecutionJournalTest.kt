@@ -40,6 +40,7 @@ class LocalTaskExecutionJournalTest {
         assertEquals(1, afterFirstStep?.currentStepIndex)
         assertEquals(listOf("completed", "pending", "pending"), afterFirstStep?.stepStatuses)
 
+        LocalTaskExecutionJournal.setState(app, id, "paused", currentStepIndex = 1)
         val recovered = LocalTaskExecutionJournal.recoverInterrupted(app)
         assertEquals(1, recovered.size)
         assertEquals(id, recovered.single().id)
