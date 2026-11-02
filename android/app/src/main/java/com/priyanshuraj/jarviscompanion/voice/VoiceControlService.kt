@@ -375,9 +375,9 @@ class VoiceControlService : Service() {
                         resumeActivePlan = null
                         if (running) speak(result)
                     }
-                    cancelActivePlan = controls.cancel
-                    pauseActivePlan = controls.pause
-                    resumeActivePlan = controls.resume
+                    cancelActivePlan = controls?.cancel
+                    pauseActivePlan = controls?.pause
+                    resumeActivePlan = controls?.resume
                 }
                 -1 -> {
                     cancelPendingPlan("The user rejected the pending plan.")
@@ -390,6 +390,8 @@ class VoiceControlService : Service() {
 
         cancelActivePlan?.invoke()
         cancelActivePlan = null
+        pauseActivePlan = null
+        resumeActivePlan = null
         val requestId = ++requestGeneration
 
         val localResponse = core.handleLocalCommand(
