@@ -3,6 +3,7 @@ package com.priyanshuraj.jarviscompanion.voice
 import android.content.Context
 import android.os.Handler
 import com.priyanshuraj.jarviscompanion.LocalTaskExecutionJournal
+import com.priyanshuraj.jarviscompanion.accessibility.JarvisAccessibilityService
 import com.priyanshuraj.jarviscompanion.accessibility.UiActionPolicy
 import org.json.JSONArray
 import org.json.JSONObject
@@ -12,6 +13,36 @@ data class AgentPlanControls(
     val pause: () -> Unit,
     val resume: () -> Unit
 )
+
+enum class AgentPlanMode {
+    DEVICE_ACTION,
+    CONVERSATION,
+    CLARIFICATION
+}
+
+/** Process-wide gate shared by orb, one-shot voice and hands-free task execution. */
+object AgentPlanExecutionGate {
+    private var activeExecutionId: String? = null
+
+    @Synchronized
+    fun isBusy(): Boolean = activeExecutionId != null
+
+    @Synchronized
+    fun acquire(executionId: String): Boolean {
+        require(executionId.isNotBlank()) { "An execution ID is required." }
+        if (activeExecutionId != null) return false
+        activeExecutionId = executionId
+        return true
+    }
+
+    @Synchronized
+    fun release(executionId: String) {
+        if (activeExecutionId == executionId) activeExecutionId = null
+    }
+
+    @Synchronized
+    fun activeIdForTests(): String? = activeExecutionId
+}
 
 object AgentPlanRunner {
     private val allowed = setOf(
@@ -23,7 +54,51 @@ object AgentPlanRunner {
      * Validate every action on-device before the plan is previewed or executed.
      * This is a conservative allow-list, not a guarantee that an app's UI is safe.
      */
+    fun mode(plan: JSONObject): AgentPlanMode {
+        return when (plan.optString("mode")) {
+            "device_action" -> {
+                validate(plan)
+                AgentPlanMode.DEVICE_ACTION
+            }
+            "conversation" -> {
+                requireNoDeviceActions(plan)
+                AgentPlanMode.CONVERSATION
+            }
+            "clarification" -> {
+                requireNoDeviceActions(plan)
+                AgentPlanMode.CLARIFICATION
+            }
+            else -> throw IllegalArgumentException("The plan contains an unsupported request mode.")
+        }
+    }
+
+    private fun requireNoDeviceActions(plan: JSONObject) {
+        val actions = plan.optJSONArray("actions")
+        if (actions != null && actions.length() > 0) {
+            throw IllegalArgumentException("Conversation and clarification plans cannot contain device actions.")
+        }
+    }
+
+    fun requiresAccessibility(plan: JSONObject): Boolean {
+        val actions = validate(plan)
+        val accessibilityActions = setOf(
+            "read_screen", "tap_label", "type_text",
+            "scroll_down", "scroll_up", "back", "home"
+        )
+        return (0 until actions.length()).any { index ->
+            actions.getJSONObject(index).optString("type") in accessibilityActions
+        }
+    }
+
+    fun executionBlockReason(plan: JSONObject): String? =
+        if (requiresAccessibility(plan) && JarvisAccessibilityService.activeService == null) {
+            "This task needs the JARVIS screen assistant. Enable it manually in Android Accessibility settings; no action has been started."
+        } else null
+
     fun validate(plan: JSONObject): JSONArray {
+        if (plan.optString("mode") != "device_action") {
+            throw IllegalArgumentException("Only device-action plans can be executed on Android.")
+        }
         val actions = plan.optJSONArray("actions")
             ?: throw IllegalArgumentException("The plan contains no action list.")
         if (actions.length() !in 1..6) {
@@ -115,12 +190,23 @@ object AgentPlanRunner {
         context: Context,
         plan: JSONObject,
         handler: Handler,
+        onProgress: (Int, Boolean) -> Unit = { _, _ -> },
         onComplete: (String) -> Unit
     ): AgentPlanControls? {
         val actions = try {
             validate(plan)
         } catch (error: Exception) {
             onComplete(error.message ?: "JARVIS rejected an invalid action plan.")
+            return null
+        }
+
+        val blockedReason = executionBlockReason(plan)
+        if (blockedReason != null) {
+            onComplete(blockedReason)
+            return null
+        }
+        if (AgentPlanExecutionGate.isBusy()) {
+            onComplete("Another Android task is already active. Finish, pause or cancel it before starting another task.")
             return null
         }
 
@@ -132,6 +218,12 @@ object AgentPlanRunner {
             LocalTaskExecutionJournal.start(context, taskKinds)
         } catch (error: Exception) {
             onComplete(error.message ?: "JARVIS could not save task progress. No Android actions were started.")
+            return null
+        }
+
+        if (!AgentPlanExecutionGate.acquire(journalId)) {
+            LocalTaskExecutionJournal.finish(context, journalId, "cancelled")
+            onComplete("Another Android task started first. No action from this plan was run.")
             return null
         }
 
@@ -166,9 +258,14 @@ object AgentPlanRunner {
                 LocalTaskExecutionJournal.checkpoint(
                     context, journalId, index, result.success, result.shouldStop
                 )
+                onProgress(index, result.success)
             },
             onTerminal = { status ->
-                LocalTaskExecutionJournal.finish(context, journalId, status)
+                try {
+                    LocalTaskExecutionJournal.finish(context, journalId, status)
+                } finally {
+                    AgentPlanExecutionGate.release(journalId)
+                }
             },
             onComplete = { messages ->
                 onComplete(messages.joinToString(". ").take(1200))
