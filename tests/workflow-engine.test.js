@@ -351,7 +351,7 @@ test("workflow step timeout fails only the current step and prevents later work"
   const failed = await advanceWorkflowRun(run, {
     draft_text: async (step) => {
       if (step.title === "Slow draft") {
-        await new Promise((resolve) => setTimeout(resolve, 40));
+        await new Promise((resolve) => setTimeout(resolve, 180));
         return { summary: "Late draft result." };
       }
       laterCalled = true;
