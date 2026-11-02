@@ -103,7 +103,11 @@ function normalizeScene(scene, index, format, now) {
   const onScreenText = cleanText(scene?.onScreenText || scene?.caption, 120);
   const visualPrompt = cleanText(scene?.visualPrompt || scene?.visualDirection, MAX_VISUAL_PROMPT);
   if (!voiceover && !onScreenText) throw new TypeError("Every scene needs narration or on-screen text.");
-  if (RESTRICTED_MEDIA_PATTERN.test([heading, voiceover, onScreenText, visualPrompt].join(" "))) {
+  const sceneText = [heading, voiceover, onScreenText, visualPrompt].join("\n");
+  if (SECRET_PATTERN.test(sceneText) || TOKEN_PATTERN.test(sceneText)) {
+    throw new TypeError("JARVIS will not keep scene content that appears to contain a credential or secret.");
+  }
+  if (RESTRICTED_MEDIA_PATTERN.test(sceneText)) {
     throw new TypeError("This media request is outside the supported safe-content scope.");
   }
   return {
