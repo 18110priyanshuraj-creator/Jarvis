@@ -726,7 +726,29 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   const integratedRun = await integratedRunResponse.json();
   assert.equal(integratedRun.run.status, "failed");
   assert.match(integratedRun.run.steps[0].result.error, /JARVIS_GITHUB_TOKEN/);
+  assert.equal(integratedRun.run.steps[0].attempts, 1);
   assert.equal(JSON.stringify(integratedRun).includes("demo-github-value"), false);
+
+  const retryOnce = await request("/api/workflow-runs/" + integratedRun.run.id + "/retry", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(retryOnce.status, 200);
+  const retryOncePayload = await retryOnce.json();
+  assert.equal(retryOncePayload.run.status, "failed");
+  assert.equal(retryOncePayload.run.steps[0].attempts, 2);
+  assert.equal(retryOncePayload.run.steps[0].executionKey, integratedRun.run.steps[0].executionKey);
+
+  const retryTwice = await request("/api/workflow-runs/" + integratedRun.run.id + "/retry", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(retryTwice.status, 200);
+  const retryTwicePayload = await retryTwice.json();
+  assert.equal(retryTwicePayload.run.steps[0].attempts, 3);
+
+  const retryBeyondLimit = await request("/api/workflow-runs/" + integratedRun.run.id + "/retry", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(retryBeyondLimit.status, 409);
 
   const createFeedback = await request("/api/feedback", {
     method: "POST",
