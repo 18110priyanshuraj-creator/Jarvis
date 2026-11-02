@@ -208,6 +208,7 @@ class NativeCoreRuntime(context: Context) {
     private val ledgerExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val database = Room.databaseBuilder(appContext, JarvisCoreDatabase::class.java, DATABASE_NAME).build()
     private val ledger = CoreExecutionLedger(database.executionDao(), ledgerExecutor)
+    private val systemController = LocalSystemController(AndroidLocalSystemPlatform(appContext))
 
     private data class RemoteCredentials(val serverUrl: String, val token: String)
 
@@ -233,7 +234,7 @@ class NativeCoreRuntime(context: Context) {
             val startedAt = System.currentTimeMillis()
             val dispatcher = NativeCommandDispatcher(
                 localCommand = { text, allowActions ->
-                    LocalCommandProcessor.handle(appContext, text, allowActions)
+                    systemController.handle(text) ?: LocalCommandProcessor.handle(appContext, text, allowActions)
                 },
                 remoteAvailable = { remoteCredentials() != null },
                 remoteAssistant = { text ->
@@ -262,7 +263,8 @@ class NativeCoreRuntime(context: Context) {
     fun handleLocalCommand(message: String, source: CoreCommandSource, allowUiActions: Boolean): String? {
         val startedAt = System.currentTimeMillis()
         return try {
-            val result = LocalCommandProcessor.handle(appContext, message, allowUiActions)
+            val result = systemController.handle(message)
+                ?: LocalCommandProcessor.handle(appContext, message, allowUiActions)
             ledger.record(
                 source,
                 if (result == null) CoreCommandRoute.INVALID else CoreCommandRoute.LOCAL,
