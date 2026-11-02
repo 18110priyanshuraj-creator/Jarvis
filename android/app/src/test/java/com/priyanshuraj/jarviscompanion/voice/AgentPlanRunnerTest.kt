@@ -2,6 +2,7 @@ package com.priyanshuraj.jarviscompanion.voice
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -37,6 +38,7 @@ class AgentPlanRunnerTest {
         val plan = JSONObject(
             """
             {
+              "mode": "device_action",
               "actions": [
                 {"type":"tap_label","value":"Delete account"}
               ]
@@ -52,6 +54,7 @@ class AgentPlanRunnerTest {
         val passwordPlan = JSONObject(
             """
             {
+              "mode": "device_action",
               "actions": [
                 {"type":"type_text","value":"my password is secret"}
               ]
@@ -61,6 +64,7 @@ class AgentPlanRunnerTest {
         val numericCodePlan = JSONObject(
             """
             {
+              "mode": "device_action",
               "actions": [
                 {"type":"type_text","value":"123456"}
               ]
@@ -78,6 +82,7 @@ class AgentPlanRunnerTest {
             val plan = JSONObject(
                 """
                 {
+                  "mode": "device_action",
                   "actions": [
                     {"type":"tap_label","value":"$label"}
                   ]
@@ -90,6 +95,7 @@ class AgentPlanRunnerTest {
         val cvvPlan = JSONObject(
             """
             {
+              "mode": "device_action",
               "actions": [
                 {"type":"type_text","value":"CVV 123"}
               ]
@@ -106,8 +112,63 @@ class AgentPlanRunnerTest {
         val actions = (1..7).joinToString(",") {
             """{"type":"open_app","value":"App $it"}"""
         }
-        val oversized = JSONObject("""{"actions":[$actions]}""")
+        val oversized = JSONObject("""{"mode":"device_action","actions":[$actions]}""")
         expectIllegalArgument { AgentPlanRunner.validate(oversized) }
+    }
+
+    @Test
+    fun classifiesConversationAndClarificationWithoutAllowingHiddenActions() {
+        val conversation = JSONObject(
+            """{"mode":"conversation","reply":"Here is an explanation.","actions":[]}"""
+        )
+        val clarification = JSONObject(
+            """{"mode":"clarification","reply":"Which app do you mean?","actions":[]}"""
+        )
+        assertEquals(AgentPlanMode.CONVERSATION, AgentPlanRunner.mode(conversation))
+        assertEquals(AgentPlanMode.CLARIFICATION, AgentPlanRunner.mode(clarification))
+
+        val invalidConversation = JSONObject(
+            """{"mode":"conversation","reply":"Opening the app.","actions":[{"type":"open_app","value":"YouTube"}]}"""
+        )
+        expectIllegalArgument { AgentPlanRunner.mode(invalidConversation) }
+        expectIllegalArgument { AgentPlanRunner.validate(conversation) }
+    }
+
+    @Test
+    fun requiresAccessibilityOnlyForActionsThatInspectOrOperateTheVisibleUi() {
+        val openOnly = JSONObject(
+            """{"mode":"device_action","actions":[{"type":"open_app","value":"Calculator"}]}"""
+        )
+        val searchPlan = JSONObject(
+            """{"mode":"device_action","actions":[
+                {"type":"open_app","value":"Chrome"},
+                {"type":"tap_label","value":"Search"},
+                {"type":"type_text","value":"weather"}
+            ]}"""
+        )
+        val askOnly = JSONObject(
+            """{"mode":"device_action","actions":[{"type":"ask_user","value":"Choose a result manually."}]}"""
+        )
+
+        assertFalse(AgentPlanRunner.requiresAccessibility(openOnly))
+        assertTrue(AgentPlanRunner.requiresAccessibility(searchPlan))
+        assertFalse(AgentPlanRunner.requiresAccessibility(askOnly))
+    }
+
+    @Test
+    fun onlyOneAndroidTaskCanOwnTheSharedExecutionGate() {
+        assertFalse(AgentPlanExecutionGate.isBusy())
+        assertTrue(AgentPlanExecutionGate.acquire("hands-free-task"))
+        try {
+            assertTrue(AgentPlanExecutionGate.isBusy())
+            assertFalse(AgentPlanExecutionGate.acquire("orb-task"))
+            AgentPlanExecutionGate.release("orb-task")
+            assertEquals("hands-free-task", AgentPlanExecutionGate.activeIdForTests())
+            assertTrue(AgentPlanExecutionGate.isBusy())
+        } finally {
+            AgentPlanExecutionGate.release("hands-free-task")
+        }
+        assertFalse(AgentPlanExecutionGate.isBusy())
     }
 
     private fun expectIllegalArgument(block: () -> Unit) {
