@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   advanceWorkflowRun,
+  classifyWorkflowError,
+  getWorkflowRecoverySummary,
   approveWorkflow,
   cancelWorkflowRun,
   createWorkflowDraft,
@@ -298,6 +300,77 @@ test("a stop request is observed before the next action and paused runs can be c
 });
 
 
+test("workflow failure classification exposes safe, actionable categories", () => {
+  assert.deepEqual(classifyWorkflowError(new Error("Request timed out after 25000 ms.")), {
+    code: "timeout", category: "transient", retryable: true,
+    message: "The step timed out. Check whether it completed before retrying."
+  });
+  assert.equal(classifyWorkflowError(new Error("The service rate limit was reached (429).")).code, "rate_limited");
+  assert.equal(classifyWorkflowError(new Error("Could not connect to the external service.")).code, "network_unavailable");
+  assert.equal(classifyWorkflowError(new Error("GitHub is not configured.")).code, "configuration_missing");
+  assert.equal(classifyWorkflowError(new Error("The service rejected the configured credential.")).code, "authentication_required");
+  assert.equal(classifyWorkflowError(new Error("The account lacks permission.")).code, "permission_denied");
+  assert.equal(classifyWorkflowError(new Error("Task limit reached.")).code, "resource_limit");
+  assert.equal(classifyWorkflowError(new Error("An unfamiliar failure occurred.")).retryable, false);
+});
+
+test("failed workflow records contain sanitized error summaries rather than raw exception text", async () => {
+  const workflow = approveWorkflow(validateWorkflow(createWorkflowDraft({
+    name: "Sanitized recovery test",
+    steps: [{ type: "draft_text", title: "Prepare a draft", content: "Prepare a safe draft for sanitized failure testing." }]
+  })).workflow);
+  const run = createWorkflowRun(workflow);
+  const secretLikeMessage = "Connection failed while request contained bearer abcdefghijklmnop and user@example.com.";
+  const failed = await advanceWorkflowRun(run, {
+    draft_text: async () => { throw new Error(secretLikeMessage); }
+  });
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.failure.code, "network_unavailable");
+  assert.equal(failed.failure.retryable, true);
+  assert.ok(failed.steps[0].result.error.includes("connection"));
+  assert.equal(JSON.stringify(failed).includes("abcdefghijklmnop"), false);
+  assert.equal(JSON.stringify(failed).includes("user@example.com"), false);
+});
+
+test("recovery preview separates manual retries from fixes and never schedules automatic recovery", async () => {
+  const workflow = approveWorkflow(validateWorkflow(createWorkflowDraft({
+    name: "Recovery preview",
+    steps: [{ type: "draft_text", title: "Prepare a draft", content: "Prepare a safe draft for recovery preview testing." }]
+  })).workflow);
+  const run = createWorkflowRun(workflow);
+  const transient = await advanceWorkflowRun(run, {
+    draft_text: async () => { throw new Error("Temporary writer connection unavailable."); }
+  });
+  const preview = getWorkflowRecoverySummary(transient);
+  assert.equal(preview.canRetry, true);
+  assert.equal(preview.canResume, false);
+  assert.equal(preview.automaticRecovery, false);
+  assert.equal(preview.nextAction, "retry_manually");
+  assert.equal(preview.attempts, 1);
+  assert.equal(preview.maxAttempts, 3);
+  assert.equal(preview.failure.code, "network_unavailable");
+
+  const permanent = await advanceWorkflowRun(createWorkflowRun(workflow), {
+    draft_text: async () => { throw new Error("The integration is not configured."); }
+  });
+  const permanentPreview = getWorkflowRecoverySummary(permanent);
+  assert.equal(permanentPreview.canRetry, false);
+  assert.equal(permanentPreview.nextAction, "review_or_fix");
+  assert.equal(permanentPreview.failure.code, "configuration_missing");
+});
+
+test("non-transient workflow failures cannot be manually retried", async () => {
+  const workflow = approveWorkflow(validateWorkflow(createWorkflowDraft({
+    name: "Do not retry configuration",
+    steps: [{ type: "draft_text", title: "Prepare a draft", content: "Prepare a safe draft for non-retryable configuration testing." }]
+  })).workflow);
+  const failed = await advanceWorkflowRun(createWorkflowRun(workflow), {
+    draft_text: async () => { throw new Error("Provider credential is not configured."); }
+  });
+  assert.equal(failed.failure.code, "configuration_missing");
+  assert.throws(() => retryWorkflowRun(failed), /not safe to retry/i);
+});
+
 test("manual retry replays only the failed step with a bounded attempt count", async () => {
   const workflow = approveWorkflow(validateWorkflow(createWorkflowDraft({
     name: "Retry a failed local draft",
@@ -365,7 +438,9 @@ test("workflow step timeout fails only the current step and prevents later work"
   assert.equal(WORKFLOW_STEP_TIMEOUT_MS, 60_000);
   assert.equal(failed.status, "failed");
   assert.equal(failed.steps[0].status, "failed");
-  assert.match(failed.steps[0].result.error, /timed out after 100 ms/i);
+  assert.equal(failed.steps[0].result.failure.code, "timeout");
+  assert.equal(failed.steps[0].result.failure.retryable, true);
+  assert.equal(failed.steps[0].result.error.includes("100 ms"), false);
   assert.equal(failed.steps[1].status, "pending");
   assert.equal(laterCalled, false);
 });
