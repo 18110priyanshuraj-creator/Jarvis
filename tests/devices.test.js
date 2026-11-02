@@ -165,10 +165,17 @@ test("paired Android devices can authenticate, use voice chat, and be revoked", 
   assert.equal(unsupportedPlan.status, 503);
   assert.equal((await unsupportedPlan.json()).code, "AI_NOT_CONFIGURED");
 
+  const invalidAppScope = await request("/api/devices/voice-command", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + paired.deviceToken },
+    body: JSON.stringify({ message: "calculate 2 + 2", applicationId: "com.example/app" })
+  });
+  assert.equal(invalidAppScope.status, 400);
+
   const voice = await request("/api/devices/voice-command", {
     method: "POST",
     headers: { Authorization: "Bearer " + paired.deviceToken },
-    body: JSON.stringify({ message: "calculate 2 + 2" })
+    body: JSON.stringify({ message: "calculate 2 + 2", applicationId: "com.android.chrome" })
   });
   assert.equal(voice.status, 200);
   const voicePayload = await voice.json();
