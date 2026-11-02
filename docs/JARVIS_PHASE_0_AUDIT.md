@@ -133,13 +133,13 @@ The earlier production branch had 18 tree entries and 14 file blobs. Comparing i
 
 The missing old workflow is a simple Node syntax/integration workflow. The current `.github/workflows/check.yml` runs the Node suite, production dependency audit and Android build, so the old workflow is superseded rather than a missing product capability.
 
-The old server persisted `chats`, `memories`, `tasks`, `feedback` and `skills` in JSON state. The current `normalizeStore()` retains normalized memories, tasks, feedback, skills and the newer collections, but does not include the legacy `chats` property. Current `loadStore()` normalizes and saves legacy JSON state. Its code comments explicitly state that durable chat transcripts are removed. This is a real migration/data-retention behavior, not a hypothetical branch merge conflict.
+The old server persisted `chats`, `memories`, `tasks`, `feedback` and `skills` in JSON state. The current `normalizeStore()` retains normalized memories, tasks, feedback, skills and the newer collections, but does not include the legacy `chats` property. Current `loadStore()` normalizes and saves legacy JSON state. Its code comments explicitly state that durable chat transcripts are removed. The new feedback normalizer also intentionally ignores the old feedback `prompt` and `note` fields, retaining only the structured rating/category/suggestion metadata allowed by the new privacy policy. This is a real migration/data-retention behavior, not a hypothetical branch merge conflict.
 
 Required before any production redeploy:
 1. Determine whether the old production state file or a durable database currently exists.
 2. Create and verify a protected backup of the old state before starting the new server against it.
 3. Export or archive old chat history if it is to be retained; do not silently destroy it.
-4. Run a migration against a disposable copy and compare record counts/content for memories, tasks, feedback and skills.
+4. Run a migration against a disposable copy and compare record counts/content for memories, tasks and skills; quantify the old feedback prompt/note fields that are intentionally omitted and preserve any required archive separately.
 5. Confirm the current privacy policy for chat-history retention and get an explicit decision before discarding old chats.
 6. Verify the active `DATABASE_URL`/storage mode through authenticated diagnostics without exposing the secret value.
 
