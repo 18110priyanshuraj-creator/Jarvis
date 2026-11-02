@@ -1424,6 +1424,10 @@ class MainActivity : Activity() {
     }
 
     private fun dispatchCoreCommand(message: String, source: CoreCommandSource) {
+        if (AgentPlanExecutionGate.isBusy()) {
+            refreshStatus("An Android task is active. Pause, resume or cancel it before starting another request.")
+            return
+        }
         val localReply = jarvisCore.handleLocalCommand(message, source, allowUiActions = false)
         if (!localReply.isNullOrBlank()) {
             showAssistantReply(localReply)
