@@ -1434,7 +1434,7 @@ async function watchWorkflowRun(runId) {
     await new Promise((resolve) => setTimeout(resolve, 750));
     await refreshWorkflows();
     const run = state.workflowRuns.find((item) => item.id === runId);
-    if (!run || run.status !== "running") return;
+    if (!run || !["queued", "running"].includes(run.status)) return;
   }
 }
 
@@ -1481,7 +1481,7 @@ function renderWorkflows() {
       }
 
       const activeRun = state.workflowRuns.find((run) =>
-        run.workflowId === workflow.id && ["running", "waiting_review", "paused"].includes(run.status)
+        run.workflowId === workflow.id && ["queued", "running", "waiting_review", "paused"].includes(run.status)
       );
       const actions = document.createElement("div");
       actions.className = "workflow-actions";
@@ -1789,7 +1789,7 @@ function renderWorkflows() {
         });
         actions.append(resumeButton);
       }
-      if (run.status === "running") {
+      if (["queued", "running"].includes(run.status)) {
         const pauseButton = document.createElement("button");
         pauseButton.type = "button";
         pauseButton.className = "item-action";
@@ -1809,7 +1809,7 @@ function renderWorkflows() {
         });
         actions.append(pauseButton);
       }
-      if (["running", "waiting_review", "paused"].includes(run.status)) {
+      if (["queued", "running", "waiting_review", "paused"].includes(run.status)) {
         const stopButton = document.createElement("button");
         stopButton.type = "button";
         stopButton.className = "item-action";
