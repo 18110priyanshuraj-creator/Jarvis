@@ -126,6 +126,7 @@ export function createMediaWorkspace({ api, toast }) {
       durationInput.step = "1";
       durationInput.value = String(scene.durationSeconds);
       durationInput.dataset.field = "durationSeconds";
+      durationInput.disabled = currentProject.format === "square-carousel";
       duration.append(durationInput);
       heading.append(duration);
       card.append(heading);
@@ -621,6 +622,18 @@ export function createMediaWorkspace({ api, toast }) {
       }
     });
 
+    byId("media-editor-scenes")?.addEventListener("input", (event) => {
+      const field = event.target?.dataset?.field;
+      const card = event.target?.closest?.(".media-scene-editor");
+      if (!field || !card || !currentProject) return;
+      const cards = [...byId("media-editor-scenes").querySelectorAll(".media-scene-editor")];
+      const index = cards.indexOf(card);
+      if (index < 0 || !currentProject.scenes[index]) return;
+      currentProject.scenes[index][field] = field === "durationSeconds"
+        ? Number(event.target.value)
+        : event.target.value;
+      renderPreview(currentProject, index);
+    });
     byId("media-add-scene")?.addEventListener("click", addScene);
     byId("media-save-button")?.addEventListener("click", async () => {
       const button = byId("media-save-button");
