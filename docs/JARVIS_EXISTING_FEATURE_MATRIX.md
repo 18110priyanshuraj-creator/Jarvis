@@ -1,13 +1,13 @@
 # JARVIS Existing Feature Matrix
 
 **Snapshot:** 2026-11-02  
-**Source branch:** `main` at `1ed891ae5fc45c462843e1ed3f62fd1a841ac31a`
+**Source baseline:** `main` at `90741abf4ee5a592ff025cf26f3ab5fed62cef48` (2026-11-02); Phase 15 verification hardening is tracked separately in PR #55.
 
 This matrix describes what exists in source and what is supported by test/deployment evidence. "Implemented" does not imply a physical-device or live-provider test.
 
 | Capability | Existing implementation | Status | Verified evidence / limitation |
 |---|---|---|---|
-| Browser orbital interface | `public/index.html`, `public/orbital-visual.js`, `public/style.css` | PARTIAL | Orbital voice experience is the browser Assistant view; the Android launcher does not open this orb. |
+| Browser and native orbital interfaces | `public/index.html`, `public/orbital-visual.js`, `OrbitalOrbView.kt` | PARTIAL | Browser Assistant view and a native Android orb exist. The native orb is the Android launcher home; full parity and actual Galaxy Tab A9 visual/performance acceptance remain pending. |
 | Unified application shell | Browser views for Assistant, Devices, Research, Knowledge, Tasks, Memory, Skills, Experience, Workflows, Connections, Action Center and System Status | PARTIAL | A single web shell exists, but the Android Companion remains a separate application and not all functionality is inside one APK. |
 | Native Android app | Kotlin app under `android/app/` | PARTIAL | CI builds the debug APK; app is still labelled/structured as a Companion and opens pairing/permissions/voice controls. |
 | Local system controller | `server.js`, `services/`, Android voice and accessibility packages | PARTIAL | Modular services exist, but there is no single on-device controller owning every capability. |
@@ -16,12 +16,12 @@ This matrix describes what exists in source and what is supported by test/deploy
 | Hindi/Hinglish/English interpretation | Regex/rule-based phrase handling and optional planner adapter | PARTIAL | Selected Hindi/Hinglish/English command patterns are covered; unrestricted mixed-language understanding is not. |
 | Persistent memory | `services/memory.js`, server state and Memory UI | PARTIAL | User-approved preference/goal/fact records support search/edit/delete. Storage is server-side JSON/Neon, not an Android-local Room database. |
 | Task planning | `services/agent-planner.js` | PARTIAL | Optional provider planner plus bounded deterministic app-search patterns; current plan is capped and validates allow-listed actions. |
-| Persistent task/workflow execution | `services/workflow-engine.js` | PARTIAL | Validated/approved workflows, bounded steps, logs and review checkpoints exist. Android action sequences are cancellable but are not a general durable cross-restart task runtime. |
-| Screen perception | `ScreenObserver.kt`, `JarvisAccessibilityService.kt` | PARTIAL | Bounded accessibility-tree text summary after explicit request. No general screenshot/vision perception engine. |
-| Android action engine | `UIActionExecutor.kt`, `AgentPlanRunner.kt` | PARTIAL | App launch, exact visible-label click, focused non-sensitive text entry, scroll, Back and Home. No arbitrary gestures or unrestricted app automation. |
+| Persistent task/workflow execution | `services/workflow-engine.js`, `LocalTaskExecutionJournal.kt`, `CancellableActionSequence.kt` | PARTIAL | Server workflows have durable checkpoints/retry; Android sequences persist generic per-step checkpoints and stop safely after interruption, requiring manual replan rather than automatic replay. Android journal is bounded and local. |
+| Screen perception | `ScreenObserver.kt`, `JarvisAccessibilityService.kt` | PARTIAL | Explicit one-shot accessibility summaries and on-device OCR/screenshot reading are present with sensitive-screen protection. Not a continuous or general visual-understanding engine. |
+| Android action engine | `UIActionExecutor.kt`, `UiActionPolicy.kt`, `AgentPlanRunner.kt` | PARTIAL | Bounded app launch, exact visible-label click, focused non-sensitive text entry, scroll, Back and Home. PR #55 adds required foreground-app and visible-text outcome checks; arbitrary gestures and unrestricted app automation remain unsupported. |
 | Skill registry | `services/skill-engine.js` and Skills UI | PARTIAL | Versioned instruction/trigger records, static validation, tests and approval. It does not execute newly generated code. |
 | Error detection/recovery | Workflow runner, action sequence failure checks and retry boundaries | PARTIAL | Some failures stop later steps and preserve status; no general autonomous root-cause repair engine. |
-| Full Android task integration | Device pairing, planner, accessibility and cancellable action sequence | PARTIAL | Bounded app-search workflow; not full cross-app execution or Canva/YouTube automation. |
+| Full Android task integration | Device pairing, planner, accessibility, approval, cancellable sequence and local journal | PARTIAL | Typed Orb, one-shot voice and hands-free paths share planning/approval/execution. PR #55 requires app/result verification before proceeding. Current search template enters and verifies the query but leaves submission and result selection to the user; this is not full cross-app automation or Canva/YouTube automation. |
 | Internet research | `services/web-research.js`, `services/web-page-reader.js` | PARTIAL | Requires a configured trusted SearXNG JSON endpoint and optional page reader. It is not a built-in browser agent that can freely navigate arbitrary websites. |
 | Media creation | No end-to-end media generation/export subsystem found | NOT_STARTED | No verified storyboard-to-video file creation pipeline. |
 | YouTube publishing | No YouTube publishing workflow found | NOT_STARTED | No verified upload/publish flow or publication approval gate. |
