@@ -31,7 +31,7 @@ object LocalTaskExecutionJournal {
     private const val MAX_STEPS = 6
 
     private val allowedKinds = setOf(
-        "open app", "verify app", "open web search", "read screen", "tap label", "type text",
+        "open app", "verify app", "open web search", "verify browser", "read screen", "tap label", "type text",
         "scroll down", "scroll up", "back", "home", "verify screen", "ask user", "finish"
     )
 
