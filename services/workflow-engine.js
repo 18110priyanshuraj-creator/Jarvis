@@ -127,12 +127,12 @@ export function classifyWorkflowError(error) {
     code = "timeout";
   } else if (/\b(?:429|rate.?limit|too many requests)\b/.test(rawMessage)) {
     code = "rate_limited";
+  } else if (/\b(?:not configured|disabled in jarvis|configuration missing|invalid configuration|token format is invalid)\b/.test(rawMessage)) {
+    code = "configuration_missing";
   } else if (/\b(?:401|unauthorized|credential|authentication|token was rejected|rejected the configured credential)\b/.test(rawMessage)) {
     code = "authentication_required";
   } else if (/\b(?:403|forbidden|permission denied|lacks permission|access denied)\b/.test(rawMessage)) {
     code = "permission_denied";
-  } else if (/\b(?:not configured|disabled in jarvis|configuration missing|invalid configuration|token format is invalid)\b/.test(rawMessage)) {
-    code = "configuration_missing";
   } else if (/\b(?:404|endpoint was not found|endpoint not found)\b/.test(rawMessage)) {
     code = "endpoint_not_found";
   } else if (/\b(?:limit reached|quota exceeded|capacity limit|too many records)\b/.test(rawMessage)) {
