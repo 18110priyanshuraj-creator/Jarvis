@@ -50,7 +50,7 @@ The native Orb's typed input and one-shot Speak button, together with the existi
 
 - A request first checks local commands away from the UI thread. Remaining requests use the paired device's authenticated HTTPS planner endpoint.
 - The server may return conversation, clarification or a device-action plan. Conversation and clarification modes are rejected if they contain device actions.
-- A device-action plan is previewed in an Android approval dialog. No action starts until the user taps Approve and run. Cancel, Back or dismiss means no actions run.
+- Orb and one-shot voice device-action plans are previewed in an Android approval dialog. No action starts until the user taps Approve and run; Cancel, Back or dismiss means no actions run. Hands-free voice retains its spoken preview and explicit approve plan or cancel plan decision.
 - The on-device runner validates each action again using the allow-list and the shared UiActionPolicy. A plan that needs screen access is blocked unless the user has manually enabled the JARVIS Accessibility service.
 - Approved plans use the same bounded sequence runner and generic local task journal used by hands-free voice. Progress is stored by step index and generic action category; typed text, transcript content and screen text are not stored in the task journal.
 - The Orb exposes Pause, Resume and Cancel controls for its active task. Hands-free retains the spoken task commands and persistent notification stop controls.
