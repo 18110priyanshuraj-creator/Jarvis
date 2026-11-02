@@ -8,6 +8,7 @@ import fs from "node:fs/promises";
 import crypto from "node:crypto";
 import { runLocalBrain, searchLocalKnowledge } from "./brain.js";
 import { getIntelligenceStatus, resolveOfflineAssistantTurn } from "./services/intelligence-engine.js";
+import { classifyIntent } from "./services/nlu.js";
 import { fileURLToPath } from "node:url";
 import { createDevicesRouter } from "./routes/devices.js";
 import { createRuntimeStore } from "./services/runtime-store.js";
@@ -560,8 +561,9 @@ async function processAssistantTurn(message, conversationKey) {
     result = await generateAssistantAnswer(message, history, store.memories);
   }
 
-  await appendConversationTurn(conversationKey, message, result);
-  return result;
+  const enrichedResult = { ...result, nlu: classifyIntent(message) };
+  await appendConversationTurn(conversationKey, message, enrichedResult);
+  return enrichedResult;
 }
 
 function cleanText(value, maxLength) {
