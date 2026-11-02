@@ -34,6 +34,225 @@ function safeValue(value) {
   return !SENSITIVE_VALUE_PATTERN.test(value) && !EMAIL_PATTERN.test(value) && !PHONE_PATTERN.test(value);
 }
 
+const WORKFLOW_FAILURES = Object.freeze({
+  timeout: Object.freeze({
+    code: "timeout",
+    category: "transient",
+    retryable: true,
+    message: "The step timed out. Check whether it completed before retrying."
+  }),
+  rate_limited: Object.freeze({
+    code: "rate_limited",
+    category: "transient",
+    retryable: true,
+    message: "The connected service rate limit was reached. Wait, then retry manually."
+  }),
+  service_unavailable: Object.freeze({
+    code: "service_unavailable",
+    category: "transient",
+    retryable: true,
+    message: "The connected service is temporarily unavailable. Try again later."
+  }),
+  network_unavailable: Object.freeze({
+    code: "network_unavailable",
+    category: "transient",
+    retryable: true,
+    message: "The connection was unavailable. Check connectivity, then retry manually."
+  }),
+  storage_conflict: Object.freeze({
+    code: "storage_conflict",
+    category: "transient",
+    retryable: true,
+    message: "JARVIS could not save the latest checkpoint because data changed concurrently. Review the saved run, then retry manually."
+  }),
+  authentication_required: Object.freeze({
+    code: "authentication_required",
+    category: "action_required",
+    retryable: false,
+    message: "The connected service rejected its saved credential. Verify or reconnect it before continuing."
+  }),
+  permission_denied: Object.freeze({
+    code: "permission_denied",
+    category: "action_required",
+    retryable: false,
+    message: "The connected account lacks the required permission. Review its access before continuing."
+  }),
+  configuration_missing: Object.freeze({
+    code: "configuration_missing",
+    category: "action_required",
+    retryable: false,
+    message: "The integration is not configured or is disabled. Review Connections settings before continuing."
+  }),
+  endpoint_not_found: Object.freeze({
+    code: "endpoint_not_found",
+    category: "action_required",
+    retryable: false,
+    message: "The connected service endpoint was not found. Check the provider configuration."
+  }),
+  resource_limit: Object.freeze({
+    code: "resource_limit",
+    category: "action_required",
+    retryable: false,
+    message: "A workflow or local storage limit was reached. Review capacity before starting another run."
+  }),
+  invalid_request: Object.freeze({
+    code: "invalid_request",
+    category: "action_required",
+    retryable: false,
+    message: "The workflow step data is invalid or unsupported. Edit, validate and approve a new workflow version."
+  }),
+  handler_missing: Object.freeze({
+    code: "handler_missing",
+    category: "action_required",
+    retryable: false,
+    message: "This step has no registered handler. Update the workflow or restore the missing integration."
+  }),
+  unknown: Object.freeze({
+    code: "unknown",
+    category: "needs_review",
+    retryable: false,
+    message: "The failure could not be classified safely. Inspect the run and verify the underlying state before continuing."
+  })
+});
+
+export function classifyWorkflowError(error) {
+  const rawMessage = cleanText(error?.message || error || "", 500).toLocaleLowerCase();
+  const name = cleanText(error?.name, 60);
+  let code = "unknown";
+
+  if (name === "TimeoutError" || name === "AbortError" ||
+      /\\b(?:timed? ?out|timeout|etimedout)\\b/.test(rawMessage)) {
+    code = "timeout";
+  } else if (/\\b(?:429|rate.?limit|too many requests)\\b/.test(rawMessage)) {
+    code = "rate_limited";
+  } else if (/\\b(?:401|unauthorized|credential|authentication|token was rejected|rejected the configured credential)\\b/.test(rawMessage)) {
+    code = "authentication_required";
+  } else if (/\\b(?:403|forbidden|permission denied|lacks permission|access denied)\\b/.test(rawMessage)) {
+    code = "permission_denied";
+  } else if (/\\b(?:not configured|disabled in jarvis|configuration missing|invalid configuration|token format is invalid)\\b/.test(rawMessage)) {
+    code = "configuration_missing";
+  } else if (/\\b(?:404|endpoint was not found|endpoint not found)\\b/.test(rawMessage)) {
+    code = "endpoint_not_found";
+  } else if (/\\b(?:limit reached|quota exceeded|capacity limit|too many records)\\b/.test(rawMessage)) {
+    code = "resource_limit";
+  } else if (/\\b(?:invalid|unsupported|malformed|unknown or unsupported)\\b/.test(rawMessage)) {
+    code = "invalid_request";
+  } else if (/\\b(?:kept changing during the save|concurrent|serialization conflict)\\b/.test(rawMessage)) {
+    code = "storage_conflict";
+  } else if (/\\b(?:temporarily unavailable|service unavailable|server error|5\\d\\d)\\b/.test(rawMessage)) {
+    code = "service_unavailable";
+  } else if (/\\b(?:could not connect|connection|network|fetch failed|econnreset|eai_again|temporary|temporarily)\\b/.test(rawMessage)) {
+    code = "network_unavailable";
+  }
+
+  const failure = WORKFLOW_FAILURES[code];
+  return {
+    code: failure.code,
+    category: failure.category,
+    retryable: failure.retryable,
+    message: failure.message
+  };
+}
+
+function makeWorkflowFailure(error, at = new Date().toISOString(), attempts = 0) {
+  const classified = classifyWorkflowError(error);
+  return {
+    ...classified,
+    at: timestamp(at),
+    attempts: Number.isInteger(attempts) ? Math.max(0, Math.min(3, attempts)) : 0
+  };
+}
+
+export function getWorkflowRecoverySummary(runInput) {
+  const run = runInput && typeof runInput === "object" ? runInput : {};
+  const index = Number.isInteger(run.currentStepIndex)
+    ? run.currentStepIndex
+    : Number.isInteger(run.nextStepIndex) ? run.nextStepIndex : -1;
+  const step = Array.isArray(run.steps) && index >= 0 ? run.steps[index] : null;
+  const attempts = Math.max(0, Number(step?.attempts) || 0);
+  const storedFailure = run.failure || step?.result?.failure || null;
+
+  if (run.status === "failed") {
+    const classified = storedFailure && typeof storedFailure.code === "string" &&
+      Object.hasOwn(WORKFLOW_FAILURES, storedFailure.code)
+      ? WORKFLOW_FAILURES[storedFailure.code]
+      : classifyWorkflowError(step?.result?.error || "");
+    const retryable = classified.retryable === true && attempts < 3 && step?.status === "failed";
+    return {
+      runId: cleanText(run.id, 80),
+      status: run.status,
+      step: step ? { index, title: cleanText(step.title, MAX_TITLE), type: cleanText(step.type, 60) } : null,
+      failure: {
+        code: classified.code,
+        category: classified.category,
+        retryable: classified.retryable,
+        message: classified.message,
+        at: typeof storedFailure?.at === "string" ? storedFailure.at : ""
+      },
+      attempts,
+      maxAttempts: 3,
+      canRetry: retryable,
+      canResume: false,
+      requiresManualReview: !retryable,
+      automaticRecovery: false,
+      nextAction: retryable ? "retry_manually" : "review_or_fix",
+      guidance: retryable
+        ? classified.message + " Only the failed step will be retried after you explicitly confirm."
+        : classified.message
+    };
+  }
+
+  if (run.status === "paused") {
+    return {
+      runId: cleanText(run.id, 80),
+      status: run.status,
+      step: null,
+      failure: null,
+      attempts: 0,
+      maxAttempts: 3,
+      canRetry: false,
+      canResume: true,
+      requiresManualReview: true,
+      automaticRecovery: false,
+      nextAction: "resume_manually",
+      guidance: "Review the last saved checkpoint and completed steps. Resume only after you explicitly confirm; interrupted actions are never replayed automatically."
+    };
+  }
+
+  if (run.status === "waiting_review") {
+    return {
+      runId: cleanText(run.id, 80),
+      status: run.status,
+      step: null,
+      failure: null,
+      attempts: 0,
+      maxAttempts: 3,
+      canRetry: false,
+      canResume: false,
+      canContinue: true,
+      requiresManualReview: true,
+      automaticRecovery: false,
+      nextAction: "continue_after_review",
+      guidance: "Review the completed steps before choosing Continue. Later steps remain paused until you approve."
+    };
+  }
+
+  return {
+    runId: cleanText(run.id, 80),
+    status: cleanText(run.status, 30) || "unknown",
+    step: null,
+    failure: null,
+    attempts: 0,
+    maxAttempts: 3,
+    canRetry: false,
+    canResume: false,
+    requiresManualReview: false,
+    automaticRecovery: false,
+    nextAction: "none",
+    guidance: "No recovery action is currently available for this run status."
+  };
+}
+
 function timestamp(value) {
   if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) return new Date().toISOString();
   return new Date(Date.parse(value)).toISOString();
