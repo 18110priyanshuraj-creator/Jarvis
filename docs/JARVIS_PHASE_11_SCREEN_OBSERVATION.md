@@ -67,10 +67,10 @@ Physical Samsung Galaxy Tab A9 acceptance remains scheduled for Phase 31. CI ver
 ## Merge and final main-branch verification
 
 - Squash-merged through [PR #50](https://github.com/18110priyanshuraj-creator/Jarvis/pull/50).
-- Merge commit: \`b706a0fcbbb78cc6e8b03cc07a7e99fb6caaacb3\`.
+- Merge commit: `b706a0fcbbb78cc6e8b03cc07a7e99fb6caaacb3`.
 - Post-merge main CI [run 41427377450](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41427377450): both jobs passed.
 - Final main verification: 197 Node tests passed, 0 failed; production dependency audit found 0 vulnerabilities; Android unit tests, debug APK build, integrity checks, checksum generation, and artifact upload passed.
-- Final main debug artifact: \`jarvis-companion-debug\`, artifact ID \`13132796485\`, 23,957,412 bytes; GitHub retains it through 2026-11-09.
+- Final main debug artifact: `jarvis-companion-debug`, artifact ID `13132796485`, 23,957,412 bytes; GitHub retains it through 2026-11-09.
 
 ## Known limitations
 
