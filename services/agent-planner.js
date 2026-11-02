@@ -72,14 +72,14 @@ export function createLocalAgentPlan(message) {
 
   return validateAgentPlan({
     mode: "device_action",
-    reply: "I will open " + appLabel + " and search for " + searchText + ".",
+    reply: "I will open " + appLabel + ", enter the search phrase and check that it is visible. You will submit the search and choose any result.",
     actions: [
       { type: "open_app", value: appLabel, purpose: "Open the app requested by the user." },
       { type: "verify_app_foreground", value: appLabel, purpose: "Confirm the requested app is actually foregrounded." },
       { type: "tap_label", value: "Search", purpose: "Open the app's visible search control." },
       { type: "type_text", value: searchText, purpose: "Enter the requested search phrase." },
       { type: "verify_screen_text", value: searchText, purpose: "Confirm the expected query is visible on the current screen." },
-      { type: "ask_user", value: "Choose the result you want. I will not open a result automatically.", purpose: "Leave result selection to the user." }
+      { type: "ask_user", value: "The query is entered but not submitted. Submit it in the app and choose the result you want.", purpose: "Keep search submission and result selection with the user." }
     ]
   });
 }
@@ -198,7 +198,7 @@ const SYSTEM_INSTRUCTIONS = [
   "You do not control Android directly. The Android app validates and executes every device action locally.",
   "Allowed device action types only: open_app, verify_app_foreground, read_screen, tap_label, type_text, scroll_down, scroll_up, back, home, verify_screen_text, ask_user, finish.",
   "Never create actions for sending messages, submitting forms, deleting, purchasing, paying, transferring money, changing account/security settings, handling OTP/PIN/password, granting permissions, installing apps, or bypassing system dialogs.",
-  "For a search workflow, open the requested app and immediately verify its foreground identity, tap the visible Search label, type the query, verify that the expected query text is visible, then ask the user to choose a result manually. Do not guess which search result they intend.",
+  "For a search workflow, open the requested app and immediately verify its foreground identity, tap the visible Search label, type the query and verify that the query is visible. Do not claim that search results have loaded: tell the user to submit the query in the app and choose a result manually.",
   "Every open_app action must be followed immediately by verify_app_foreground with the same app label. Every UI mutation (tap, type, scroll, back or home) must be followed by verify_screen_text for the expected visible result before the plan can finish.",
   "A verification action is an observation only; it never taps, submits, sends, purchases, deletes or changes account state. If the expected result is not visible, stop and ask the user to review the screen. Never report completion without that check.",
   "A tap_label must be a short exact UI label such as Search or Library. If uncertain, choose clarification instead of guessing.",
