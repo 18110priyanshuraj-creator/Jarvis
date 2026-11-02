@@ -27,6 +27,15 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import android.net.Uri
+import android.net.http.SslError
+import android.webkit.CookieManager
+import android.webkit.SslErrorHandler
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import com.priyanshuraj.jarviscompanion.accessibility.JarvisAccessibilityService
 import com.priyanshuraj.jarviscompanion.LocalActivityLog
 import com.priyanshuraj.jarviscompanion.device.DeviceConnector
@@ -50,6 +59,11 @@ class MainActivity : Activity() {
     private var homeStatusText: TextView? = null
     private var homeMessageInput: EditText? = null
     private var orbitalOrbView: OrbitalOrbView? = null
+    private var dashboardScreen: View? = null
+    private var dashboardWebView: WebView? = null
+    private var dashboardStatusText: TextView? = null
+    private var dashboardBaseUrl: String? = null
+    private var showingDashboard = false
     private var showingSetup = false
     private var speechRecognizer: SpeechRecognizer? = null
     private var textToSpeech: TextToSpeech? = null
@@ -242,16 +256,185 @@ class MainActivity : Activity() {
     private fun showHomeScreen() {
         val screen = homeScreen ?: createHomeScreen().also { homeScreen = it }
         showingSetup = false
+        showingDashboard = false
         setContentView(screen)
         refreshStatus()
     }
 
     private fun showSetupScreen() {
         showingSetup = true
+        showingDashboard = false
         setContentView(setupRootView)
         refreshStatus()
         refreshPermissionChecklist()
         refreshActivityLog()
+    }
+
+    private fun showDashboardScreen() {
+        val configuredUrl = DashboardUrlPolicy.normalizeBaseUrl(
+            getSharedPreferences("jarvis_companion_settings", MODE_PRIVATE)
+                .getString("server_url", null)
+        )
+        if (configuredUrl == null) {
+            AlertDialog.Builder(this)
+                .setTitle("Workspace not configured")
+                .setMessage("Open Setup and pair this tablet with your JARVIS HTTPS server first. The Workspace screen uses that saved server address.")
+                .setPositiveButton("Open Setup") { _, _ -> showSetupScreen() }
+                .setNegativeButton("Cancel", null)
+                .show()
+            return
+        }
+
+        dashboardBaseUrl = configuredUrl
+        val screen = dashboardScreen ?: createDashboardScreen().also { dashboardScreen = it }
+        showingSetup = false
+        showingDashboard = true
+        setContentView(screen)
+
+        val currentUrl = dashboardWebView?.url
+        if (currentUrl.isNullOrBlank() ||
+            currentUrl == "about:blank" ||
+            !DashboardUrlPolicy.allowsInAppNavigation(currentUrl, configuredUrl)
+        ) {
+            dashboardStatusText?.text = "Opening your private JARVIS workspace…"
+            dashboardWebView?.loadUrl(configuredUrl)
+        }
+    }
+
+    private fun createDashboardScreen(): View {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.rgb(4, 13, 29))
+        }
+
+        val toolbar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(8))
+        }
+        val home = homeButton("Home").apply {
+            contentDescription = "Return to the JARVIS orb home screen"
+            setOnClickListener { showHomeScreen() }
+        }
+        val title = TextView(this).apply {
+            text = "JARVIS WORKSPACE"
+            textSize = 14f
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            letterSpacing = 0.06f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(222, 248, 255))
+        }
+        val setup = homeButton("Setup").apply {
+            contentDescription = "Open JARVIS pairing and permission setup"
+            setOnClickListener { showSetupScreen() }
+        }
+        val reload = homeButton("Reload").apply {
+            contentDescription = "Reload the JARVIS workspace"
+            setOnClickListener { dashboardWebView?.reload() }
+        }
+        toolbar.addView(home, LinearLayout.LayoutParams(dp(76), dp(44)))
+        toolbar.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        toolbar.addView(setup, LinearLayout.LayoutParams(dp(82), dp(44)).apply {
+            marginEnd = dp(8)
+        })
+        toolbar.addView(reload, LinearLayout.LayoutParams(dp(88), dp(44)))
+
+        dashboardStatusText = TextView(this).apply {
+            text = "Your private workspace opens here. Sign in with your existing JARVIS workspace password when prompted."
+            textSize = 12f
+            setTextColor(Color.rgb(145, 177, 194))
+            setPadding(dp(16), dp(4), dp(16), dp(8))
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
+
+        val webView = WebView(this).apply {
+            setBackgroundColor(Color.rgb(4, 13, 29))
+            isFocusable = true
+            isFocusableInTouchMode = true
+            scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+            settings.apply {
+                javaScriptEnabled = true
+                domStorageEnabled = true
+                allowFileAccess = false
+                allowContentAccess = false
+                javaScriptCanOpenWindowsAutomatically = false
+                setSupportMultipleWindows(false)
+                mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                safeBrowsingEnabled = true
+                loadsImagesAutomatically = true
+            }
+        }
+        dashboardWebView = webView
+        CookieManager.getInstance().apply {
+            setAcceptCookie(true)
+            setAcceptThirdPartyCookies(webView, false)
+        }
+        webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: WebResourceRequest
+            ): Boolean = routeDashboardNavigation(request.url.toString())
+
+            @Suppress("DEPRECATION")
+            override fun shouldOverrideUrlLoading(view: WebView?, url: String): Boolean =
+                routeDashboardNavigation(url)
+
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                dashboardStatusText?.text = "Connecting to your private JARVIS workspace…"
+            }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                dashboardStatusText?.text = "Workspace loaded. Sign in if the private login screen appears."
+            }
+
+            override fun onReceivedError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                error: WebResourceError?
+            ) {
+                if (request?.isForMainFrame == true) {
+                    dashboardStatusText?.text = "The workspace could not be loaded. Check the server connection and try Reload."
+                }
+            }
+
+            override fun onReceivedSslError(
+                view: WebView?,
+                handler: SslErrorHandler?,
+                error: SslError?
+            ) {
+                handler?.cancel()
+                dashboardStatusText?.text = "Secure connection verification failed. JARVIS blocked this page."
+            }
+        }
+
+        root.addView(toolbar, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        root.addView(dashboardStatusText, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        root.addView(webView, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            0,
+            1f
+        ))
+        return root
+    }
+
+    private fun routeDashboardNavigation(rawUrl: String): Boolean {
+        if (DashboardUrlPolicy.allowsInAppNavigation(rawUrl, dashboardBaseUrl)) {
+            return false
+        }
+        if (DashboardUrlPolicy.isSafeExternalHttpsUrl(rawUrl)) {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(rawUrl)))
+            } catch (_: Exception) {
+                Toast.makeText(this, "No browser is available to open this link.", Toast.LENGTH_SHORT).show()
+            }
+        }
+        return true
     }
 
     private fun createHomeScreen(): View {
@@ -289,11 +472,17 @@ class MainActivity : Activity() {
             letterSpacing = 0.08f
             setTextColor(Color.rgb(222, 248, 255))
         }
+        val workspaceButton = homeButton("Workspace")
+        workspaceButton.contentDescription = "Open the private JARVIS workspace"
+        workspaceButton.setOnClickListener { showDashboardScreen() }
         val setupButton = homeButton("Setup")
         setupButton.contentDescription = "Open pairing, voice and permission setup"
         setupButton.setOnClickListener { showSetupScreen() }
         header.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        header.addView(setupButton, LinearLayout.LayoutParams(dp(96), dp(44)))
+        header.addView(workspaceButton, LinearLayout.LayoutParams(dp(108), dp(44)).apply {
+            marginEnd = dp(8)
+        })
+        header.addView(setupButton, LinearLayout.LayoutParams(dp(84), dp(44)))
 
         val subtitle = TextView(this).apply {
             text = "YOUR PERSONAL ASSISTANT"
@@ -440,7 +629,14 @@ class MainActivity : Activity() {
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        if (showingSetup) {
+        if (showingDashboard) {
+            val webView = dashboardWebView
+            if (webView?.canGoBack() == true) {
+                webView.goBack()
+            } else {
+                showHomeScreen()
+            }
+        } else if (showingSetup) {
             showHomeScreen()
         } else {
             super.onBackPressed()
@@ -758,6 +954,13 @@ class MainActivity : Activity() {
         speechRecognizer?.destroy()
         textToSpeech?.stop()
         textToSpeech?.shutdown()
+        dashboardWebView?.apply {
+            stopLoading()
+            webViewClient = WebViewClient()
+            removeAllViews()
+            destroy()
+        }
+        dashboardWebView = null
         executor.shutdown()
         super.onDestroy()
     }
