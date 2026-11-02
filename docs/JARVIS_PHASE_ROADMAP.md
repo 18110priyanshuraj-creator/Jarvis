@@ -41,7 +41,7 @@ See:
 | 5 | Offline Voice System | CODE_COMPLETE | One-shot and hands-free voice now share on-device-first policy with persistent Prefer offline / Offline only modes; offline-only refuses online recognition and network TTS fallbacks. Actual language-pack/device acceptance remains Phase 31. See `JARVIS_PHASE_5_OFFLINE_VOICE.md`. |
 | 6 | Independent Intelligence Engine | CODE_COMPLETE | Deterministic offline-first routing, local-first device planning, secret-safe capability status and optional model fallback are tested; no general local LLM is claimed. |
 | 7 | Natural Language Understanding | CODE_COMPLETE | Shared deterministic English/Hindi/Hinglish intent labels, heuristic confidence metadata and 18 multilingual regression examples; classification alone cannot execute Android actions. |
-| 8 | Local Memory System | IN_PROGRESS | Android-local Room storage, Android Keystore AES-GCM payload encryption, explicit local remember/recall/forget commands and a native CRUD screen are implemented in the working tree; CI and device acceptance are pending. |
+| 8 | Local Memory System | CODE_COMPLETE | Separate on-device Room v1 store, Android Keystore AES-GCM encryption, explicit local remember/recall/exact-forget, and native add/search/edit/pause/resume/delete UI. CI run 41400751209 passed Node (183/183, 0 audit vulnerabilities) and Android testDebugUnitTest assembleDebug plus APK verification/upload. Physical Tab A9 Keystore/UI checks remain Phase 31. |
 | 9 | Autonomous Task Planner | PARTIAL | Optional model planner plus bounded local plans; not unrestricted autonomous planning. |
 | 10 | Persistent Execution Engine | PARTIAL | Workflows and cancellable sequences exist; full Android task recovery after restart is not verified. |
 | 11 | Screen Observation | PARTIAL | Bounded accessibility-tree inspection; no screenshot/vision perception. |
@@ -75,12 +75,21 @@ See:
 4. Phase 3 native Android core is code-complete: the shared local-first dispatcher and additive Room execution ledger passed automated acceptance without replacing server data or Keystore credentials.
 5. Phase 4 local system controller is code-complete: typed input, one-shot voice and hands-free requests share a permission-aware on-device system boundary; physical Galaxy Tab A9 checks remain Phase 31.
 6. Phase 5 offline voice system is code-complete: both Android voice input paths use one on-device selection policy, offline-only mode blocks online speech fallbacks, and TTS honors local-voice requirements. Device-specific model and audio acceptance remains Phase 31.
-7. Phase 6 is code-complete: supported deterministic requests route offline before the optional model adapter, current-information requests retain live-research precedence, and bounded Android device plans prefer local rules. See `JARVIS_PHASE_6_INDEPENDENT_INTELLIGENCE_ENGINE.md`. Complete and test each remaining phase against its acceptance criteria before advancing.
-8. Retain all current tests and add new regression/acceptance tests.
-9. Keep `main` as the release source of truth; use short-lived branches only when useful.
-10. Do not delete branches with unreviewed unique work or mark a phase verified because a file exists.
-11. Device-only acceptance must be marked blocked until an actual Galaxy Tab A9 observation is recorded.
-12. The final release must be a signed, installable Android build with migration, offline behavior and real-device evidence.
+7. Phase 6 is code-complete: supported deterministic requests route offline before the optional model adapter, current-information requests retain live-research precedence, and bounded Android device plans prefer local rules. See `JARVIS_PHASE_6_INDEPENDENT_INTELLIGENCE_ENGINE.md`.
+8. Phase 8 is code-complete at the repository/CI level: a separate Android-local encrypted memory store and native CRUD UI pass Node and Android CI. Local memories are never automatically sent to the server; no server-state import or migration was performed. See `JARVIS_PHASE_8_LOCAL_MEMORY.md`.
+9. Retain all current tests and add new regression/acceptance tests.
+10. Keep `main` as the release source of truth; use short-lived branches only when useful.
+11. Do not delete branches with unreviewed unique work or mark a phase verified because a file exists.
+12. Device-only acceptance must be marked blocked until an actual Galaxy Tab A9 observation is recorded.
+13. The final release must be a signed, installable Android build with migration, offline behavior and real-device evidence.
+
+## Phase 8 closeout evidence
+
+- Main implementation commit: `8777b29f8c32ed3ae97b96a36cb7cc20b79e52ff`.
+- GitHub Actions run `41400751209`: Node tests passed (183/183), production dependency audit reported 0 vulnerabilities, and Android `testDebugUnitTest assembleDebug` completed successfully. APK verification and upload passed.
+- Debug APK artifact: `jarvis-companion-debug`, artifact ID `13121625476`, SHA-256 `ec2d74774a18156b539cba0ea89340042a8a9876900cf5a6e7f3a46fecd0034b`, expires 2026-11-09.
+- Render deployment `dep-dbk2tr6417fc73bgneag` for the main commit is live. Phase 8 memory code is Android-native; no backend memory migration or API was introduced.
+- Samsung Galaxy Tab A9 Keystore and UI behavior have not been physically tested; keep these acceptance checks in Phase 31.
 
 ## Reconciliation of historical phases
 
