@@ -8,12 +8,14 @@ test("agent planner accepts only a short allow-listed action plan", () => {
     reply: "I will open YouTube and search.",
     actions: [
       { type: "open_app", value: "YouTube", purpose: "Open the app" },
+      { type: "verify_app_foreground", value: "YouTube", purpose: "Verify the requested app is foregrounded" },
       { type: "tap_label", value: "Search", purpose: "Open search" },
       { type: "type_text", value: "JEE Physics", purpose: "Enter query" },
+      { type: "verify_screen_text", value: "JEE Physics", purpose: "Verify the query is visible" },
       { type: "ask_user", value: "Choose the result you want.", purpose: "Avoid guessing" }
     ]
   });
-  assert.equal(plan.actions.length, 4);
+  assert.equal(plan.actions.length, 6);
   assert.equal(plan.actions[0].type, "open_app");
 });
 
@@ -83,28 +85,61 @@ test("built-in device planner builds a bounded English app-search workflow", () 
   assert.ok(plan);
   assert.equal(plan.mode, "device_action");
   assert.deepEqual(plan.actions.map((item) => item.type), [
-    "open_app", "tap_label", "type_text", "ask_user"
+    "open_app", "verify_app_foreground", "tap_label",
+    "type_text", "verify_screen_text", "ask_user"
   ]);
   assert.equal(plan.actions[0].value, "YouTube");
-  assert.equal(plan.actions[1].value, "Search");
-  assert.equal(plan.actions[2].value, "JEE Physics");
-  assert.match(plan.actions[3].value, /choose the result/i);
+  assert.equal(plan.actions[1].value, "YouTube");
+  assert.equal(plan.actions[2].value, "Search");
+  assert.equal(plan.actions[3].value, "JEE Physics");
+  assert.equal(plan.actions[4].value, "JEE Physics");
+  assert.match(plan.actions[5].value, /choose the result/i);
 });
 
 test("built-in device planner supports Hindi and Hinglish search phrasing", () => {
   const hindi = createLocalAgentPlan("YouTube kholo aur JEE Physics search karo");
   assert.ok(hindi);
   assert.equal(hindi.actions[0].value, "YouTube");
-  assert.equal(hindi.actions[2].value, "JEE Physics");
+  assert.equal(hindi.actions[3].value, "JEE Physics");
 
   const reversed = createLocalAgentPlan("Search for circular motion on YouTube");
   assert.ok(reversed);
   assert.equal(reversed.actions[0].value, "YouTube");
-  assert.equal(reversed.actions[2].value, "circular motion");
+  assert.equal(reversed.actions[3].value, "circular motion");
 
   const hinglish = createLocalAgentPlan("YouTube par mole concept search karo");
   assert.ok(hinglish);
-  assert.equal(hinglish.actions[2].value, "mole concept");
+  assert.equal(hinglish.actions[3].value, "mole concept");
+});
+
+test("agent planner refuses Android plans without matching outcome verification", () => {
+  assert.throws(() => validateAgentPlan({
+    mode: "device_action",
+    reply: "Open the app.",
+    actions: [{ type: "open_app", value: "YouTube", purpose: "Open app" }]
+  }), /foreground-app verification/i);
+
+  assert.throws(() => validateAgentPlan({
+    mode: "device_action",
+    reply: "Search.",
+    actions: [
+      { type: "open_app", value: "YouTube", purpose: "Open app" },
+      { type: "verify_app_foreground", value: "YouTube", purpose: "Check app" },
+      { type: "tap_label", value: "Search", purpose: "Tap search" },
+      { type: "type_text", value: "JEE Physics", purpose: "Enter query" },
+      { type: "ask_user", value: "Choose a result.", purpose: "Handoff" }
+    ]
+  }), /visible-text verification/i);
+
+  const checked = validateAgentPlan({
+    mode: "device_action",
+    reply: "Open and verify the app.",
+    actions: [
+      { type: "open_app", value: "YouTube", purpose: "Open app" },
+      { type: "verify_app_foreground", value: "YouTube", purpose: "Check app" }
+    ]
+  });
+  assert.equal(checked.actions[1].type, "verify_app_foreground");
 });
 
 test("built-in planner declines ambiguous, secret-like, and restricted searches", () => {
@@ -120,5 +155,5 @@ test("device planner selects a supported deterministic plan before any model fal
   assert.equal(plan.engine, "built-in-device-rules");
   assert.equal(plan.provider, "built-in");
   assert.equal(plan.externalAI, false);
-  assert.equal(plan.actions.length, 4);
+  assert.equal(plan.actions.length, 6);
 });

@@ -52,6 +52,16 @@ object UiActionPolicy {
             normalizeLabel(nodeDescription.orEmpty()) == expected
     }
 
+    /**
+     * Matches an expected result against labels from the current visible accessibility tree.
+     * This is deliberately separate from exact tap-target matching.
+     */
+    fun containsExpectedText(visibleLabels: Iterable<String>, expectedText: String): Boolean {
+        val expected = normalizeLabel(expectedText)
+        if (expected.isBlank()) return false
+        return visibleLabels.any { normalizeLabel(it).contains(expected) }
+    }
+
     fun isProtectedControl(label: String): Boolean =
         protectedControl.containsMatchIn(label)
 

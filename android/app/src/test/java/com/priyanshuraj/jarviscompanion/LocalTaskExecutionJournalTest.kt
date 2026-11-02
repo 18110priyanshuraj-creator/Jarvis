@@ -80,12 +80,14 @@ class LocalTaskExecutionJournalTest {
     fun persistedJournalContainsOnlyGenericActionCategories() {
         LocalTaskExecutionJournal.start(
             app,
-            listOf("open app", "type text")
+            listOf("open app", "verify app", "type text", "verify screen")
         )
         val raw = app.getSharedPreferences("jarvis_companion_task_journal", 0)
             .getString("records", "[]") ?: "[]"
         assertTrue(raw.contains("open app"))
+        assertTrue(raw.contains("verify app"))
         assertTrue(raw.contains("type text"))
+        assertTrue(raw.contains("verify screen"))
         assertFalse(raw.contains("account password"))
         assertFalse(raw.contains("sensitive text from an input field"))
         assertFalse(raw.contains("https://"))

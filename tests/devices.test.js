@@ -153,9 +153,10 @@ test("paired Android devices can authenticate, use voice chat, and be revoked", 
   assert.equal(offlinePlan.externalAI, false);
   assert.equal(offlinePlan.engine, "built-in-device-rules");
   assert.deepEqual(offlinePlan.actions.map((item) => item.type), [
-    "open_app", "tap_label", "type_text", "ask_user"
+    "open_app", "verify_app_foreground", "tap_label",
+    "type_text", "verify_screen_text", "ask_user"
   ]);
-  assert.equal(offlinePlan.actions[2].value, "JEE Physics");
+  assert.equal(offlinePlan.actions[3].value, "JEE Physics");
 
   const unsupportedPlan = await request("/api/devices/plan", {
     method: "POST",
