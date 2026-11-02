@@ -180,6 +180,8 @@ const runtimeStore = createRuntimeStore({ getSql: getNeonSql });
 const activeWorkflowExecutions = new Set();
 const pauseWorkflowRequests = new Set();
 const stopWorkflowRequests = new Set();
+const pendingWorkflowExecutionQueue = [];
+let workflowQueueDraining = false;
 
 function cloneStore(value) {
   return JSON.parse(JSON.stringify(value));
@@ -290,7 +292,7 @@ function normalizeStore(parsed = {}) {
     workflowRuns: Array.isArray(parsed.workflowRuns)
       ? parsed.workflowRuns.slice(-WORKFLOW_LIMITS.runs).filter((item) =>
           item && typeof item.id === "string" && typeof item.workflowId === "string" &&
-          Array.isArray(item.steps) && ["running", "waiting_review", "paused", "completed", "failed", "cancelled"].includes(item.status)
+          Array.isArray(item.steps) && ["queued", "running", "waiting_review", "paused", "completed", "failed", "cancelled"].includes(item.status)
         )
       : [],
     workflowStepEffects: Array.isArray(parsed.workflowStepEffects)
@@ -1576,7 +1578,7 @@ app.post("/api/workflows", requireAuth, async (req, res) => {
 app.patch("/api/workflows/:id", requireAuth, async (req, res) => {
   const existing = store.workflows.find((item) => item.id === req.params.id);
   if (!existing) return res.status(404).json({ error: "Workflow not found." });
-  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["running", "waiting_review", "paused"].includes(run.status))) {
+  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["queued", "running", "waiting_review", "paused"].includes(run.status))) {
     return res.status(409).json({ error: "Stop or finish the active run before editing this workflow." });
   }
   let updated;
@@ -1616,7 +1618,7 @@ app.post("/api/workflows/:id/approve", requireAuth, async (req, res) => {
 app.post("/api/workflows/:id/pause", requireAuth, async (req, res) => {
   const existing = store.workflows.find((item) => item.id === req.params.id);
   if (!existing) return res.status(404).json({ error: "Workflow not found." });
-  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["running", "waiting_review", "paused"].includes(run.status))) {
+  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["queued", "running", "waiting_review", "paused"].includes(run.status))) {
     return res.status(409).json({ error: "Stop the active run before pausing this workflow." });
   }
   let paused;
@@ -1633,7 +1635,7 @@ app.post("/api/workflows/:id/pause", requireAuth, async (req, res) => {
 app.delete("/api/workflows/:id", requireAuth, async (req, res) => {
   const existing = store.workflows.find((item) => item.id === req.params.id);
   if (!existing) return res.status(404).json({ error: "Workflow not found." });
-  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["running", "waiting_review", "paused"].includes(run.status))) {
+  if (store.workflowRuns.some((run) => run.workflowId === existing.id && ["queued", "running", "waiting_review", "paused"].includes(run.status))) {
     return res.status(409).json({ error: "Stop the active run before deleting this workflow." });
   }
   store.workflows = store.workflows.filter((item) => item.id !== existing.id);
@@ -1750,32 +1752,59 @@ async function executeWorkflowRun(runId) {
   }
 }
 
-function scheduleWorkflowExecution(runId) {
-  // executeWorkflowRun acquires the in-process lock synchronously before its
-  // first await. The HTTP request can now return while checkpoints continue.
-  const execution = executeWorkflowRun(runId);
-  execution.catch(async (error) => {
-    const current = store.workflowRuns.find((item) => item.id === runId);
-    if (current && current.status === "running") {
-      const failedAt = new Date().toISOString();
-      const failed = {
-        ...current,
-        status: "failed",
-        finishedAt: failedAt,
-        updatedAt: failedAt,
-        failure: { name: /^[A-Za-z][A-Za-z0-9_.-]{0,49}$/.test(String(error?.name || "")) ? String(error.name) : "ExecutionError" },
-        logs: (Array.isArray(current.logs) ? current.logs : []).concat([{
-          at: failedAt,
-          stepIndex: Number.isInteger(current.currentStepIndex) ? current.currentStepIndex : current.nextStepIndex,
-          stepTitle: "Execution stopped",
-          status: "failed",
-          summary: "Execution stopped because a durable checkpoint or runtime operation failed. Review the run before retrying."
-        }]).slice(-50)
-      };
-      store.workflowRuns = store.workflowRuns.map((item) => item.id === runId ? failed : item);
-      try { await saveStore(); } catch { /* the last durable checkpoint remains available for restart recovery */ }
+async function markWorkflowExecutionFailed(runId, error) {
+  const current = store.workflowRuns.find((item) => item.id === runId);
+  if (!current || !["running", "queued"].includes(current.status)) return;
+  const failedAt = new Date().toISOString();
+  const failed = {
+    ...current,
+    status: "failed",
+    finishedAt: failedAt,
+    updatedAt: failedAt,
+    failure: { name: /^[A-Za-z][A-Za-z0-9_.-]{0,49}$/.test(String(error?.name || "")) ? String(error.name) : "ExecutionError" },
+    logs: (Array.isArray(current.logs) ? current.logs : []).concat([{
+      at: failedAt,
+      stepIndex: Number.isInteger(current.currentStepIndex) ? current.currentStepIndex : current.nextStepIndex,
+      stepTitle: "Execution stopped",
+      status: "failed",
+      summary: "Execution stopped because a durable checkpoint or runtime operation failed. Review the run before retrying."
+    }]).slice(-50)
+  };
+  store.workflowRuns = store.workflowRuns.map((item) => item.id === runId ? failed : item);
+  try { await saveStore(); } catch { /* the last durable checkpoint remains available for restart recovery */ }
+}
+
+async function drainWorkflowExecutionQueue() {
+  if (workflowQueueDraining) return;
+  workflowQueueDraining = true;
+  try {
+    while (pendingWorkflowExecutionQueue.length) {
+      const runId = pendingWorkflowExecutionQueue.shift();
+      const queued = store.workflowRuns.find((item) => item.id === runId);
+      if (!queued || queued.status !== "queued") continue;
+      try {
+        const running = { ...queued, status: "running", updatedAt: new Date().toISOString() };
+        store.workflowRuns = store.workflowRuns.map((item) => item.id === runId ? running : item);
+        await saveStore();
+        await executeWorkflowRun(runId);
+      } catch (error) {
+        await markWorkflowExecutionFailed(runId, error);
+      }
     }
-  });
+  } finally {
+    workflowQueueDraining = false;
+    if (pendingWorkflowExecutionQueue.length) void drainWorkflowExecutionQueue();
+  }
+}
+
+function scheduleWorkflowExecution(runId) {
+  const existing = store.workflowRuns.find((item) => item.id === runId);
+  if (!existing) return false;
+  const queued = { ...existing, status: "queued", updatedAt: new Date().toISOString() };
+  store.workflowRuns = store.workflowRuns.map((item) => item.id === runId ? queued : item);
+  if (!pendingWorkflowExecutionQueue.includes(runId)) pendingWorkflowExecutionQueue.push(runId);
+  void drainWorkflowExecutionQueue();
+  return true;
 }
 
 app.post("/api/workflows/:id/run", requireAuth, async (req, res) => {
@@ -1784,14 +1813,15 @@ app.post("/api/workflows/:id/run", requireAuth, async (req, res) => {
   if (workflow.status !== "approved" || !workflow.approvedAt) {
     return res.status(409).json({ error: "Validate and approve this workflow before running it." });
   }
-  if (store.workflowRuns.some((run) => run.workflowId === workflow.id && ["running", "waiting_review", "paused"].includes(run.status))) {
+  if (store.workflowRuns.some((run) => run.workflowId === workflow.id && ["queued", "running", "waiting_review", "paused"].includes(run.status))) {
     return res.status(409).json({ error: "This workflow already has an active run. Continue, resume or stop it first." });
   }
   if (store.workflowRuns.length >= WORKFLOW_LIMITS.runs) {
-    store.workflowRuns = store.workflowRuns.filter((run) => ["running", "waiting_review", "paused"].includes(run.status))
-      .concat(store.workflowRuns.filter((run) => !["running", "waiting_review", "paused"].includes(run.status)).slice(-(WORKFLOW_LIMITS.runs - 1)));
+    store.workflowRuns = store.workflowRuns.filter((run) => ["queued", "running", "waiting_review", "paused"].includes(run.status))
+      .concat(store.workflowRuns.filter((run) => !["queued", "running", "waiting_review", "paused"].includes(run.status)).slice(-(WORKFLOW_LIMITS.runs - 1)));
   }
   const run = createWorkflowRun(workflow);
+  if (req.get("Prefer") === "respond-async") run.status = "queued";
   store.workflowRuns.push(run);
   await saveStore();
   if (req.get("Prefer") === "respond-async") {
@@ -1809,7 +1839,7 @@ app.post("/api/workflow-runs/:id/continue", requireAuth, async (req, res) => {
     return res.status(409).json({ error: "This run is not waiting for your review." });
   }
   if (activeWorkflowExecutions.has(existing.id)) return res.status(409).json({ error: "This workflow run is already executing." });
-  const continued = { ...existing, status: "running", updatedAt: new Date().toISOString() };
+  const continued = { ...existing, status: req.get("Prefer") === "respond-async" ? "queued" : "running", updatedAt: new Date().toISOString() };
   store.workflowRuns = store.workflowRuns.map((item) => item.id === existing.id ? continued : item);
   await saveStore();
   if (req.get("Prefer") === "respond-async") {
@@ -1830,6 +1860,7 @@ app.post("/api/workflow-runs/:id/resume", requireAuth, async (req, res) => {
   } catch (error) {
     return res.status(409).json({ error: error.message || "Workflow run cannot be resumed." });
   }
+  if (req.get("Prefer") === "respond-async") resumed.status = "queued";
   store.workflowRuns = store.workflowRuns.map((item) => item.id === existing.id ? resumed : item);
   await saveStore();
   if (req.get("Prefer") === "respond-async") {
@@ -1850,6 +1881,7 @@ app.post("/api/workflow-runs/:id/retry", requireAuth, async (req, res) => {
   } catch (error) {
     return res.status(409).json({ error: error.message || "Workflow run cannot be retried." });
   }
+  if (req.get("Prefer") === "respond-async") retried.status = "queued";
   store.workflowRuns = store.workflowRuns.map((item) => item.id === existing.id ? retried : item);
   await saveStore();
   if (req.get("Prefer") === "respond-async") {
@@ -1863,6 +1895,16 @@ app.post("/api/workflow-runs/:id/retry", requireAuth, async (req, res) => {
 app.post("/api/workflow-runs/:id/pause", requireAuth, async (req, res) => {
   const existing = store.workflowRuns.find((item) => item.id === req.params.id);
   if (!existing) return res.status(404).json({ error: "Workflow run not found." });
+  if (existing.status === "queued") {
+    const index = pendingWorkflowExecutionQueue.indexOf(existing.id);
+    if (index >= 0) pendingWorkflowExecutionQueue.splice(index, 1);
+    let paused;
+    try { paused = pauseWorkflowRun(existing); }
+    catch (error) { return res.status(409).json({ error: error.message || "Workflow run cannot be paused." }); }
+    store.workflowRuns = store.workflowRuns.map((item) => item.id === existing.id ? paused : item);
+    await saveStore();
+    return res.json({ run: paused, paused: true });
+  }
   if (existing.status !== "running" || !activeWorkflowExecutions.has(existing.id)) {
     return res.status(409).json({ error: "This workflow run is not currently executing." });
   }
@@ -1876,6 +1918,10 @@ app.post("/api/workflow-runs/:id/stop", requireAuth, async (req, res) => {
   if (existing.status === "running" && activeWorkflowExecutions.has(existing.id)) {
     stopWorkflowRequests.add(existing.id);
     return res.status(202).json({ run: existing, stopRequested: true, message: "JARVIS will stop after the current safe step checkpoint." });
+  }
+  if (existing.status === "queued") {
+    const queueIndex = pendingWorkflowExecutionQueue.indexOf(existing.id);
+    if (queueIndex >= 0) pendingWorkflowExecutionQueue.splice(queueIndex, 1);
   }
   let cancelled;
   try {
