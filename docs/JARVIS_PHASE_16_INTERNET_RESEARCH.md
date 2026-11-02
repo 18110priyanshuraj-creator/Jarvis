@@ -35,7 +35,7 @@ The validated plan is exactly:
 
 The server-side plan validator and Android `AgentPlanRunner` independently require the browser verification to immediately follow the matching search action and carry the same query. The Android executor does not accept a browser URL from a model or user; it builds the Google HTTPS URL itself.
 
-The Android manifest declares visibility for HTTPS BROWSABLE handlers. On Android versions with `RoleManager`, verification uses the Android default-browser role. If no unique default browser is configured, the Accessibility window is unavailable, or the expected browser is not foregrounded, execution stops for user review. JARVIS does not choose an app in the system chooser. The Orb and hands-free paths still show their existing plan preview and wait for explicit approval before launching the browser.
+The Android manifest declares visibility for HTTPS BROWSABLE handlers. Verification resolves the system's default HTTPS BROWSABLE handler through Android's PackageManager and compares it with the active accessibility-window package. If Android returns a system chooser/resolver instead of a unique browser, the Accessibility window is unavailable, or the expected browser is not foregrounded, execution stops for user review. JARVIS does not choose an app in the system chooser. The Orb and hands-free paths still show their existing plan preview and wait for explicit approval before launching the browser.
 
 The local task journal stores only generic action categories (`open web search`, `verify browser`, `ask user`). It does not persist the search text or URL.
 
