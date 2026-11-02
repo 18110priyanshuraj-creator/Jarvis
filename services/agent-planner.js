@@ -175,23 +175,6 @@ export function validateAgentPlan(candidate) {
     };
   });
 
-  // Public Google search launch must be followed by the matching browser foreground check.
-  for (let index = 0; index < actions.length; index += 1) {
-    const action = actions[index];
-    if (action.type === "open_web_search") {
-      const verifier = actions[index + 1];
-      if (verifier?.type !== "verify_browser_foreground" || verifier.value !== action.value) {
-        throw new TypeError("Every Google search launch must be followed by a matching browser foreground verification.");
-      }
-    }
-    if (action.type === "verify_browser_foreground") {
-      const previous = actions[index - 1];
-      if (previous?.type !== "open_web_search" || previous.value !== action.value) {
-        throw new TypeError("Browser foreground verification must immediately follow its matching Google search launch.");
-      }
-    }
-  }
-
   // Public Google search launch must be followed by a matching browser foreground check.
   for (let index = 0; index < actions.length; index += 1) {
     const action = actions[index];
