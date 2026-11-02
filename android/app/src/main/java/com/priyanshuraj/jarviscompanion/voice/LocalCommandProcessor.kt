@@ -20,7 +20,9 @@ object LocalCommandProcessor {
     fun isScreenObservationCommand(message: String): Boolean {
         val value = normalize(message.replace('’', '\''))
         return value in setOf(
-            "read screen", "read the screen", "what is on screen", "what's on screen",
+            "read screen", "read the screen", "read my screen", "please read the screen",
+            "what is on screen", "what's on screen", "what is on my screen", "what's on my screen",
+            "tell me what is on screen", "please describe my screen",
             "screen batao", "kya dikh raha hai", "screen par kya hai",
             "describe screen", "describe the screen", "describe my screen",
             "read visible text", "what does this page say", "page read karo",
