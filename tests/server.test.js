@@ -292,24 +292,39 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   });
   assert.equal(startGoogleOAuth.status, 200);
   const startGoogleOAuthPayload = await startGoogleOAuth.json();
-  const googleAuthorizationUrl = new URL(startGoogleOAuthPayload.authorizationUrl);
+  const googleLaunchUrl = new URL(startGoogleOAuthPayload.launchUrl);
+  assert.equal(googleLaunchUrl.origin, "https://jarvis.example.test");
+  assert.equal(googleLaunchUrl.pathname, "/api/integrations/google_drive/oauth/launch");
+  assert.equal(startGoogleOAuth.headers.get("set-cookie")?.includes("jarvis_google_oauth=") || false, false);
+  const googleBrowserLaunch = await request(googleLaunchUrl.pathname + googleLaunchUrl.search, {
+    redirect: "manual",
+    headers: {}
+  });
+  assert.equal(googleBrowserLaunch.status, 303);
+  const googleAuthorizationUrl = new URL(googleBrowserLaunch.headers.get("location"));
   assert.equal(googleAuthorizationUrl.origin, "https://accounts.google.com");
   assert.equal(googleAuthorizationUrl.searchParams.get("scope"), "https://www.googleapis.com/auth/drive.metadata.readonly");
   assert.equal(googleAuthorizationUrl.searchParams.get("code_challenge_method"), "S256");
-  assert.match(startGoogleOAuth.headers.get("set-cookie") || "", /jarvis_google_oauth=/);
+  assert.match(googleBrowserLaunch.headers.get("set-cookie") || "", /jarvis_google_oauth=/);
 
   const startGoogleDocsUpgrade = await request("/api/integrations/google_drive/oauth/start", {
     method: "POST", body: JSON.stringify({ capability: "create_docs" })
   });
   assert.equal(startGoogleDocsUpgrade.status, 200);
-  const docsUpgradeUrl = new URL((await startGoogleDocsUpgrade.json()).authorizationUrl);
+  const docsLaunchUrl = new URL((await startGoogleDocsUpgrade.json()).launchUrl);
+  const docsBrowserLaunch = await request(docsLaunchUrl.pathname + docsLaunchUrl.search, {
+    redirect: "manual",
+    headers: {}
+  });
+  assert.equal(docsBrowserLaunch.status, 303);
+  const docsUpgradeUrl = new URL(docsBrowserLaunch.headers.get("location"));
   assert.deepEqual(docsUpgradeUrl.searchParams.get("scope").split(" ").sort(), [
     "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/drive.metadata.readonly"
   ].sort());
   assert.equal(docsUpgradeUrl.searchParams.get("code_challenge_method"), "S256");
-  assert.match(startGoogleOAuth.headers.get("set-cookie") || "", /HttpOnly/i);
-  assert.match(startGoogleOAuth.headers.get("set-cookie") || "", /SameSite=Lax/i);
+  assert.match(docsBrowserLaunch.headers.get("set-cookie") || "", /HttpOnly/i);
+  assert.match(docsBrowserLaunch.headers.get("set-cookie") || "", /SameSite=Lax/i);
 
   const invalidGoogleCallback = await request("/api/integrations/google_drive/oauth/callback?state=not-a-real-state&code=not-a-real-code", {
     headers: {},
