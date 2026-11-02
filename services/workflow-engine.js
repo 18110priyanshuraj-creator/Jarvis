@@ -181,6 +181,11 @@ export function sanitizeWorkflowRunRecord(runInput) {
     Number(primaryStep?.attempts) || Number(run.failure?.attempts) || 0
   );
   run.failure = runFailure;
+  if (Array.isArray(run.logs)) {
+    run.logs = run.logs.slice(-50).map((entry) => entry?.status === "failed"
+      ? { ...entry, summary: runFailure.message }
+      : entry);
+  }
 
   for (const step of failedSteps) {
     const stepSource = step.result?.failure && typeof step.result.failure.code === "string"
