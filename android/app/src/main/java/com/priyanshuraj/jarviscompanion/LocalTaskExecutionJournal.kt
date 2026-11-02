@@ -140,7 +140,7 @@ object LocalTaskExecutionJournal {
         var changed = false
         for (index in 0 until records.length()) {
             val record = records.optJSONObject(index) ?: continue
-            if (record.optString("status") !in setOf("running", "paused")) continue
+            if (record.optString("status") !in setOf("running", "paused", "waiting_user")) continue
             record.put("status", "interrupted")
                 .put("requiresManualReplan", true)
                 .put("updatedAtEpochMs", System.currentTimeMillis())
