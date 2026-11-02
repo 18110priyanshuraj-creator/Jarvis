@@ -1,8 +1,9 @@
 # JARVIS Phase 18 — YouTube Publishing Automation
 
-**Status:** IN_PROGRESS (implementation on feature branch; automated and live-provider acceptance pending)  
+**Status:** IN_PROGRESS (feature implementation and branch CI complete; merge and live-provider acceptance pending)  
 **Branch:** `feat/phase-18-youtube-publishing`  
-**Base:** `main` at `bf3dfb30fc4180b960f7d227b68c69be129b1afc`
+**Base:** `main` at `bf3dfb30fc4180b960f7d227b68c69be129b1afc`  
+**Feature head:** `300b03ab03301b6f1a369d6674f0f7c1c2e80c92`
 
 ## Goal
 
@@ -14,12 +15,13 @@ Extend the approved Phase 17 Media Studio workflow into a user-controlled YouTub
 - Incremental Google OAuth capability. JARVIS reuses its existing server-side Google OAuth client and AES-256-GCM refresh-token vault; existing Drive scopes are preserved when YouTube upload permission is granted. YouTube permission is requested only after the user chooses Connect Google for YouTube uploads.
 - Authenticated YouTube status, preview, cancel and upload endpoints.
 - Preview is limited to an approved Media Studio project and requires the exact file metadata, title, description, tags, optional category, privacy setting and a mandatory made-for-kids declaration.
-- The owner must tick content-review and usage-rights confirmations, review the saved preview, type the exact confirmation phrase `PUBLISH`, and complete a final browser confirmation before upload. Public uploads require an additional confirmation.
+- The owner must tick content-review and usage-rights confirmations, review the saved preview, type the exact confirmation phrase `PUBLISH`, and complete a final browser confirmation before upload. Public uploads require parent/guardian review and an additional confirmation.
 - Default visibility is Private. Unlisted and Public are explicit choices with warnings. Public previews require an additional parent/guardian review attestation before the server creates the preview.
-- Resumable upload streams the selected file directly through the server. JARVIS does not permanently store the video bytes. Server cap is 256 MiB for controlled hosting/resource use even though Google's platform limit is substantially higher.
+- Resumable upload streams the selected file directly through the server. JARVIS counts bytes as they stream and refuses payloads that differ from the preview-approved size. JARVIS does not permanently store video bytes. Server cap is 256 MiB for controlled hosting/resource use.
 - Upload history stores only the chosen metadata, status and confirmed video link; no access token, refresh token or resumable session URL is stored.
 - Short-lived previews expire after ten minutes. An upload attempt is single-use; no automatic retry follows a network failure. Interrupted in-flight states are recovered as `needs_review` after restart so the owner checks YouTube Studio before creating another attempt.
 - Rate limit of three upload requests per hour and one active upload per preview.
+- Subscriber notifications are disabled by default.
 
 ## Setup requirements
 
@@ -44,12 +46,24 @@ Extend the approved Phase 17 Media Studio workflow into a user-controlled YouTub
 - Real Google OAuth and YouTube upload need the owner's configured Google Cloud project, consent and eligible channel. No live upload is executed during development.
 - Samsung Galaxy Tab A9 physical UI, file picker, large upload stability and lifecycle acceptance remain under Phase 31.
 
+## Branch CI evidence
+
+GitHub Actions run [41482952684](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41482952684) passed on feature head `300b03ab03301b6f1a369d6674f0f7c1c2e80c92`:
+
+- Node suite: 240/240 passed.
+- Production dependency audit: 0 vulnerabilities.
+- Android `testDebugUnitTest` and `assembleDebug`: passed.
+- APK integrity check and artifact upload: passed.
+- Debug APK artifact: `jarvis-companion-debug`, artifact ID `13159414246`, SHA-256 `0f4a6a9bd8bc62120b5cfdea8f3bd1af1daaa18dab661f28ea88806d2b2a2eab`, expires 2026-11-09.
+
+The GitHub PR-creation action rejected the linked repository owner even though the connection has repository Admin permission. No PR was opened and `main` was not modified. Create the PR from the [branch comparison page](https://github.com/18110priyanshuraj-creator/Jarvis/compare/main...feat/phase-18-youtube-publishing), then merge and verify post-merge CI. This is an integration/tooling blocker, not a claim that the phase is merged.
+
 ## Completion gates
 
-- [ ] Dedicated YouTube upload scope and incremental OAuth tested.
-- [ ] Approved-project-only preview and explicit rights/audience/privacy review tested.
-- [ ] Resumable server-streamed upload tested with a mock provider.
-- [ ] Authentication, no-consent, size/type validation, timeout and duplicate/restart recovery covered.
-- [ ] Full Node suite, dependency audit and Android unit/build/APK CI pass.
+- [x] Dedicated YouTube upload scope and incremental OAuth tested.
+- [x] Approved-project-only preview and explicit rights/audience/privacy review tested.
+- [x] Resumable server-streamed upload tested with a mock provider, including exact byte-count enforcement.
+- [ ] Authentication, no-consent, size/type validation, timeout and duplicate/restart recovery fully covered by route-level tests.
+- [x] Full Node suite, dependency audit and Android unit/build/APK CI pass on the feature branch.
 - [ ] Merge to `main` and verify post-merge CI.
 - [ ] Real account upload and physical tablet acceptance recorded separately; no live upload was performed as part of this implementation.
