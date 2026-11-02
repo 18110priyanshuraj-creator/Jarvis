@@ -963,6 +963,11 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
     body: JSON.stringify({ message: "What is 2 + 2?", applicationId: "com.example/app" })
   });
   assert.equal(invalidApplicationChat.status, 400);
+  const spoofedApplicationChat = await request("/api/chat", {
+    method: "POST",
+    body: JSON.stringify({ message: "What is 2 + 2?", applicationId: "android-companion" })
+  });
+  assert.equal(spoofedApplicationChat.status, 400);
 
   const localChat = await request("/api/chat", {
     method: "POST",
