@@ -25,6 +25,8 @@ import { getIntegrationCatalog, INTEGRATION_PROVIDER_IDS, probeIntegration, runI
 import { appendActionStatus, createPendingExternalAction, executeExternalAction, getExternalActionCapabilities, MAX_ACTION_HISTORY, MAX_PENDING_ACTIONS, normalizeExternalAction } from "./services/external-actions.js";
 import {
   beginGoogleOAuth,
+  consumeGoogleOAuthBrowserHandoff,
+  createGoogleOAuthBrowserHandoff,
   clearGoogleDriveTokenCache,
   finishGoogleOAuth,
   getGoogleDriveAccessToken,
@@ -140,6 +142,13 @@ const oauthCallbackLimiter = rateLimit({
   limit: 12,
   standardHeaders: "draft-7",
   legacyHeaders: false
+});
+const oauthLaunchLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "OAuth browser launch limit reached. Start a new connection from JARVIS." }
 });
 
 
@@ -1386,12 +1395,24 @@ app.post("/api/integrations/google_drive/oauth/start", requireAuth, oauthStartLi
   try {
     const capability = req.body?.capability === "create_docs" ? "create_docs" : "read";
     const result = await beginGoogleOAuth({ sessionToken: req.sessionToken, capability, runtimeStore });
-    setGoogleOAuthCookie(res, result.browserBinding);
+    const launchUrl = createGoogleOAuthBrowserHandoff(result);
     res.setHeader("Cache-Control", "no-store");
-    res.json({ authorizationUrl: result.authorizationUrl });
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.json({ launchUrl });
   } catch (error) {
     res.status(503).json({ error: error.message || "Google OAuth could not start." });
   }
+});
+
+app.get("/api/integrations/google_drive/oauth/launch", oauthLaunchLimiter, (req, res) => {
+  const handoff = consumeGoogleOAuthBrowserHandoff(req.query?.ticket);
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  if (!handoff) {
+    return res.status(410).type("text/plain").send("This Google sign-in link has expired or was already used. Return to JARVIS and start again.");
+  }
+  setGoogleOAuthCookie(res, handoff.browserBinding);
+  return res.redirect(303, handoff.authorizationUrl);
 });
 
 app.get("/api/integrations/google_drive/oauth/callback", oauthCallbackLimiter, async (req, res) => {

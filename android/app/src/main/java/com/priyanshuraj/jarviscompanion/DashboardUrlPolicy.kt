@@ -29,11 +29,16 @@ internal object DashboardUrlPolicy {
 
         val targetHost = target.host?.lowercase(Locale.ROOT) ?: return false
         val baseHost = URI(base).host?.lowercase(Locale.ROOT) ?: return false
-        if (targetHost == baseHost) return true
+        return targetHost == baseHost
+    }
 
-        return targetHost == "accounts.google.com" ||
-            targetHost == "consent.google.com" ||
-            targetHost == "oauth2.googleapis.com"
+    fun isOAuthBrowserHandoffUrl(rawUrl: String?, configuredBaseUrl: String?): Boolean {
+        val uri = rawUrl?.let(::parseHttpsUri) ?: return false
+        if (!isWorkspaceOrigin(rawUrl, configuredBaseUrl)) return false
+        if (uri.rawPath != "/api/integrations/google_drive/oauth/launch") return false
+        return uri.rawQuery.orEmpty().split("&").any { part ->
+            part.substringBefore("=") == "ticket" && part.substringAfter("=", "").isNotBlank()
+        }
     }
 
     fun isWorkspaceOrigin(rawUrl: String?, configuredBaseUrl: String?): Boolean {

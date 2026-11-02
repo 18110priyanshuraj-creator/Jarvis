@@ -14,7 +14,7 @@ Keep the native JARVIS orb as the Android launch screen, then expose the existin
 - Open the existing dashboard using the HTTPS server origin saved by successful device pairing.
 - Keep the existing workspace password login inside the embedded page; do not pass passwords, device bearer tokens or session values through a URL.
 - Provide native Home, Setup and Reload controls plus Android Back navigation for the embedded workspace.
-- Keep only the exact Google OAuth HTTPS hosts (accounts.google.com, consent.google.com, oauth2.googleapis.com) inside the WebView; other HTTPS links open in the user's external browser.
+- Keep Google OAuth authorization out of the embedded WebView. JARVIS creates a short-lived, one-use same-origin launch ticket; Android opens that exact launch URL in the system browser. The server redeems the ticket, sets the HttpOnly browser-binding cookie, then redirects to Google's secure authorization endpoint.
 - Disable file/content access, mixed content, automatic popups and third-party cookies. Cancel certificate errors. No JavaScript bridge is registered.
 - Add pure JVM tests for HTTPS base URL validation and in-app navigation allow-listing.
 
@@ -42,7 +42,7 @@ Keep the native JARVIS orb as the Android launch screen, then expose the existin
 - Flush WebView-managed cookies during instance-state save without copying credentials or cookies into application preferences or URL parameters.
 - Pause WebView timers and rendering when the Activity pauses or the user returns to the native orb/Setup, then resume when the Activity returns.
 - If Android reports that the WebView renderer process has exited, discard the destroyed WebView and recreate the dashboard on the configured server origin.
-- Google OAuth navigation is allow-listed by exact hostname, not broad wildcard Google domains.
+- Google OAuth follows Google's secure external-browser policy. The embedded WebView allows only the configured JARVIS origin; Google sign-in opens through the system browser while the server retains the existing PKCE verifier, random state, browser-binding cookie and login-session validation.
 - These lifecycle and renderer recovery paths compile in CI; they still require manual Galaxy Tab A9 rotation, login persistence and renderer-recovery acceptance.
 
 
@@ -51,3 +51,12 @@ Keep the native JARVIS orb as the Android launch screen, then expose the existin
 - JavaScript alert, confirm and prompt dialogs are rendered as native Android dialogs only when requested by the configured JARVIS workspace origin.
 - The existing workspace uses confirm() for delete, revoke, approve and stop checkpoints, and prompt() for exact action confirmation phrases and optional review notes. Those explicit decision controls remain usable inside Android.
 - Dialog requests from Google OAuth pages or other origins are cancelled rather than being allowed to impersonate a JARVIS confirmation.
+
+
+## Google OAuth browser handoff
+
+- Google authorization is not opened inside Android WebView. Android opens the JARVIS launch endpoint in the system browser, which receives an HttpOnly, SameSite=Lax browser-binding cookie before the server redirects to Google.
+- The launch ticket is 256-bit random, stored only as a hash, single-use, rate-limited and expires after two minutes. It carries no Google authorization code, refresh token, API key or user password.
+- The existing OAuth state, PKCE S256 challenge/verifier, browser-binding validation, session validity check, allowed scopes, token exchange and encrypted refresh-token storage remain in place.
+- The transient launch ticket is process-local and intentionally not added to the database schema. If the server restarts or the two-minute ticket expires before it is redeemed, start the connection again. No persistent-store migration is made.
+- After the external browser completes the callback, return to the still-open JARVIS app and refresh Connections to see the server-side connection result.

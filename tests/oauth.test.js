@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 import { createRuntimeStore } from "../services/runtime-store.js";
 import {
   beginGoogleOAuth,
+  createGoogleOAuthBrowserHandoff,
+  consumeGoogleOAuthBrowserHandoff,
   clearGoogleDriveTokenCache,
   decryptSecret,
   encryptSecret,
@@ -67,6 +69,30 @@ test("token vault rejects invalid and short encryption keys", () => {
     () => encryptSecret("test-value", { env: { JARVIS_TOKEN_ENCRYPTION_KEY: Buffer.alloc(8).toString("base64") } }),
     /exactly 32 bytes/
   );
+});
+
+test("Google OAuth browser handoff is short-lived, bound and single-use", () => {
+  const flow = startFlow();
+  const launchUrl = createGoogleOAuthBrowserHandoff(flow);
+  const launch = new URL(launchUrl);
+  assert.equal(launch.origin, "https://jarvis.example.com");
+  assert.equal(launch.pathname, "/api/integrations/google_drive/oauth/launch");
+  const ticket = launch.searchParams.get("ticket");
+  assert.ok(ticket && ticket.length >= 40);
+  assert.notEqual(ticket, flow.browserBinding);
+
+  const redeemed = consumeGoogleOAuthBrowserHandoff(ticket);
+  assert.equal(redeemed.authorizationUrl, flow.authorizationUrl);
+  assert.equal(redeemed.browserBinding, flow.browserBinding);
+  assert.equal(consumeGoogleOAuthBrowserHandoff(ticket), null);
+  assert.equal(consumeGoogleOAuthBrowserHandoff(ticket + "tampered"), null);
+});
+
+test("Google OAuth browser handoff rejects non-Google authorization endpoints", () => {
+  assert.throws(() => createGoogleOAuthBrowserHandoff({
+    authorizationUrl: "https://evil.example/oauth",
+    browserBinding: "test-browser-binding"
+  }), /handoff could not be created/i);
 });
 
 test("Google OAuth start uses state, PKCE S256, offline access and a single metadata scope", () => {

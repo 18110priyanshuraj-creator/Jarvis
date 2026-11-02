@@ -8,6 +8,8 @@ const GOOGLE_CALLBACK_PATH = "/api/integrations/google_drive/oauth/callback";
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const TOKEN_TIMEOUT_MS = 8000;
 const pendingStates = new Map();
+const pendingBrowserHandoffs = new Map();
+const OAUTH_BROWSER_HANDOFF_TTL_MS = 2 * 60 * 1000;
 const accessTokenCache = new Map();
 const refreshOperations = new Map();
 
@@ -168,6 +170,9 @@ function prunePendingStates() {
   for (const [state, pending] of pendingStates) {
     if (pending.expiresAt <= now) pendingStates.delete(state);
   }
+  for (const [ticketHash, handoff] of pendingBrowserHandoffs) {
+    if (handoff.expiresAt <= now) pendingBrowserHandoffs.delete(ticketHash);
+  }
 }
 
 export function beginGoogleOAuth({ sessionToken, capability = "read", env = process.env, runtimeStore = null }) {
@@ -269,6 +274,62 @@ function cacheAccessToken(token, expiresIn) {
     token,
     expiresAt: Date.now() + Math.max(60, Number(expiresIn) || 3600) * 1000
   });
+}
+
+/**
+ * Creates a short-lived one-use launch URL for the system browser.
+ * The browser-binding value remains server-side until the ticket is redeemed,
+ * where it is set as an HttpOnly callback cookie before redirecting to Google.
+ */
+export function createGoogleOAuthBrowserHandoff({ authorizationUrl, browserBinding }) {
+  const authUrl = (() => {
+    try { return new URL(cleanString(authorizationUrl, 4096)); } catch { return null; }
+  })();
+  if (!authUrl ||
+      authUrl.origin !== "https://accounts.google.com" ||
+      authUrl.pathname !== "/o/oauth2/v2/auth" ||
+      !cleanString(browserBinding, 200)) {
+    throw new Error("Google OAuth browser handoff could not be created.");
+  }
+
+  let callback;
+  try { callback = new URL(authUrl.searchParams.get("redirect_uri") || ""); } catch {
+    throw new Error("Google OAuth callback URL is invalid.");
+  }
+  const localHttp = callback.protocol === "http:" &&
+    ["localhost", "127.0.0.1"].includes(callback.hostname);
+  if ((!localHttp && callback.protocol !== "https:") ||
+      callback.username || callback.password || callback.search || callback.hash ||
+      callback.pathname !== GOOGLE_CALLBACK_PATH) {
+    throw new Error("Google OAuth callback URL is invalid.");
+  }
+
+  prunePendingStates();
+  const ticket = crypto.randomBytes(32).toString("base64url");
+  const ticketHash = hash(ticket).toString("base64url");
+  pendingBrowserHandoffs.set(ticketHash, {
+    authorizationUrl: authUrl.toString(),
+    browserBinding: cleanString(browserBinding, 200),
+    expiresAt: Date.now() + OAUTH_BROWSER_HANDOFF_TTL_MS
+  });
+
+  const launchUrl = new URL("/api/integrations/google_drive/oauth/launch", callback.origin);
+  launchUrl.searchParams.set("ticket", ticket);
+  return launchUrl.toString();
+}
+
+/** Consumes a browser launch ticket once. Only a hash of the ticket is stored. */
+export function consumeGoogleOAuthBrowserHandoff(ticket) {
+  const value = cleanString(ticket, 128);
+  if (!/^[A-Za-z0-9_-]{40,80}$/.test(value)) return null;
+  const ticketHash = hash(value).toString("base64url");
+  const handoff = pendingBrowserHandoffs.get(ticketHash);
+  pendingBrowserHandoffs.delete(ticketHash);
+  if (!handoff || handoff.expiresAt <= Date.now()) return null;
+  return {
+    authorizationUrl: handoff.authorizationUrl,
+    browserBinding: handoff.browserBinding
+  };
 }
 
 export async function finishGoogleOAuth(options = {}) {

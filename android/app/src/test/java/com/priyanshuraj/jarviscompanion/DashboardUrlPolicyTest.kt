@@ -23,17 +23,36 @@ class DashboardUrlPolicyTest {
     }
 
     @Test
-    fun allowsOnlyConfiguredOriginAndGoogleOauthHostsInApp() {
+    fun allowsOnlyTheConfiguredWorkspaceOriginInWebView() {
         val base = "https://jarvis.example"
         assertTrue(DashboardUrlPolicy.allowsInAppNavigation("https://jarvis.example/memory", base))
-        assertTrue(DashboardUrlPolicy.allowsInAppNavigation("https://accounts.google.com/o/oauth2/auth", base))
-        assertTrue(DashboardUrlPolicy.allowsInAppNavigation("https://consent.google.com/", base))
-        assertTrue(DashboardUrlPolicy.allowsInAppNavigation("https://oauth2.googleapis.com/token", base))
-        assertFalse(DashboardUrlPolicy.allowsInAppNavigation("https://evil.google.com/", base))
-        assertFalse(DashboardUrlPolicy.allowsInAppNavigation("https://evil.googleapis.com/", base))
+        assertFalse(DashboardUrlPolicy.allowsInAppNavigation("https://accounts.google.com/o/oauth2/auth", base))
+        assertFalse(DashboardUrlPolicy.allowsInAppNavigation("https://consent.google.com/", base))
+        assertFalse(DashboardUrlPolicy.allowsInAppNavigation("https://oauth2.googleapis.com/token", base))
         assertFalse(DashboardUrlPolicy.allowsInAppNavigation("https://jarvis.example.evil.test/", base))
         assertFalse(DashboardUrlPolicy.allowsInAppNavigation("http://jarvis.example/", base))
         assertFalse(DashboardUrlPolicy.allowsInAppNavigation("file:///etc/passwd", base))
+    }
+
+    @Test
+    fun GoogleOAuthLaunchTicketsAreSentToTheExternalBrowser() {
+        val base = "https://jarvis.example"
+        assertTrue(DashboardUrlPolicy.isOAuthBrowserHandoffUrl(
+            "https://jarvis.example/api/integrations/google_drive/oauth/launch?ticket=abc123",
+            base
+        ))
+        assertFalse(DashboardUrlPolicy.isOAuthBrowserHandoffUrl(
+            "https://accounts.google.com/o/oauth2/auth?ticket=abc123",
+            base
+        ))
+        assertFalse(DashboardUrlPolicy.isOAuthBrowserHandoffUrl(
+            "https://jarvis.example/api/integrations/google_drive/oauth/callback?ticket=abc123",
+            base
+        ))
+        assertFalse(DashboardUrlPolicy.isOAuthBrowserHandoffUrl(
+            "https://jarvis.example/api/integrations/google_drive/oauth/launch",
+            base
+        ))
     }
 
     @Test

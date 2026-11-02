@@ -949,7 +949,7 @@ async function startGoogleDocsPermissionUpgrade() {
       method: "POST",
       body: JSON.stringify({ capability: "create_docs" })
     });
-    window.location.href = data.authorizationUrl;
+    window.location.href = data.launchUrl;
   } catch (error) {
     toast(error.message, true);
     button.disabled = false;
@@ -1165,7 +1165,7 @@ function renderIntegrations() {
       connect.disabled = true;
       try {
         const data = await api("/api/integrations/google_drive/oauth/start", { method: "POST", body: JSON.stringify({}) });
-        window.location.href = data.authorizationUrl;
+        window.location.href = data.launchUrl;
       } catch (error) {
         toast(error.message, true);
         connect.disabled = false;

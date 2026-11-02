@@ -526,6 +526,15 @@ class MainActivity : Activity() {
     }
 
     private fun routeDashboardNavigation(rawUrl: String): Boolean {
+        if (DashboardUrlPolicy.isOAuthBrowserHandoffUrl(rawUrl, dashboardBaseUrl)) {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(rawUrl)))
+                dashboardStatusText?.text = "Google sign-in opened in your secure browser. Return to JARVIS when the connection finishes."
+            } catch (_: Exception) {
+                dashboardStatusText?.text = "No secure browser is available to continue Google sign-in."
+            }
+            return true
+        }
         if (DashboardUrlPolicy.allowsInAppNavigation(rawUrl, dashboardBaseUrl)) {
             return false
         }
