@@ -102,6 +102,23 @@ object LocalTaskExecutionJournal {
     }
 
     @Synchronized
+    fun setState(context: Context, id: String, status: String, currentStepIndex: Int): LocalTaskExecutionRecord? {
+        require(status in setOf("running", "paused")) { "Unsupported active task status." }
+        val records = readJson(context)
+        val record = find(records, id) ?: return null
+        record.put("status", status)
+            .put("currentStepIndex", currentStepIndex.coerceIn(0, MAX_STEPS))
+            .put("updatedAtEpochMs", System.currentTimeMillis())
+        writeJson(context, records)
+        LocalActivityLog.record(
+            context,
+            "Device task " + status,
+            "Progress saved at step " + (currentStepIndex + 1) + "."
+        )
+        return record.toRecord()
+    }
+
+    @Synchronized
     fun finish(context: Context, id: String, status: String): LocalTaskExecutionRecord? {
         require(status in setOf("completed", "failed", "waiting_user", "cancelled")) {
             "Unsupported terminal task status."
@@ -123,7 +140,7 @@ object LocalTaskExecutionJournal {
         var changed = false
         for (index in 0 until records.length()) {
             val record = records.optJSONObject(index) ?: continue
-            if (record.optString("status") != "running") continue
+            if (record.optString("status") !in setOf("running", "paused")) continue
             record.put("status", "interrupted")
                 .put("requiresManualReplan", true)
                 .put("updatedAtEpochMs", System.currentTimeMillis())
