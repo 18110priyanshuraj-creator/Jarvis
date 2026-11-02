@@ -7,12 +7,77 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import org.json.JSONArray
+import org.json.JSONObject
 import com.priyanshuraj.jarviscompanion.accessibility.JarvisAccessibilityService
 import com.priyanshuraj.jarviscompanion.accessibility.ScreenObserver
 import com.priyanshuraj.jarviscompanion.accessibility.UIActionExecutor
 import java.util.Locale
 
 object LocalCommandProcessor {
+    private val restrictedPublicSearch = Regex(
+        """(?i)\\b(porn|xxx|adult content|vape|cigarette|tobacco|nicotine|alcohol|liquor|beer|wine|weed|marijuana|cannabis|cocaine|methamphetamine|steroids|gambling|sports betting|casino|firearms?|weapons?|ammunition|how to make a bomb|explosives?|gun|suicide|self.?harm)\\b"""
+    )
+    private val googleSearchPatterns = listOf(
+        Regex("""^(?:please\\s+)?search\\s+(.+?)\\s+(?:on|using)\\s+google$""", RegexOption.IGNORE_CASE),
+        Regex("""^(?:please\\s+)?google\\s+search\\s+(?:for\\s+)?(.+)$""", RegexOption.IGNORE_CASE),
+        Regex("""^google\\s+(?:par|pe)\\s+(.+?)\\s+(?:search|research)(?:\\s+(?:karo|kar do))?$""", RegexOption.IGNORE_CASE),
+        Regex("""^google\\s+se\\s+(.+?)\\s+(?:search|dhundo|dhoondo)(?:\\s+(?:karo|kar do))?$""", RegexOption.IGNORE_CASE),
+        Regex("""^(?:internet|web)\\s+(?:par|pe)\\s+(.+?)\\s+(?:search|research|check)(?:\\s+(?:karo|kar do))?$""", RegexOption.IGNORE_CASE)
+    )
+
+    /**
+     * Local-only public search intent parser. It returns a plan, never launches the
+     * browser directly; the shared Android approval dialog remains mandatory.
+     */
+    fun createGoogleSearchPlan(message: String): JSONObject? {
+        val input = message.trim()
+            .replace(Regex("""(?i)^jarvis[\\s,:;-]+"""), "")
+            .trim()
+            .trimEnd('.', '!', '?', '।', '॥')
+        if (input.isBlank()) return null
+
+        val query = googleSearchPatterns.firstNotNullOfOrNull { pattern ->
+            pattern.find(input)?.groupValues?.getOrNull(1)?.trim()
+        }?.trim('"', '\'', '“', '”', '‘', '’')
+            ?.replace(Regex("""\\s+"""), " ")
+            ?.trim()
+            ?: return null
+
+        val safe = query.isNotBlank() &&
+            query.length <= 120 &&
+            UiActionPolicy.validateTextPayload(query, 120).allowed &&
+            !restrictedPublicSearch.containsMatchIn(query) &&
+            !Regex("""(?i)\\b(password|passcode|otp|one.?time code|pin|cvv|cvc|bank account|card number)\\b""")
+                .containsMatchIn(query)
+
+        if (!safe) {
+            return JSONObject()
+                .put("mode", "clarification")
+                .put("reply", "That search request is outside JARVIS's safe public-research scope. Choose a different educational topic.")
+                .put("actions", JSONArray())
+        }
+
+        val actions = JSONArray()
+            .put(JSONObject()
+                .put("type", "open_web_search")
+                .put("value", query)
+                .put("purpose", "Open a fixed Google HTTPS search URL in the default browser."))
+            .put(JSONObject()
+                .put("type", "verify_browser_foreground")
+                .put("value", query)
+                .put("purpose", "Verify that Android's default browser is foregrounded."))
+            .put(JSONObject()
+                .put("type", "ask_user")
+                .put("value", "The default browser opened for your Google search request. Check that the query loaded, then choose a public result yourself. Handle login, consent or CAPTCHA prompts manually.")
+                .put("purpose", "Keep result selection and access challenges under the user's control."))
+
+        return JSONObject()
+            .put("mode", "device_action")
+            .put("reply", "I will open Google in your default browser and verify that the browser is foregrounded. You will choose a result; JARVIS will not sign in, submit forms or bypass challenges.")
+            .put("actions", actions)
+    }
+
     private val openPrefix = Regex("""^(?:please\s+)?(?:open|launch|start)\s+(.+)$""", RegexOption.IGNORE_CASE)
     private val openSuffix = Regex("""^(.+?)\s+(?:kholo|khol do|open karo|chalu karo)$""", RegexOption.IGNORE_CASE)
     private val tapPrefix = Regex("""^(?:tap|click|press|select|dabao)\s+(.+)$""", RegexOption.IGNORE_CASE)
