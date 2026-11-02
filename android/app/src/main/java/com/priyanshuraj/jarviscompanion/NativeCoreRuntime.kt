@@ -208,6 +208,8 @@ class NativeCoreRuntime(context: Context) {
     private val ledgerExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val database = Room.databaseBuilder(appContext, JarvisCoreDatabase::class.java, DATABASE_NAME).build()
     private val ledger = CoreExecutionLedger(database.executionDao(), ledgerExecutor)
+    private val localMemoryRuntime = LocalMemoryRuntime(appContext)
+    private val localMemoryCommands = LocalMemoryCommandHandler(localMemoryRuntime.repository)
     private val systemController = LocalSystemController(AndroidLocalSystemPlatform(appContext))
 
     private data class RemoteCredentials(val serverUrl: String, val token: String)
@@ -234,7 +236,9 @@ class NativeCoreRuntime(context: Context) {
             val startedAt = System.currentTimeMillis()
             val dispatcher = NativeCommandDispatcher(
                 localCommand = { text, allowActions ->
-                    systemController.handle(text) ?: LocalCommandProcessor.handle(appContext, text, allowActions)
+                    localMemoryCommands.handle(text)
+                        ?: systemController.handle(text)
+                        ?: LocalCommandProcessor.handle(appContext, text, allowActions)
                 },
                 remoteAvailable = { remoteCredentials() != null },
                 remoteAssistant = { text ->
@@ -263,7 +267,8 @@ class NativeCoreRuntime(context: Context) {
     fun handleLocalCommand(message: String, source: CoreCommandSource, allowUiActions: Boolean): String? {
         val startedAt = System.currentTimeMillis()
         return try {
-            val result = systemController.handle(message)
+            val result = localMemoryCommands.handle(message)
+                ?: systemController.handle(message)
                 ?: LocalCommandProcessor.handle(appContext, message, allowUiActions)
             ledger.record(
                 source,
@@ -310,6 +315,11 @@ class NativeCoreRuntime(context: Context) {
     }
 
     fun requestAssistantReply(message: String, source: CoreCommandSource): String {
+        val localMemoryReply = localMemoryCommands.handle(message)
+        if (localMemoryReply != null) {
+            ledger.record(source, CoreCommandRoute.LOCAL, CoreCommandOutcome.HANDLED, message.trim().length, 0L)
+            return localMemoryReply
+        }
         val credentials = remoteCredentials()
             ?: throw IllegalStateException("Pair this device with JARVIS before requesting a remote reply.")
         val startedAt = System.currentTimeMillis()
@@ -340,9 +350,37 @@ class NativeCoreRuntime(context: Context) {
         }
     }
 
+    fun loadLocalMemories(query: String = "", onComplete: (Result<List<LocalMemoryNote>>) -> Unit) {
+        runMemoryOperation({ localMemoryRuntime.repository.list(query) }, onComplete)
+    }
+
+    fun saveLocalMemory(content: String, category: String, onComplete: (Result<LocalMemoryNote>) -> Unit) {
+        runMemoryOperation({ localMemoryRuntime.repository.save(content, category) }, onComplete)
+    }
+
+    fun updateLocalMemory(id: String, content: String, category: String, onComplete: (Result<LocalMemoryNote>) -> Unit) {
+        runMemoryOperation({ localMemoryRuntime.repository.update(id, content, category) }, onComplete)
+    }
+
+    fun setLocalMemoryEnabled(id: String, enabled: Boolean, onComplete: (Result<LocalMemoryNote>) -> Unit) {
+        runMemoryOperation({ localMemoryRuntime.repository.setEnabled(id, enabled) }, onComplete)
+    }
+
+    fun deleteLocalMemory(id: String, onComplete: (Result<Boolean>) -> Unit) {
+        runMemoryOperation({ localMemoryRuntime.repository.delete(id) }, onComplete)
+    }
+
+    private fun <T> runMemoryOperation(operation: () -> T, onComplete: (Result<T>) -> Unit) {
+        commandExecutor.execute {
+            val result = runCatching { operation() }
+            callbackHandler.post { onComplete(result) }
+        }
+    }
+
     fun close() {
         commandExecutor.shutdownNow()
         ledgerExecutor.shutdown()
+        localMemoryRuntime.close()
         database.close()
     }
 

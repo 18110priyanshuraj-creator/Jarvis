@@ -25,6 +25,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import android.net.Uri
@@ -75,6 +76,11 @@ class MainActivity : Activity() {
     private var pendingOAuthBrowserReturn = false
     private var showingDashboard = false
     private var showingSetup = false
+    private var showingLocalMemory = false
+    private var localMemoryScreen: View? = null
+    private var localMemorySearchInput: EditText? = null
+    private var localMemoryStatusText: TextView? = null
+    private var localMemoryListContainer: LinearLayout? = null
     private var speechRecognizer: SpeechRecognizer? = null
     private var textToSpeech: TextToSpeech? = null
     private var recognitionLanguage = "hi-IN"
@@ -131,6 +137,10 @@ class MainActivity : Activity() {
             setOnClickListener { showVoicePrivacyModeDialog() }
         }
         refreshVoiceModeButton()
+        val localMemoryButton = Button(this).apply {
+            text = "Manage on-device memories"
+            setOnClickListener { showLocalMemoryScreen() }
+        }
         val stopHandsFreeButton = Button(this).apply {
             text = "Stop hands-free control"
             setOnClickListener { stopHandsFreeControl() }
@@ -211,6 +221,12 @@ class MainActivity : Activity() {
                 setPadding(0, 24, 0, 8)
             })
             addView(voiceModeButton, matchWidth())
+            addView(localMemoryButton, matchWidth())
+            addView(TextView(this@MainActivity).apply {
+                text = "Local Memory stores only notes you explicitly save. Content is encrypted on this tablet and is never synced or attached to chat automatically."
+                textSize = 12f
+                setPadding(0, 4, 0, 12)
+            })
             addView(TextView(this@MainActivity).apply {
                 text = "Offline-only applies to microphone recognition and spoken replies. Chat requests may still use your paired JARVIS server."
                 textSize = 12f
@@ -251,6 +267,8 @@ class MainActivity : Activity() {
         showHomeScreen()
         if (savedInstanceState?.getBoolean(STATE_SHOWING_DASHBOARD, false) == true) {
             showDashboardScreen(savedInstanceState.getBundle(STATE_DASHBOARD_WEBVIEW))
+        } else if (savedInstanceState?.getBoolean(STATE_SHOWING_LOCAL_MEMORY, false) == true) {
+            showLocalMemoryScreen()
         }
 
         textToSpeech = TextToSpeech(this) { result ->
@@ -286,11 +304,246 @@ class MainActivity : Activity() {
         }
     }
 
+
+    private fun showLocalMemoryScreen() {
+        dashboardWebView?.onPause()
+        val screen = localMemoryScreen ?: createLocalMemoryScreen().also { localMemoryScreen = it }
+        showingSetup = false
+        showingDashboard = false
+        showingLocalMemory = true
+        setContentView(screen)
+        refreshLocalMemories()
+    }
+
+    private fun createLocalMemoryScreen(): View {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(18), dp(18), dp(24))
+            setBackgroundColor(Color.rgb(4, 13, 29))
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val back = homeButton("Back").apply {
+            contentDescription = "Return to JARVIS setup"
+            setOnClickListener { showSetupScreen() }
+        }
+        val title = TextView(this).apply {
+            text = "LOCAL MEMORY"
+            textSize = 20f
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            setTextColor(Color.rgb(222, 248, 255))
+            gravity = Gravity.CENTER
+        }
+        header.addView(back, LinearLayout.LayoutParams(dp(82), dp(44)))
+        header.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(header, matchWidth())
+        root.addView(TextView(this).apply {
+            text = "On-device only · encrypted note content · no automatic sync"
+            textSize = 12f
+            setTextColor(Color.rgb(112, 177, 198))
+            setPadding(0, dp(10), 0, dp(6))
+        }, matchWidth())
+        root.addView(TextView(this).apply {
+            text = "Only notes you explicitly save appear here. These notes are separate from your server workspace memories and chat history. Matching notes are never sent to the server automatically."
+            textSize = 13f
+            setTextColor(Color.rgb(170, 195, 208))
+            setPadding(0, 0, 0, dp(12))
+        }, matchWidth())
+
+        localMemorySearchInput = EditText(this).apply {
+            hint = "Search local memories"
+            setSingleLine(true)
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.rgb(132, 157, 172))
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+        }
+        root.addView(localMemorySearchInput, matchWidth())
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val search = homeButton("Search").apply { setOnClickListener { refreshLocalMemories() } }
+        val add = homeButton("Add memory").apply { setOnClickListener { showLocalMemoryEditor() } }
+        actions.addView(search, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(8) })
+        actions.addView(add, LinearLayout.LayoutParams(0, dp(48), 1f))
+        root.addView(actions, matchWidth())
+
+        localMemoryStatusText = TextView(this).apply {
+            textSize = 13f
+            setTextColor(Color.rgb(145, 205, 220))
+            setPadding(0, dp(12), 0, dp(10))
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
+        root.addView(localMemoryStatusText, matchWidth())
+        localMemoryListContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(localMemoryListContainer, matchWidth())
+        return ScrollView(this).apply {
+            isFillViewport = true
+            addView(root)
+        }
+    }
+
+    private fun refreshLocalMemories() {
+        val container = localMemoryListContainer ?: return
+        val status = localMemoryStatusText ?: return
+        val query = localMemorySearchInput?.text?.toString().orEmpty()
+        container.removeAllViews()
+        status.text = "Loading encrypted notes from this tablet…"
+        jarvisCore.loadLocalMemories(query) { result ->
+            if (!showingLocalMemory || isFinishing || isDestroyed) return@loadLocalMemories
+            container.removeAllViews()
+            val notes = result.getOrNull()
+            if (notes == null) {
+                status.text = result.exceptionOrNull()?.message ?: "Local memories could not be opened. Saved data has not been deleted."
+                return@loadLocalMemories
+            }
+            status.text = notes.size.toString() + " local memory note(s). Paused notes remain saved but are not active."
+            if (notes.isEmpty()) {
+                container.addView(TextView(this).apply {
+                    text = "No local memories found. Use Add memory or say “Remember: …” to save one."
+                    textSize = 14f
+                    setTextColor(Color.rgb(170, 195, 208))
+                    setPadding(dp(4), dp(8), dp(4), dp(16))
+                }, matchWidth())
+            }
+            notes.forEach { note ->
+                val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(14), dp(12), dp(14), dp(12))
+                    background = GradientDrawable().apply {
+                        setColor(Color.rgb(10, 27, 43))
+                        cornerRadius = dp(14).toFloat()
+                        setStroke(dp(1), Color.rgb(34, 79, 99))
+                    }
+                }
+                card.addView(TextView(this).apply {
+                    text = note.content
+                    textSize = 15f
+                    setTextColor(Color.rgb(230, 241, 247))
+                }, matchWidth())
+                card.addView(TextView(this).apply {
+                    text = note.category.uppercase(Locale.ROOT) + if (note.enabled) " · ACTIVE" else " · PAUSED"
+                    textSize = 11f
+                    setTextColor(Color.rgb(112, 177, 198))
+                    setPadding(0, dp(6), 0, dp(8))
+                }, matchWidth())
+                val controls = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                val pause = homeButton(if (note.enabled) "Pause" else "Resume").apply {
+                    setOnClickListener {
+                        jarvisCore.setLocalMemoryEnabled(note.id, !note.enabled) { changed ->
+                            if (changed.isFailure) status.text = changed.exceptionOrNull()?.message ?: "Could not update this note."
+                            refreshLocalMemories()
+                        }
+                    }
+                }
+                val edit = homeButton("Edit").apply { setOnClickListener { showLocalMemoryEditor(note) } }
+                val delete = homeButton("Delete").apply { setOnClickListener { confirmDeleteLocalMemory(note) } }
+                controls.addView(pause, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(5) })
+                controls.addView(edit, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(5) })
+                controls.addView(delete, LinearLayout.LayoutParams(0, dp(44), 1f))
+                card.addView(controls, matchWidth())
+                val params = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                params.bottomMargin = dp(10)
+                container.addView(card, params)
+            }
+        }
+    }
+
+    private fun showLocalMemoryEditor(existing: LocalMemoryNote? = null) {
+        val editor = EditText(this).apply {
+            hint = "Write one fact, preference or goal to remember"
+            setSingleLine(false)
+            minLines = 3
+            maxLines = 6
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            setText(existing?.content.orEmpty())
+            setSelection(text.length)
+        }
+        val categories = arrayOf("fact", "preference", "goal")
+        val category = Spinner(this).apply {
+            adapter = android.widget.ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                categories
+            )
+            setSelection(categories.indexOf(existing?.category ?: "fact").coerceAtLeast(0))
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+            addView(TextView(this@MainActivity).apply {
+                text = "Memory content (3–500 characters)"
+                textSize = 12f
+            }, matchWidth())
+            addView(editor, matchWidth())
+            addView(TextView(this@MainActivity).apply {
+                text = "Category"
+                textSize = 12f
+                setPadding(0, dp(8), 0, 0)
+            }, matchWidth())
+            addView(category, matchWidth())
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(if (existing == null) "Save a local memory" else "Edit local memory")
+            .setView(content)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton(if (existing == null) "Save" else "Update", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val value = editor.text.toString()
+                val selectedCategory = categories.getOrElse(category.selectedItemPosition) { "fact" }
+                val completed: (Result<LocalMemoryNote>) -> Unit = { result ->
+                    if (result.isSuccess) {
+                        dialog.dismiss()
+                        localMemoryStatusText?.text = if (existing == null) "Memory saved on this tablet." else "Local memory updated."
+                        refreshLocalMemories()
+                    } else {
+                        editor.error = result.exceptionOrNull()?.message ?: "Could not save this memory."
+                    }
+                }
+                if (existing == null) {
+                    jarvisCore.saveLocalMemory(value, selectedCategory, completed)
+                } else {
+                    jarvisCore.updateLocalMemory(existing.id, value, selectedCategory, completed)
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun confirmDeleteLocalMemory(note: LocalMemoryNote) {
+        AlertDialog.Builder(this)
+            .setTitle("Delete this local memory?")
+            .setMessage("This permanently removes this one encrypted note from this tablet. It does not affect server workspace memories.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Delete") { _, _ ->
+                jarvisCore.deleteLocalMemory(note.id) { result ->
+                    if (result.isSuccess) {
+                        localMemoryStatusText?.text = "Local memory deleted."
+                    } else {
+                        localMemoryStatusText?.text = result.exceptionOrNull()?.message ?: "Could not delete this memory."
+                    }
+                    refreshLocalMemories()
+                }
+            }
+            .show()
+    }
+
     private fun showHomeScreen() {
         dashboardWebView?.onPause()
         val screen = homeScreen ?: createHomeScreen().also { homeScreen = it }
         showingSetup = false
         showingDashboard = false
+        showingLocalMemory = false
         setContentView(screen)
         refreshStatus()
     }
@@ -299,6 +552,7 @@ class MainActivity : Activity() {
         dashboardWebView?.onPause()
         showingSetup = true
         showingDashboard = false
+        showingLocalMemory = false
         setContentView(setupRootView)
         refreshStatus()
         refreshPermissionChecklist()
@@ -324,6 +578,7 @@ class MainActivity : Activity() {
         val screen = dashboardScreen ?: createDashboardScreen().also { dashboardScreen = it }
         showingSetup = false
         showingDashboard = true
+        showingLocalMemory = false
         setContentView(screen)
         dashboardWebView?.onResume()
 
@@ -756,7 +1011,9 @@ class MainActivity : Activity() {
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        if (showingDashboard) {
+        if (showingLocalMemory) {
+            showSetupScreen()
+        } else if (showingDashboard) {
             val webView = dashboardWebView
             if (webView?.canGoBack() == true) {
                 webView.goBack()
@@ -795,6 +1052,7 @@ class MainActivity : Activity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean(STATE_SHOWING_DASHBOARD, showingDashboard)
+        outState.putBoolean(STATE_SHOWING_LOCAL_MEMORY, showingLocalMemory)
         outState.putBoolean(STATE_PENDING_OAUTH_BROWSER_RETURN, pendingOAuthBrowserReturn)
         if (showingDashboard) {
             val webViewState = Bundle()
@@ -1166,6 +1424,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val STATE_SHOWING_DASHBOARD = "jarvis.showing_dashboard"
+        private const val STATE_SHOWING_LOCAL_MEMORY = "jarvis.showing_local_memory"
         private const val STATE_DASHBOARD_WEBVIEW = "jarvis.dashboard_webview_state"
         private const val STATE_PENDING_OAUTH_BROWSER_RETURN = "jarvis.pending_oauth_browser_return"
         private const val REQUEST_MICROPHONE = 7001
