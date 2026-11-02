@@ -1482,7 +1482,11 @@ class MainActivity : Activity() {
                     return@runOnUiThread
                 }
                 when (mode) {
-                    AgentPlanMode.DEVICE_ACTION -> showAgentPlanApproval(plan)
+                    AgentPlanMode.DEVICE_ACTION -> {
+                        // The approval and task controls belong to the Orb home screen.
+                        if (showingSetup || showingDashboard || showingLocalMemory) showHomeScreen()
+                        showAgentPlanApproval(plan)
+                    }
                     AgentPlanMode.CONVERSATION -> {
                         val reply = plan.optString("reply").trim()
                         if (reply.isBlank()) submitChatFallback(message, source)
