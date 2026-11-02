@@ -31,7 +31,7 @@ The existing synchronous API behavior remains available for compatibility. The W
 
 On server startup, a workflow run left in `queued` or `running` is changed to `paused`. Its last running step is returned to pending at the same index; already completed steps remain completed. Recovery metadata records the restart reason and the requirement for manual resume. JARVIS never silently replays an in-flight action during startup.
 
-The workflow must be resumed explicitly through the authenticated resume route. Stable execution keys protect local write steps if their effect was committed immediately before the restart.
+The workflow must be resumed explicitly through the authenticated resume route. Stable execution keys protect local write steps if their effect was committed immediately before the restart. A handler that exceeds its timeout is marked failed; JavaScript cannot forcibly terminate an already-running handler, so currently enabled remote handlers are read-only and local write handlers are idempotent.
 
 ### Pause, resume, stop and retry
 
@@ -39,6 +39,7 @@ The workflow must be resumed explicitly through the authenticated resume route. 
 - Pause requests are honored at the next safe step boundary; queued runs can be paused before execution.
 - Resume starts from the durable next-step index.
 - Stop requests do not start later steps; a currently executing step is allowed to reach its next safe boundary.
+- Each server workflow step has a 60-second default timeout (internally configurable within 100 ms–120 seconds). A timeout fails the current step and prevents later steps from starting.
 - Failed steps can be manually retried without restarting completed steps.
 - Attempts are bounded to three per step. The workflow history retains failure/retry log entries.
 - Concurrent duplicate starts and duplicate run controls are rejected.
@@ -85,6 +86,7 @@ All endpoints remain behind the existing authenticated API middleware.
 | Recover active server runs as paused after restart | IMPLEMENTED — CI pending |
 | Explicit workflow resume | IMPLEMENTED — CI pending |
 | Pause and stop at safe step boundaries | IMPLEMENTED — CI pending |
+| Per-step timeout and timeout failure handling | IMPLEMENTED — 60-second default; later steps remain unstarted |
 | Bounded manual retry of failed step | IMPLEMENTED — max three attempts |
 | Existing Workflows UI progress and controls | IMPLEMENTED — CI pending |
 | Native Android action-sequence progress journal | IMPLEMENTED — CI pending |
@@ -103,7 +105,7 @@ The GitHub Actions workflow `.github/workflows/check.yml` is the verification ga
 3. `gradle -p android --no-daemon --stacktrace testDebugUnitTest assembleDebug` — Android tests and APK build.
 4. APK existence and ZIP integrity verification, SHA-256 generation and artifact upload.
 
-New focused tests cover per-step checkpoints, pause/resume, restart recovery, safe stop, bounded retry, Android sequence callbacks, Android journal recovery, generic-only persisted data and bounded local history.
+New focused tests cover per-step checkpoints, pause/resume, queued-run pause, restart recovery, safe stop, timeout handling, bounded retry, Android sequence callbacks, Android journal recovery, generic-only persisted data and bounded local history.
 
 ## Known limits
 
