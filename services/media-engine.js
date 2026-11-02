@@ -137,6 +137,9 @@ export function normalizeMediaProject(input = {}) {
   if (SECRET_PATTERN.test(audience) || TOKEN_PATTERN.test(audience)) {
     throw new TypeError("JARVIS will not keep audience details that appear to contain a credential or secret.");
   }
+  if (RESTRICTED_MEDIA_PATTERN.test(audience)) {
+    throw new TypeError("This media audience setting is outside the supported safe-content scope.");
+  }
   const selectedFormat = formatKey(input.format);
   const format = FORMATS[selectedFormat];
   const scenesInput = Array.isArray(input.scenes) ? input.scenes.slice(0, MAX_SCENES) : [];
