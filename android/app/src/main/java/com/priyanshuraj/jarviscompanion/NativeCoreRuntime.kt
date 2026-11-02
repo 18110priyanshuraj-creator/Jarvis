@@ -298,20 +298,23 @@ class NativeCoreRuntime(context: Context) {
         DeviceConnector.heartbeat(serverUrl, token, accessibilityEnabled)
     }
 
-    fun requestAgentPlan(message: String): JSONObject {
+    fun requestAgentPlan(
+        message: String,
+        source: CoreCommandSource = CoreCommandSource.HANDS_FREE
+    ): JSONObject {
         val credentials = remoteCredentials()
             ?: throw IllegalStateException("Pair this device with JARVIS before requesting an action plan.")
         val startedAt = System.currentTimeMillis()
         return try {
             val plan = DeviceConnector.agentPlan(credentials.serverUrl, credentials.token, message)
             ledger.record(
-                CoreCommandSource.HANDS_FREE, CoreCommandRoute.REMOTE, CoreCommandOutcome.SUCCESS,
+                source, CoreCommandRoute.REMOTE, CoreCommandOutcome.SUCCESS,
                 message.trim().length, System.currentTimeMillis() - startedAt
             )
             plan
         } catch (error: Exception) {
             ledger.record(
-                CoreCommandSource.HANDS_FREE, CoreCommandRoute.ERROR, CoreCommandOutcome.FAILURE,
+                source, CoreCommandRoute.ERROR, CoreCommandOutcome.FAILURE,
                 message.trim().length, System.currentTimeMillis() - startedAt
             )
             throw error
