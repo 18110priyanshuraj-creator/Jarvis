@@ -45,6 +45,9 @@ import com.priyanshuraj.jarviscompanion.LocalActivityLog
 import com.priyanshuraj.jarviscompanion.device.DeviceTokenStore
 import com.priyanshuraj.jarviscompanion.voice.VoiceControlService
 import com.priyanshuraj.jarviscompanion.voice.VoiceOutput
+import com.priyanshuraj.jarviscompanion.voice.VoicePrivacyMode
+import com.priyanshuraj.jarviscompanion.voice.VoicePrivacyPreferences
+import com.priyanshuraj.jarviscompanion.voice.VoiceRecognitionPolicy
 import java.util.Locale
 import java.util.concurrent.Executors
 
@@ -59,6 +62,7 @@ class MainActivity : Activity() {
     private lateinit var permissionChecklistText: TextView
     private lateinit var activityLogText: TextView
     private lateinit var voiceButton: Button
+    private lateinit var voiceModeButton: Button
     private lateinit var setupRootView: View
     private var homeScreen: View? = null
     private var homeStatusText: TextView? = null
@@ -123,6 +127,10 @@ class MainActivity : Activity() {
             text = "Start hands-free control"
             setOnClickListener { startHandsFreeControl() }
         }
+        voiceModeButton = Button(this).apply {
+            setOnClickListener { showVoicePrivacyModeDialog() }
+        }
+        refreshVoiceModeButton()
         val stopHandsFreeButton = Button(this).apply {
             text = "Stop hands-free control"
             setOnClickListener { stopHandsFreeControl() }
@@ -197,6 +205,17 @@ class MainActivity : Activity() {
             addView(voiceButton, matchWidth())
             addView(handsFreeButton, matchWidth())
             addView(stopHandsFreeButton, matchWidth())
+            addView(TextView(this@MainActivity).apply {
+                text = "VOICE PRIVACY"
+                textSize = 18f
+                setPadding(0, 24, 0, 8)
+            })
+            addView(voiceModeButton, matchWidth())
+            addView(TextView(this@MainActivity).apply {
+                text = "Offline-only applies to microphone recognition and spoken replies. Chat requests may still use your paired JARVIS server."
+                textSize = 12f
+                setPadding(0, 4, 0, 12)
+            })
             addView(accessibilityButton, matchWidth())
             addView(TextView(this@MainActivity).apply {
                 text = "PERMISSIONS"
@@ -236,7 +255,10 @@ class MainActivity : Activity() {
 
         textToSpeech = TextToSpeech(this) { result ->
             if (result == TextToSpeech.SUCCESS) {
-                val selection = textToSpeech?.let { VoiceOutput.configure(it, recognitionLanguage) }
+                val offlineOnly = VoicePrivacyPreferences.read(this) == VoicePrivacyMode.OFFLINE_ONLY
+                val selection = textToSpeech?.let {
+                    VoiceOutput.configure(it, recognitionLanguage, offlineOnly = offlineOnly)
+                }
                 if (selection != null) refreshStatus(selection.message)
                 else refreshStatus("Android text-to-speech could not initialize.")
             } else {
@@ -760,6 +782,7 @@ class MainActivity : Activity() {
         }
         refreshStatus()
         refreshPermissionChecklist()
+        refreshVoiceModeButton()
         refreshActivityLog()
         sendHeartbeat()
     }
@@ -788,6 +811,32 @@ class MainActivity : Activity() {
 
     private fun refreshPermissionChecklist() {
         permissionChecklistText.text = PermissionSetup.render(this)
+    }
+
+    private fun refreshVoiceModeButton() {
+        if (!::voiceModeButton.isInitialized) return
+        voiceModeButton.text = "Voice privacy: " + VoicePrivacyPreferences.read(this).displayName
+    }
+
+    private fun showVoicePrivacyModeDialog() {
+        val modes = VoicePrivacyMode.values()
+        val current = VoicePrivacyPreferences.read(this)
+        val labels = arrayOf(
+            "Prefer offline — use on-device recognition and local voices where available; Android may use a network provider if offline support is missing.",
+            "Offline only — do not use online speech recognition or network speech voices. The feature is unavailable when local speech services or language data are missing."
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Voice privacy mode")
+            .setSingleChoiceItems(labels, modes.indexOf(current)) { dialog, which ->
+                val selected = modes.getOrNull(which) ?: VoicePrivacyMode.PREFER_OFFLINE
+                VoicePrivacyPreferences.write(this, selected)
+                refreshVoiceModeButton()
+                refreshPermissionChecklist()
+                refreshStatus("Voice privacy set to " + selected.displayName + ". The new mode applies to the next voice session.")
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun refreshActivityLog() {
@@ -959,15 +1008,27 @@ class MainActivity : Activity() {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_MICROPHONE)
             return
         }
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            refreshStatus("Speech recognition is not available on this device.")
+        val privacyMode = VoicePrivacyPreferences.read(this)
+        val decision = VoiceRecognitionPolicy.evaluate(
+            mode = privacyMode,
+            sdkInt = Build.VERSION.SDK_INT,
+            recognitionServiceAvailable = SpeechRecognizer.isRecognitionAvailable(this),
+            onDeviceRecognitionAvailable = Build.VERSION.SDK_INT >= 31 &&
+                SpeechRecognizer.isOnDeviceRecognitionAvailable(this)
+        )
+        if (!decision.canStart) {
+            refreshStatus(decision.status)
             return
         }
 
         speechRecognizer?.destroy()
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+        speechRecognizer = if (decision.useOnDeviceRecognizer) {
+            SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
+        } else {
+            SpeechRecognizer.createSpeechRecognizer(this)
+        }
         speechRecognizer?.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) { refreshStatus("Listening…") }
+            override fun onReadyForSpeech(params: Bundle?) { refreshStatus(decision.status + " Listening…") }
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
@@ -977,18 +1038,18 @@ class MainActivity : Activity() {
                      error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) && recognitionLanguage == "hi-IN") {
                     recognitionLanguage = "en-IN"
                     refreshStatus("Hindi speech recognition is unavailable. Retrying once in English (India)…")
-                    val retryIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognitionLanguage)
-                        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-                        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
-                    }
+                    val retryIntent = createRecognitionIntent(recognitionLanguage, decision.preferOfflineHint)
                     speechRecognizer?.startListening(retryIntent)
                 } else {
                     val detail = when (error) {
                         SpeechRecognizer.ERROR_NO_MATCH -> "No speech was detected clearly. Try speaking closer to the microphone."
                         SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech detected. Tap Speak once and try again."
-                        SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Speech recognition needs a working internet connection."
+                        SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT ->
+                            if (privacyMode == VoicePrivacyMode.OFFLINE_ONLY) {
+                                "Offline-only recognition reported a network error. JARVIS did not switch to an online recognizer."
+                            } else {
+                                "Speech recognition needs a working internet connection."
+                            }
                         SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission is missing. Review JARVIS app permissions."
                         else -> "Speech recognition stopped (code " + error + "). Check the Android speech service."
                     }
@@ -1007,23 +1068,31 @@ class MainActivity : Activity() {
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
 
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognitionLanguage)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
-        }
+        val intent = createRecognitionIntent(recognitionLanguage, decision.preferOfflineHint)
         speechRecognizer?.startListening(intent)
     }
+
+    private fun createRecognitionIntent(languageTag: String, preferOfflineHint: Boolean): Intent =
+        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageTag)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, preferOfflineHint)
+        }
 
     private fun speakReply(text: String) {
         val engine = textToSpeech ?: run {
             refreshStatus("Android text-to-speech is not ready yet.")
             return
         }
+        val offlineOnly = VoicePrivacyPreferences.read(this) == VoicePrivacyMode.OFFLINE_ONLY
         val replyLanguage = if (text.any { it.code in 0x0900..0x097F }) "hi-IN" else "en-IN"
-        val selection = VoiceOutput.configure(engine, replyLanguage)
-        if (!selection.message.isBlank()) refreshStatus(selection.message)
+        val selection = VoiceOutput.configure(engine, replyLanguage, offlineOnly = offlineOnly)
+        refreshStatus(selection.message)
+        if (!selection.available || selection.message.startsWith("No supported") ||
+            (offlineOnly && !selection.localVoice)
+        ) return
         try {
             VoiceOutput.speakChunks(engine, text, "jarvis-" + System.currentTimeMillis())
         } catch (error: Exception) {
@@ -1036,7 +1105,14 @@ class MainActivity : Activity() {
     }
 
     private fun dispatchCoreCommand(message: String, source: CoreCommandSource) {
-        refreshStatus("JARVIS is processing your request…")
+        val notice = if (source == CoreCommandSource.SPEAK_ONCE &&
+            VoicePrivacyPreferences.read(this) == VoicePrivacyMode.OFFLINE_ONLY
+        ) {
+            "Voice input was recognized on-device. Conversational replies may still use your paired JARVIS server."
+        } else {
+            "JARVIS is processing your request…"
+        }
+        refreshStatus(notice)
         jarvisCore.submitCommand(message, source, allowUiActions = false) { result ->
             if (isFinishing || isDestroyed) return@submitCommand
             refreshStatus(result.reply)

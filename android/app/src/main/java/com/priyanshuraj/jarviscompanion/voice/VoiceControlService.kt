@@ -50,8 +50,14 @@ class VoiceControlService : Service() {
         createNotificationChannel()
         textToSpeech = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                val selection = textToSpeech?.let { VoiceOutput.configure(it, recognitionLanguage) }
-                ttsReady = selection != null && !selection.message.startsWith("No supported")
+                val offlineOnly = VoicePrivacyPreferences.read(this) == VoicePrivacyMode.OFFLINE_ONLY
+                val selection = textToSpeech?.let {
+                    VoiceOutput.configure(it, recognitionLanguage, offlineOnly = offlineOnly)
+                }
+                ttsReady = selection != null &&
+                    selection.available &&
+                    !selection.message.startsWith("No supported") &&
+                    (!offlineOnly || selection.localVoice)
                 updateVoiceStatus(selection?.message ?: "Android text-to-speech could not initialize.")
             } else {
                 ttsReady = false
@@ -202,17 +208,25 @@ class VoiceControlService : Service() {
             return
         }
 
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            updateVoiceStatus("Speech recognition is unavailable. Enable a speech service on this tablet, then restart voice control.")
+        val privacyMode = VoicePrivacyPreferences.read(this)
+        val decision = VoiceRecognitionPolicy.evaluate(
+            mode = privacyMode,
+            sdkInt = Build.VERSION.SDK_INT,
+            recognitionServiceAvailable = SpeechRecognizer.isRecognitionAvailable(this),
+            onDeviceRecognitionAvailable = Build.VERSION.SDK_INT >= 31 &&
+                SpeechRecognizer.isOnDeviceRecognitionAvailable(this)
+        )
+        if (!decision.canStart) {
+            updateVoiceStatus(decision.status)
             running = false
             stopSelf()
             return
         }
 
-        updateVoiceStatus("Listening in " + recognitionLanguage + ". Speak a short command.")
+        updateVoiceStatus(decision.status + " Listening in " + recognitionLanguage + ".")
         try {
             recognizer?.destroy()
-            recognizer = if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
+            recognizer = if (decision.useOnDeviceRecognizer) {
                 SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
             } else {
                 SpeechRecognizer.createSpeechRecognizer(this)
@@ -233,8 +247,26 @@ class VoiceControlService : Service() {
                     } else if ((error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED ||
                                 error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) && recognitionLanguage == "hi-IN") {
                         recognitionLanguage = "en-IN"
-                        updateVoiceStatus("Hindi speech recognition is unavailable. Trying English (India) instead.")
+                        updateVoiceStatus("Hindi is unavailable in the selected speech recognizer. Trying English (India) without changing the voice privacy mode.")
                         scheduleListening(700)
+                    } else if (error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED ||
+                        error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE
+                    ) {
+                        updateVoiceStatus(
+                            if (decision.useOnDeviceRecognizer || privacyMode == VoicePrivacyMode.OFFLINE_ONLY) {
+                                "English offline speech data is unavailable. No online recognizer fallback was used. Download a supported language model or change Voice privacy mode."
+                            } else {
+                                "English speech recognition is unavailable in the Android system provider. Check its language settings."
+                            }
+                        )
+                        running = false
+                        stopSelf()
+                    } else if (privacyMode == VoicePrivacyMode.OFFLINE_ONLY &&
+                        (error == SpeechRecognizer.ERROR_NETWORK || error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT)
+                    ) {
+                        updateVoiceStatus("The on-device recognizer returned a network error. JARVIS did not switch to an online recognizer.")
+                        running = false
+                        stopSelf()
                     } else {
                         val detail = when (error) {
                             SpeechRecognizer.ERROR_NO_MATCH -> "No speech was detected clearly. Try speaking closer to the microphone."
@@ -268,6 +300,7 @@ class VoiceControlService : Service() {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognitionLanguage)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, decision.preferOfflineHint)
             }
             recognizer?.startListening(intent)
         } catch (error: Exception) {
@@ -327,6 +360,10 @@ class VoiceControlService : Service() {
         if (localResponse != null) {
             speak(localResponse)
             return
+        }
+
+        if (VoicePrivacyPreferences.read(this) == VoicePrivacyMode.OFFLINE_ONLY) {
+            updateVoiceStatus("Speech recognition remains on-device. Conversational requests may still be sent to your paired JARVIS server.")
         }
 
         if (!core.isRemoteConnected()) {
@@ -465,7 +502,14 @@ class VoiceControlService : Service() {
         if (!running) return
         val engine = textToSpeech
         if (!ttsReady || engine == null) {
-            updateVoiceStatus("Voice output is unavailable. Install Hindi or English text-to-speech data in Android settings.")
+            val offlineOnly = VoicePrivacyPreferences.read(this) == VoicePrivacyMode.OFFLINE_ONLY
+            updateVoiceStatus(
+                if (offlineOnly) {
+                    "Offline spoken replies are unavailable. Install a local Hindi or English text-to-speech voice; no network voice was used."
+                } else {
+                    "Voice output is unavailable. Install Hindi or English text-to-speech data in Android settings."
+                }
+            )
             if (stopAfterSpeech) mainHandler.postDelayed({ stopSelf() }, 1200)
             else scheduleListening(900)
             return
@@ -474,7 +518,14 @@ class VoiceControlService : Service() {
         recognizer?.cancel()
         mainHandler.removeCallbacks(listenRunnable)
         val replyLanguage = if (text.any { it.code in 0x0900..0x097F }) "hi-IN" else "en-IN"
-        val selection = VoiceOutput.configure(engine, replyLanguage)
+        val offlineOnly = VoicePrivacyPreferences.read(this) == VoicePrivacyMode.OFFLINE_ONLY
+        val selection = VoiceOutput.configure(engine, replyLanguage, offlineOnly = offlineOnly)
+        if (!selection.available || (offlineOnly && !selection.localVoice)) {
+            ttsReady = false
+            updateVoiceStatus(selection.message)
+            if (stopAfterSpeech) stopSelf() else scheduleListening(900)
+            return
+        }
         updateVoiceStatus(selection.message)
 
         val utterancePrefix = "jarvis-" + System.currentTimeMillis()

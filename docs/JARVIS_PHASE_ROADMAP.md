@@ -38,7 +38,7 @@ See:
 | 2 | Unified All-in-One Application Shell | CODE_COMPLETE | Existing authenticated dashboard is integrated in the Android shell; origin restrictions, OAuth system-browser handoff, native confirmation dialogs, WebView lifecycle/recovery and automated CI are implemented. Galaxy Tab A9 acceptance remains Phase 31. See `JARVIS_PHASE_2_APP_SHELL.md`. |
 | 3 | Native Android Core | CODE_COMPLETE | Application-scoped native runtime now unifies typed input, one-shot voice and hands-free routes; Room v1 stores a bounded privacy-minimized 500-entry execution journal. Node/Android CI and APK verification passed; Galaxy Tab A9 acceptance remains Phase 31. See `JARVIS_PHASE_3_NATIVE_ANDROID_CORE.md`. |
 | 4 | Local System Controller | CODE_COMPLETE | One app-scoped local controller routes status, media-volume and Android Settings commands before the existing app launcher or optional remote assistant; automated command/policy tests pass. Physical Galaxy Tab A9 checks remain Phase 31. See `JARVIS_PHASE_4_LOCAL_SYSTEM_CONTROLLER.md`. |
-| 5 | Offline Voice System | PARTIAL | Native SpeechRecognizer/TTS paths exist; offline recognition is provider/device dependent. |
+| 5 | Offline Voice System | CODE_COMPLETE | One-shot and hands-free voice now share on-device-first policy with persistent Prefer offline / Offline only modes; offline-only refuses online recognition and network TTS fallbacks. Actual language-pack/device acceptance remains Phase 31. See `JARVIS_PHASE_5_OFFLINE_VOICE.md`. |
 | 6 | Independent Intelligence Engine | PARTIAL | Deterministic offline brain and optional model adapter exist; no general local LLM. |
 | 7 | Natural Language Understanding | PARTIAL | Selected Hindi/Hinglish/English rules; no broad measured conversational coverage. |
 | 8 | Local Memory System | PARTIAL | User-controlled memory service exists server-side; local Android canonical storage is not implemented. |
@@ -74,12 +74,13 @@ See:
 3. Phase 2 application-shell implementation is code-complete: the existing authenticated workspace is embedded in the native Android shell, with external-browser OAuth and tested WebView boundaries. Keep physical Galaxy Tab A9 acceptance in Phase 31.
 4. Phase 3 native Android core is code-complete: the shared local-first dispatcher and additive Room execution ledger passed automated acceptance without replacing server data or Keystore credentials.
 5. Phase 4 local system controller is code-complete: typed input, one-shot voice and hands-free requests share a permission-aware on-device system boundary; physical Galaxy Tab A9 checks remain Phase 31.
-6. Complete and test each phase against the phase-specific acceptance criteria before advancing.
-6. Retain all current tests and add new regression/acceptance tests.
-7. Keep `main` as the release source of truth; use short-lived branches only when useful.
-8. Do not delete branches with unreviewed unique work or mark a phase verified because a file exists.
-9. Device-only acceptance must be marked blocked until an actual Galaxy Tab A9 observation is recorded.
-10. The final release must be a signed, installable Android build with migration, offline behavior and real-device evidence.
+6. Phase 5 offline voice system is code-complete: both Android voice input paths use one on-device selection policy, offline-only mode blocks online speech fallbacks, and TTS honors local-voice requirements. Device-specific model and audio acceptance remains Phase 31.
+7. Complete and test each phase against the phase-specific acceptance criteria before advancing.
+8. Retain all current tests and add new regression/acceptance tests.
+9. Keep `main` as the release source of truth; use short-lived branches only when useful.
+10. Do not delete branches with unreviewed unique work or mark a phase verified because a file exists.
+11. Device-only acceptance must be marked blocked until an actual Galaxy Tab A9 observation is recorded.
+12. The final release must be a signed, installable Android build with migration, offline behavior and real-device evidence.
 
 ## Reconciliation of historical phases
 

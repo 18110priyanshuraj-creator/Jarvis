@@ -8,7 +8,8 @@ data class VoiceSelection(
     val languageTag: String,
     val localVoice: Boolean,
     val fallbackUsed: Boolean,
-    val message: String
+    val message: String,
+    val available: Boolean = true
 )
 
 /**
@@ -16,15 +17,31 @@ data class VoiceSelection(
  * spoken replies do not need a network voice service when one is available.
  */
 object VoiceOutput {
-    fun configure(engine: TextToSpeech, preferredLanguageTag: String): VoiceSelection {
+    fun configure(
+        engine: TextToSpeech,
+        preferredLanguageTag: String,
+        offlineOnly: Boolean = false
+    ): VoiceSelection {
         val requested = when (preferredLanguageTag) {
             "en-IN" -> Locale("en", "IN")
             else -> Locale("hi", "IN")
         }
-        val preferredVoice = findVoice(engine.voices.orEmpty(), requested)
+        val voices = engine.voices.orEmpty()
+        val preferredVoice = findVoice(voices, requested, offlineOnly)
         val fallbackLocale = if (requested.language == "hi") Locale("en", "IN") else null
-        val fallbackVoice = fallbackLocale?.let { findVoice(engine.voices.orEmpty(), it) }
+        val fallbackVoice = fallbackLocale?.let { findVoice(voices, it, offlineOnly) }
         val chosenVoice = preferredVoice ?: fallbackVoice
+
+        if (offlineOnly && chosenVoice == null) {
+            return VoiceSelection(
+                languageTag = requested.toLanguageTag(),
+                localVoice = false,
+                fallbackUsed = false,
+                message = "No installed offline " + requested.toLanguageTag() +
+                    " speech voice is available. Download an offline voice in Android text-to-speech settings. JARVIS did not use a network voice.",
+                available = false
+            )
+        }
 
         engine.setSpeechRate(1.0f)
         engine.setPitch(1.0f)
@@ -48,6 +65,26 @@ object VoiceOutput {
                     message = message
                 )
             }
+        }
+
+        if (offlineOnly) {
+            return VoiceSelection(
+                languageTag = requested.toLanguageTag(),
+                localVoice = false,
+                fallbackUsed = false,
+                message = "The installed offline voice could not be activated. JARVIS did not try a network voice. Check Android text-to-speech settings and install local Hindi or English voice data.",
+                available = false
+            )
+        }
+
+        if (offlineOnly) {
+            return VoiceSelection(
+                languageTag = requested.toLanguageTag(),
+                localVoice = false,
+                fallbackUsed = false,
+                message = "The installed offline voice could not be activated. JARVIS did not try a network voice. Check Android text-to-speech settings and install local Hindi or English voice data.",
+                available = false
+            )
         }
 
         val fallbackStatus = if (fallbackLocale != null) {
@@ -113,14 +150,17 @@ object VoiceOutput {
         return chunks
     }
 
-    private fun findVoice(voices: Set<Voice>, requested: Locale): Voice? {
+    private fun findVoice(voices: Set<Voice>, requested: Locale, offlineOnly: Boolean): Voice? {
         val sameLanguage = voices.filter { it.locale.language.equals(requested.language, ignoreCase = true) }
         val exactLocale = sameLanguage.filter {
             it.locale.country.equals(requested.country, ignoreCase = true)
         }
-        return exactLocale.firstOrNull { !it.isNetworkConnectionRequired }
+        val localExact = exactLocale.firstOrNull { !it.isNetworkConnectionRequired }
+        val localLanguage = sameLanguage.firstOrNull { !it.isNetworkConnectionRequired }
+        if (offlineOnly) return localExact ?: localLanguage
+        return localExact
+            ?: localLanguage
             ?: exactLocale.firstOrNull()
-            ?: sameLanguage.firstOrNull { !it.isNetworkConnectionRequired }
             ?: sameLanguage.firstOrNull()
     }
 }

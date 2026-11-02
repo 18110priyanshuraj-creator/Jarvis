@@ -9,6 +9,10 @@ import android.os.Build
 import android.provider.Settings
 import com.priyanshuraj.jarviscompanion.accessibility.JarvisAccessibilityService
 import com.priyanshuraj.jarviscompanion.device.DeviceTokenStore
+import com.priyanshuraj.jarviscompanion.voice.VoicePrivacyMode
+import com.priyanshuraj.jarviscompanion.voice.VoicePrivacyPreferences
+import com.priyanshuraj.jarviscompanion.voice.VoiceRecognitionPolicy
+import android.speech.SpeechRecognizer
 
 object PermissionSetup {
     data class Item(
@@ -42,6 +46,14 @@ object PermissionSetup {
         val notifications = isNotificationsAllowed(context)
         val accessibility = isAccessibilityEnabled(context)
         val paired = !DeviceTokenStore.read(context).isNullOrBlank()
+        val voiceMode = VoicePrivacyPreferences.read(context)
+        val recognition = VoiceRecognitionPolicy.evaluate(
+            mode = voiceMode,
+            sdkInt = Build.VERSION.SDK_INT,
+            recognitionServiceAvailable = SpeechRecognizer.isRecognitionAvailable(context),
+            onDeviceRecognitionAvailable = Build.VERSION.SDK_INT >= 31 &&
+                SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
+        )
 
         return listOf(
             Item(
@@ -63,6 +75,12 @@ object PermissionSetup {
                 if (notifications) "Allowed" else "Optional / blocked",
                 if (notifications) "The hands-free Stop notification can be shown."
                 else "Recommended for the visible session notification. You can still use the app; open notification settings if you want it.",
+                false
+            ),
+            Item(
+                "Voice recognition privacy",
+                voiceMode.displayName,
+                recognition.status + " Language-pack availability is checked when a voice session starts. Offline-only voice replies also need an installed local text-to-speech voice. Conversational replies may still use the paired server.",
                 false
             ),
             Item(
