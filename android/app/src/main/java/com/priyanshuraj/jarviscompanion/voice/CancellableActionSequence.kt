@@ -24,6 +24,8 @@ internal class CancellableActionSequence<T>(
     private val executeAction: (T) -> TaskStepResult,
     private val delayAfter: (T) -> Long,
     initialMessages: List<String> = emptyList(),
+    private val onProgress: (Int, TaskStepResult) -> Unit = { _, _ -> },
+    private val onTerminal: (String) -> Unit = {},
     private val onComplete: (List<String>) -> Unit
 ) {
     private val messages = initialMessages.toMutableList()
@@ -45,6 +47,7 @@ internal class CancellableActionSequence<T>(
         if (cancelled || completed) return
         cancelled = true
         scheduler.remove(runner)
+        onTerminal("cancelled")
     }
 
     private fun runNext() {
@@ -55,21 +58,39 @@ internal class CancellableActionSequence<T>(
         }
 
         val action = actions[index]
-        val result = executeAction(action)
+        val result = try {
+            executeAction(action)
+        } catch (error: Exception) {
+            TaskStepResult(
+                success = false,
+                shouldStop = true,
+                message = error.message?.take(380) ?: "The action failed unexpectedly."
+            )
+        }
+        onProgress(index, result)
         if (result.message.isNotBlank()) messages.add(result.message.take(380))
         index++
 
-        if (!result.success || result.shouldStop || index >= actions.size) {
-            finish()
+        if (!result.success) {
+            finish("failed")
+            return
+        }
+        if (result.shouldStop) {
+            finish("waiting_user")
+            return
+        }
+        if (index >= actions.size) {
+            finish("completed")
             return
         }
 
         scheduler.post(runner, delayAfter(action).coerceIn(0L, 3000L))
     }
 
-    private fun finish() {
+    private fun finish(status: String) {
         if (cancelled || completed) return
         completed = true
+        onTerminal(status)
         onComplete(messages.toList())
     }
 }
