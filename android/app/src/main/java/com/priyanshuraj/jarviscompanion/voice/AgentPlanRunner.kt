@@ -227,6 +227,7 @@ object AgentPlanRunner {
             return null
         }
 
+        var completedDuringStart = false
         val sequence = CancellableActionSequence(
             actions = steps,
             scheduler = HandlerTaskScheduler(handler),
@@ -268,11 +269,15 @@ object AgentPlanRunner {
                 }
             },
             onComplete = { messages ->
+                completedDuringStart = true
                 onComplete(messages.joinToString(". ").take(1200))
             }
         )
 
         sequence.start()
+        // A failed initial durable checkpoint can finish synchronously inside start().
+        // Do not return stale controls for an execution that is already terminal.
+        if (completedDuringStart) return null
         return AgentPlanControls(
             cancel = { sequence.cancel() },
             pause = { sequence.pause() },
