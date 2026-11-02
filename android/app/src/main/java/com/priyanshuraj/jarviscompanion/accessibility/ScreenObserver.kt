@@ -129,7 +129,7 @@ object ScreenObserver {
                                     finish("Android captured the screen but could not prepare the image. " + treeSummary)
                                     return@execute
                                 }
-                                runOcr(scaleForOcr(bitmap), treeSummary, finish)
+                                runOcr(scaleForOcr(bitmap), treeSummary, ::finish)
                             } catch (_: Exception) {
                                 finish("Visual screen reading was unavailable. Accessible labels only: " + treeSummary)
                             }
