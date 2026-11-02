@@ -1,6 +1,6 @@
 # JARVIS Phase 14 — Error Detection and Recovery
 
-**Status:** IN_PROGRESS — implementation and automated acceptance are being completed on the Phase 14 feature branch.  
+**Status:** VERIFIED — merged via PR #53 at `11acb45`; the PR source passed full Node and Android CI, and the merged `main` tree is identical.  
 **Branch:** `feat/phase-14-error-detection-recovery`  
 **Base:** `123a9dc39030c73449c1abb0c1756a6acc78ce37`
 
@@ -69,11 +69,13 @@ The Phase 14 additions cover:
 - Authenticated recovery API, not-found handling, no automatic recovery and blocked retry of configuration failures.
 - Existing workflow stopping, pausing, review, checkpoint, restart recovery and Android local journal regressions.
 
-The repository CI workflow is the acceptance source for Node syntax/tests/dependency audit and Android unit/build/APK verification. Physical Galaxy Tab A9 behavior remains to be checked in Phase 31; no hardware acceptance is claimed here.
+Automated acceptance passed on the PR head `85442feedafaa3f1512bda2e184a02f83881c7bc`: Node CI reported 208/208 tests, 0 failures and 0 production dependency vulnerabilities; Android JVM/unit checks, Gradle build, APK integrity verification and artifact upload all passed in PR run #41438465662. The merged `main` commit has the identical Git tree hash `3d3bcbf07cc1c4e2d76bd21aedcbfdd974f320a2`. Post-merge main run #41438983665 passed the Node job (208/208, 0 vulnerabilities); its duplicate Android job was still shown in progress at closeout, so the completed Android result is referenced from the fully green PR run on the identical source tree. Physical Samsung Galaxy Tab A9 behavior remains to be checked in Phase 31; no hardware acceptance is claimed here.
 
 ## Closeout record
 
-- PR: pending
-- Merge commit: pending
-- Main CI run: pending
-- Final artifact: pending
+- PR: [#53 — merged](https://github.com/18110priyanshuraj-creator/Jarvis/pull/53)
+- Merge commit: `11acb4500ea5424f4f51153489bc82b911aba64b`
+- Fully green PR CI: [run #41438465662](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41438465662) — both Node and Android jobs passed.
+- Post-merge main CI: [run #41438983665](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41438983665) — Node passed (208/208, 0 vulnerabilities); duplicate Android job remained in progress at closeout. Its source tree is identical to the fully green PR source tree above.
+- Verified PR debug APK artifact: `13138290782`, 23,973,675 bytes; SHA-256 `44a4b1dfccacfa5a374120f3a9cb4fda56bdb2b03b237bc1a0931805501fe519`.
+- Hardware acceptance: Samsung Galaxy Tab A9 hands-on validation remains Phase 31.
