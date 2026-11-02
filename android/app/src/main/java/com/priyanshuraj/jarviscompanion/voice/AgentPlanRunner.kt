@@ -132,6 +132,13 @@ object AgentPlanRunner {
             ) {
                 throw IllegalArgumentException("The Google search phrase is outside the safe research policy.")
             }
+            if (type == "verify_browser_foreground" &&
+                (!UiActionPolicy.validateTextPayload(value, 120).allowed ||
+                    Regex("""(?i)\b(porn|xxx|adult content|vape|cigarette|weed|marijuana|cocaine|methamphetamine|steroids|how to make a bomb|explosive|weapon|gun|suicide|self.?harm)\b""")
+                        .containsMatchIn(value))
+            ) {
+                throw IllegalArgumentException("The browser verification value is outside the safe research policy.")
+            }
             if (type == "verify_screen_text" &&
                 !UiActionPolicy.validateTextPayload(value, 160).allowed
             ) {
