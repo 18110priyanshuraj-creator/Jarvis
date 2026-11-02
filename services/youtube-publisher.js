@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { Readable } from "node:stream";
 
 export const YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload";
 export const MAX_YOUTUBE_UPLOAD_BYTES = 256 * 1024 * 1024;
@@ -210,6 +211,24 @@ export async function uploadYouTubeVideo(options = {}) {
     throw error;
   }
 
+  const uploadBody = Readable.from((async function* streamApprovedBytes() {
+    let receivedBytes = 0;
+    const source = body && typeof body[Symbol.asyncIterator] === "function"
+      ? body
+      : Readable.from([body]);
+    for await (const chunk of source) {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      receivedBytes += bytes.length;
+      if (receivedBytes > publication.contentLength) {
+        throw new Error("Video stream exceeded the byte count approved in the upload preview.");
+      }
+      if (bytes.length) yield bytes;
+    }
+    if (receivedBytes !== publication.contentLength) {
+      throw new Error("Video stream did not match the byte count approved in the upload preview.");
+    }
+  })());
+
   let uploaded;
   try {
     uploaded = await fetchImpl(uploadUrl, {
@@ -219,7 +238,7 @@ export async function uploadYouTubeVideo(options = {}) {
         "Content-Type": publication.contentType,
         "Content-Length": String(publication.contentLength)
       },
-      body,
+      body: uploadBody,
       duplex: "half",
       redirect: "error",
       signal: AbortSignal.timeout(30 * 60 * 1000)

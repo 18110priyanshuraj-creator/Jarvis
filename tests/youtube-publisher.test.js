@@ -107,6 +107,9 @@ test("resumable upload initializes metadata then streams the exact bounded video
     assert.equal(request.headers["Content-Length"], "1024");
     assert.equal(request.headers["Content-Type"], "video/mp4");
     assert.ok(request.body instanceof Readable);
+    const chunks = [];
+    for await (const chunk of request.body) chunks.push(Buffer.from(chunk));
+    assert.equal(Buffer.concat(chunks).length, 1024);
     return new Response(JSON.stringify({
       id: "abcdef12345",
       snippet: { title: "Physics basics" },
@@ -124,6 +127,32 @@ test("resumable upload initializes metadata then streams the exact bounded video
   assert.equal(result.uploadStatus, "uploaded");
   assert.equal(result.videoUrl, "https://www.youtube.com/watch?v=abcdef12345");
   assert.equal(JSON.stringify(result).includes("session"), false);
+});
+
+test("resumable upload refuses a stream whose byte count differs from the approved preview", async () => {
+  const preview = createYouTubePublishPreview(project, validInput);
+  for (const payloadSize of [1023, 1025]) {
+    let calls = 0;
+    await assert.rejects(async () => {
+      try {
+        await uploadYouTubeVideo({
+          publication: preview,
+          accessToken: "server-access-token",
+          body: Readable.from(Buffer.alloc(payloadSize)),
+          fetchImpl: async (_url, request) => {
+            calls += 1;
+            if (calls === 1) return new Response(null, { status: 200, headers: { Location: "https://www.googleapis.com/upload/youtube/v3/videos?upload_id=session" } });
+            for await (const _chunk of request.body) { /* consume exactly what would be sent upstream */ }
+            return new Response(JSON.stringify({ id: "abcdef12345", status: { uploadStatus: "uploaded" } }), { status: 200 });
+          }
+        });
+      } catch (error) {
+        assert.equal(error.uploadStarted, true);
+        throw error;
+      }
+    }, /Check YouTube Studio/i);
+    assert.equal(calls, 2);
+  }
 });
 
 test("resumable upload refuses an untrusted session URL before sending video bytes", async () => {
