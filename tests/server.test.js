@@ -700,7 +700,20 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(blockedIntegrationRun.status, 201);
   const blockedRunPayload = await blockedIntegrationRun.json();
   assert.equal(blockedRunPayload.run.status, "failed");
-  assert.match(blockedRunPayload.run.steps[0].result.error, /disabled in JARVIS/i);
+  assert.equal(blockedRunPayload.run.failure.code, "configuration_missing");
+  assert.equal(blockedRunPayload.run.failure.retryable, false);
+  assert.match(blockedRunPayload.run.steps[0].result.error, /not configured or is disabled/i);
+  const blockedRecovery = await request("/api/workflow-runs/" + blockedRunPayload.run.id + "/recovery");
+  assert.equal(blockedRecovery.status, 200);
+  const blockedRecoveryPayload = await blockedRecovery.json();
+  assert.equal(blockedRecoveryPayload.recovery.canRetry, false);
+  assert.equal(blockedRecoveryPayload.recovery.automaticRecovery, false);
+  assert.equal(blockedRecoveryPayload.recovery.failure.code, "configuration_missing");
+  assert.equal((await request("/api/workflow-runs/not-a-real-run/recovery")).status, 404);
+  const blockedRetry = await request("/api/workflow-runs/" + blockedRunPayload.run.id + "/retry", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(blockedRetry.status, 409);
 
   const disableGoogleOAuth = await request("/api/integrations/google_drive/disable", {
     method: "POST", body: JSON.stringify({})
@@ -725,30 +738,18 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(integratedRunResponse.status, 201);
   const integratedRun = await integratedRunResponse.json();
   assert.equal(integratedRun.run.status, "failed");
-  assert.match(integratedRun.run.steps[0].result.error, /JARVIS_GITHUB_TOKEN/);
+  assert.equal(integratedRun.run.failure.code, "configuration_missing");
+  assert.equal(integratedRun.run.steps[0].result.failure.retryable, false);
   assert.equal(integratedRun.run.steps[0].attempts, 1);
   assert.equal(JSON.stringify(integratedRun).includes("demo-github-value"), false);
+  assert.equal(JSON.stringify(integratedRun).includes("JARVIS_GITHUB_TOKEN"), false);
 
   const retryOnce = await request("/api/workflow-runs/" + integratedRun.run.id + "/retry", {
     method: "POST", body: JSON.stringify({})
   });
-  assert.equal(retryOnce.status, 200);
-  const retryOncePayload = await retryOnce.json();
-  assert.equal(retryOncePayload.run.status, "failed");
-  assert.equal(retryOncePayload.run.steps[0].attempts, 2);
-  assert.equal(retryOncePayload.run.steps[0].executionKey, integratedRun.run.steps[0].executionKey);
-
-  const retryTwice = await request("/api/workflow-runs/" + integratedRun.run.id + "/retry", {
-    method: "POST", body: JSON.stringify({})
-  });
-  assert.equal(retryTwice.status, 200);
-  const retryTwicePayload = await retryTwice.json();
-  assert.equal(retryTwicePayload.run.steps[0].attempts, 3);
-
-  const retryBeyondLimit = await request("/api/workflow-runs/" + integratedRun.run.id + "/retry", {
-    method: "POST", body: JSON.stringify({})
-  });
-  assert.equal(retryBeyondLimit.status, 409);
+  assert.equal(retryOnce.status, 409);
+  const nonRetryableRecovery = await request("/api/workflow-runs/" + integratedRun.run.id + "/recovery");
+  assert.equal((await nonRetryableRecovery.json()).recovery.canRetry, false);
 
   const createFeedback = await request("/api/feedback", {
     method: "POST",
