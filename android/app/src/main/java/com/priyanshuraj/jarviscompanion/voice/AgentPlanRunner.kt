@@ -46,8 +46,8 @@ object AgentPlanExecutionGate {
 
 object AgentPlanRunner {
     private val allowed = setOf(
-        "open_app", "read_screen", "tap_label", "type_text",
-        "scroll_down", "scroll_up", "back", "home", "ask_user", "finish"
+        "open_app", "verify_app_foreground", "read_screen", "tap_label", "type_text",
+        "scroll_down", "scroll_up", "back", "home", "verify_screen_text", "ask_user", "finish"
     )
 
     /**
@@ -82,8 +82,8 @@ object AgentPlanRunner {
     fun requiresAccessibility(plan: JSONObject): Boolean {
         val actions = validate(plan)
         val accessibilityActions = setOf(
-            "read_screen", "tap_label", "type_text",
-            "scroll_down", "scroll_up", "back", "home"
+            "verify_app_foreground", "read_screen", "tap_label", "type_text",
+            "scroll_down", "scroll_up", "back", "home", "verify_screen_text"
         )
         return (0 until actions.length()).any { index ->
             actions.getJSONObject(index).optString("type") in accessibilityActions
@@ -122,8 +122,52 @@ object AgentPlanRunner {
             if (type == "type_text" && !UiActionPolicy.validateTextPayload(value, 160).allowed) {
                 throw IllegalArgumentException("The requested text is outside the safe typing policy.")
             }
-            if (type == "open_app" && value.length > 60) {
+            if (type in setOf("open_app", "verify_app_foreground") && value.length > 60) {
                 throw IllegalArgumentException("The requested app name is too long.")
+            }
+            if (type == "verify_screen_text" &&
+                !UiActionPolicy.validateTextPayload(value, 160).allowed
+            ) {
+                throw IllegalArgumentException("The expected visible result is outside the safe verification policy.")
+            }
+        }
+
+        // Every app launch must be followed immediately by a foreground-package check.
+        for (index in 0 until actions.length()) {
+            val action = actions.getJSONObject(index)
+            val type = action.optString("type")
+            if (type == "open_app") {
+                val verifier = actions.optJSONObject(index + 1)
+                if (verifier?.optString("type") != "verify_app_foreground" ||
+                    UiActionPolicy.normalizeLabel(verifier.optString("value")) !=
+                    UiActionPolicy.normalizeLabel(action.optString("value"))
+                ) {
+                    throw IllegalArgumentException("Every app launch must be followed by a matching foreground-app verification.")
+                }
+            }
+            if (type == "verify_app_foreground") {
+                val previous = actions.optJSONObject(index - 1)
+                if (previous?.optString("type") != "open_app" ||
+                    UiActionPolicy.normalizeLabel(previous.optString("value")) !=
+                    UiActionPolicy.normalizeLabel(action.optString("value"))
+                ) {
+                    throw IllegalArgumentException("Foreground-app verification must immediately follow its matching app launch.")
+                }
+            }
+        }
+
+        // UI mutations need an explicit expected visible result after the last mutation.
+        val lastUiMutation = (0 until actions.length()).lastOrNull { index ->
+            actions.getJSONObject(index).optString("type") in setOf(
+                "tap_label", "type_text", "scroll_down", "scroll_up", "back", "home"
+            )
+        } ?: -1
+        if (lastUiMutation >= 0) {
+            val hasResultCheck = (lastUiMutation + 1 until actions.length()).any { index ->
+                actions.getJSONObject(index).optString("type") == "verify_screen_text"
+            }
+            if (!hasResultCheck) {
+                throw IllegalArgumentException("UI actions need an expected visible-text verification before the plan can finish.")
             }
         }
         return actions
@@ -139,6 +183,7 @@ object AgentPlanRunner {
             val value = action.optString("value").trim()
             val description = when (type) {
                 "open_app" -> "Open " + value.take(40)
+                "verify_app_foreground" -> "Verify that " + value.take(40) + " is the foreground app"
                 "read_screen" -> "Read the visible screen locally"
                 "tap_label" -> "Tap the visible control " + value.take(30)
                 "type_text" -> "Enter this text into the field you focused: " + value.take(160)
@@ -146,6 +191,7 @@ object AgentPlanRunner {
                 "scroll_up" -> "Scroll up"
                 "back" -> "Go back"
                 "home" -> "Go to the home screen"
+                "verify_screen_text" -> "Verify that this text is visible: " + value.take(100)
                 "ask_user" -> "Ask you: " + value.take(60)
                 "finish" -> "Finish"
                 else -> "Unsupported action"
@@ -166,6 +212,7 @@ object AgentPlanRunner {
             labels.add(
                 when (type) {
                     "open_app" -> "open app"
+                    "verify_app_foreground" -> "verify app"
                     "read_screen" -> "read screen"
                     "tap_label" -> "tap label"
                     "type_text" -> "type text"
@@ -173,6 +220,7 @@ object AgentPlanRunner {
                     "scroll_up" -> "scroll up"
                     "back" -> "back"
                     "home" -> "home"
+                    "verify_screen_text" -> "verify screen"
                     "ask_user" -> "ask user"
                     "finish" -> "finish"
                     else -> "unknown"
