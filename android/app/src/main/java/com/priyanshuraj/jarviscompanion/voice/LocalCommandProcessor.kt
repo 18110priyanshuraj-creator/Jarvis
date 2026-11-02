@@ -206,7 +206,7 @@ object LocalCommandProcessor {
             return PlannedActionResult(false, true, "Enter a short Google search phrase.")
         }
         if (!UiActionPolicy.validateTextPayload(query, 120).allowed ||
-            Regex("""(?i)\b(porn|xxx|adult content|vape|cigarette|weed|marijuana|cocaine|methamphetamine|steroids|how to make a bomb|explosive|weapon|gun|suicide|self.?harm)\b""")
+            Regex("""(?i)\b(porn|xxx|adult content|vape|cigarette|tobacco|nicotine|alcohol|liquor|beer|wine|weed|marijuana|cannabis|cocaine|methamphetamine|steroids|gambling|sports betting|casino|firearms?|weapons?|ammunition|how to make a bomb|explosives?|gun|suicide|self.?harm)\b""")
                 .containsMatchIn(query)
         ) {
             return PlannedActionResult(false, true, "This search phrase is outside JARVIS's safe public-research policy.")
