@@ -1,4 +1,5 @@
 import { tryRunLocalBrain } from "../brain.js";
+import { getNluCapabilities } from "./nlu.js";
 
 /**
  * Deterministic local capability layer.
@@ -21,6 +22,7 @@ export function resolveOfflineAssistantTurn(input = {}) {
 /** Safe public readiness metadata; never returns provider URLs, keys or raw model names. */
 export function getIntelligenceStatus(aiProvider = {}) {
   return {
+    naturalLanguageUnderstanding: getNluCapabilities(),
     localEngine: {
       id: "deterministic-rule-brain-v1",
       available: true,
