@@ -78,8 +78,45 @@ object ScreenObserver {
      * Captures at most one display frame after a direct voice request. Screenshot and OCR work
      * stays in memory on the device; callbacks are delivered on the main thread.
      */
+    private fun isSensitiveScreen(root: AccessibilityNodeInfo?): Boolean {
+        if (root == null) return true
+        val visibleLabels = mutableListOf<String>()
+        var visited = 0
+        var containsPasswordField = false
+
+        fun visit(node: AccessibilityNodeInfo, depth: Int) {
+            if (visited >= MAX_NODES || depth > MAX_DEPTH || !node.isVisibleToUser) return
+            visited++
+            if (node.isPassword) containsPasswordField = true
+            visibleLabels += listOf(
+                node.text?.toString().orEmpty(),
+                node.contentDescription?.toString().orEmpty(),
+                node.hintText?.toString().orEmpty()
+            )
+            if (!containsPasswordField) {
+                for (index in 0 until node.childCount) {
+                    val child = node.getChild(index) ?: continue
+                    visit(child, depth + 1)
+                    if (containsPasswordField || visited >= MAX_NODES) break
+                }
+            }
+        }
+
+        visit(root, 0)
+        return containsPasswordField || ScreenObservationText.containsProtectedScreenLabel(visibleLabels)
+    }
+
     fun observeOnce(service: AccessibilityService, onComplete: (String) -> Unit) {
-        val treeSummary = describe(service.rootInActiveWindow)
+        val root = service.rootInActiveWindow
+        val treeSummary = describe(root)
+        if (isSensitiveScreen(root)) {
+            deliver(
+                onComplete,
+                "This screen may contain a password, PIN, or verification detail. For privacy, I will not capture its image. " +
+                    "Here are only the accessible labels: " + treeSummary
+            )
+            return
+        }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             deliver(onComplete, "Visual screen reading needs Android 11 or later. " + treeSummary)
             return
