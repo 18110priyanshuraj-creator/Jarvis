@@ -46,7 +46,7 @@ object AgentPlanExecutionGate {
 
 object AgentPlanRunner {
     private val allowed = setOf(
-        "open_app", "verify_app_foreground", "read_screen", "tap_label", "type_text",
+        "open_app", "verify_app_foreground", "open_web_search", "read_screen", "tap_label", "type_text",
         "scroll_down", "scroll_up", "back", "home", "verify_screen_text", "ask_user", "finish"
     )
 
@@ -113,7 +113,7 @@ object AgentPlanRunner {
             if (type !in allowed || value.length > 180) {
                 throw IllegalArgumentException("The plan contains an unsupported action.")
             }
-            if (type in setOf("open_app", "verify_app_foreground", "tap_label", "type_text", "verify_screen_text", "ask_user", "finish") && value.isBlank()) {
+            if (type in setOf("open_app", "verify_app_foreground", "open_web_search", "tap_label", "type_text", "verify_screen_text", "ask_user", "finish") && value.isBlank()) {
                 throw IllegalArgumentException("A required action value is missing.")
             }
             if (type == "tap_label" && UiActionPolicy.isProtectedControl(value)) {
@@ -124,6 +124,13 @@ object AgentPlanRunner {
             }
             if (type in setOf("open_app", "verify_app_foreground") && value.length > 60) {
                 throw IllegalArgumentException("The requested app name is too long.")
+            }
+            if (type == "open_web_search" &&
+                (!UiActionPolicy.validateTextPayload(value, 120).allowed ||
+                    Regex("""(?i)\\b(porn|xxx|adult content|vape|cigarette|weed|marijuana|cocaine|methamphetamine|steroids|how to make a bomb|explosive|weapon|gun|suicide|self.?harm)\\b""")
+                        .containsMatchIn(value))
+            ) {
+                throw IllegalArgumentException("The Google search phrase is outside the safe research policy.")
             }
             if (type == "verify_screen_text" &&
                 !UiActionPolicy.validateTextPayload(value, 160).allowed
@@ -159,7 +166,7 @@ object AgentPlanRunner {
         // UI mutations need an explicit expected visible result after the last mutation.
         val lastUiMutation = (0 until actions.length()).lastOrNull { index ->
             actions.getJSONObject(index).optString("type") in setOf(
-                "tap_label", "type_text", "scroll_down", "scroll_up", "back", "home"
+                "open_web_search", "tap_label", "type_text", "scroll_down", "scroll_up", "back", "home"
             )
         } ?: -1
         if (lastUiMutation >= 0) {
@@ -184,6 +191,7 @@ object AgentPlanRunner {
             val description = when (type) {
                 "open_app" -> "Open " + value.take(40)
                 "verify_app_foreground" -> "Verify that " + value.take(40) + " is the foreground app"
+                "open_web_search" -> "Open Google search for " + value.take(100)
                 "read_screen" -> "Read the visible screen locally"
                 "tap_label" -> "Tap the visible control " + value.take(30)
                 "type_text" -> "Enter this text into the field you focused: " + value.take(160)
@@ -213,6 +221,7 @@ object AgentPlanRunner {
                 when (type) {
                     "open_app" -> "open app"
                     "verify_app_foreground" -> "verify app"
+                    "open_web_search" -> "open web search"
                     "read_screen" -> "read screen"
                     "tap_label" -> "tap label"
                     "type_text" -> "type text"
