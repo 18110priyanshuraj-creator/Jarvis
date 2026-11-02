@@ -233,6 +233,7 @@ test("invalid, empty, and excessive application target lists fail closed", () =>
     ]
   };
   assert.throws(() => createSkillCandidate({ ...base, applicationIds: [] }), /application target/i);
+  assert.throws(() => createSkillCandidate({ ...base, applicationIds: ["web-dashboard", ""] }), /non-empty strings/i);
   assert.throws(() => createSkillCandidate({ ...base, applicationIds: ["com.example/app"] }), /application id/i);
   assert.throws(() => createSkillCandidate({
     ...base,
