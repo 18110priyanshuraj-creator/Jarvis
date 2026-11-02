@@ -75,8 +75,7 @@ See:
 4. Phase 3 native Android core is code-complete: the shared local-first dispatcher and additive Room execution ledger passed automated acceptance without replacing server data or Keystore credentials.
 5. Phase 4 local system controller is code-complete: typed input, one-shot voice and hands-free requests share a permission-aware on-device system boundary; physical Galaxy Tab A9 checks remain Phase 31.
 6. Phase 5 offline voice system is code-complete: both Android voice input paths use one on-device selection policy, offline-only mode blocks online speech fallbacks, and TTS honors local-voice requirements. Device-specific model and audio acceptance remains Phase 31.
-7. Phase 6 is code-complete: supported deterministic requests route offline before the optional model adapter, current-information requests retain live-research precedence, and bounded Android device plans prefer local rules. See `JARVIS_PHASE_6_INDEPENDENT_INTELLIGENCE_ENGINE.md`.
-8. Complete and test each remaining phase against the phase-specific acceptance criteria before advancing.
+7. Phase 6 is code-complete: supported deterministic requests route offline before the optional model adapter, current-information requests retain live-research precedence, and bounded Android device plans prefer local rules. See `JARVIS_PHASE_6_INDEPENDENT_INTELLIGENCE_ENGINE.md`. Complete and test each remaining phase against its acceptance criteria before advancing.
 8. Retain all current tests and add new regression/acceptance tests.
 9. Keep `main` as the release source of truth; use short-lived branches only when useful.
 10. Do not delete branches with unreviewed unique work or mark a phase verified because a file exists.
