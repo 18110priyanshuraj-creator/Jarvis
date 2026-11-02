@@ -171,18 +171,16 @@ object AgentPlanRunner {
             initialMessages = initialMessages,
             onState = { status, index ->
                 if (status == "running" || status == "paused") {
-                    runCatching { LocalTaskExecutionJournal.setState(context, journalId, status, index) }
+                    LocalTaskExecutionJournal.setState(context, journalId, status, index)
                 }
             },
             onProgress = { index, result ->
-                runCatching {
-                    LocalTaskExecutionJournal.checkpoint(
-                        context, journalId, index, result.success, result.shouldStop
-                    )
-                }
+                LocalTaskExecutionJournal.checkpoint(
+                    context, journalId, index, result.success, result.shouldStop
+                )
             },
             onTerminal = { status ->
-                runCatching { LocalTaskExecutionJournal.finish(context, journalId, status) }
+                LocalTaskExecutionJournal.finish(context, journalId, status)
             },
             onComplete = { messages ->
                 onComplete(messages.joinToString(". ").take(1200))
