@@ -2,6 +2,7 @@ import { createChatCompletion, getAIProviderStatus } from "./ai-provider.js";
 
 const ALLOWED_ACTIONS = new Set([
   "open_app",
+  "verify_app_foreground",
   "read_screen",
   "tap_label",
   "type_text",
@@ -9,6 +10,7 @@ const ALLOWED_ACTIONS = new Set([
   "scroll_up",
   "back",
   "home",
+  "verify_screen_text",
   "ask_user",
   "finish"
 ]);
@@ -73,8 +75,10 @@ export function createLocalAgentPlan(message) {
     reply: "I will open " + appLabel + " and search for " + searchText + ".",
     actions: [
       { type: "open_app", value: appLabel, purpose: "Open the app requested by the user." },
+      { type: "verify_app_foreground", value: appLabel, purpose: "Confirm the requested app is actually foregrounded." },
       { type: "tap_label", value: "Search", purpose: "Open the app's visible search control." },
       { type: "type_text", value: searchText, purpose: "Enter the requested search phrase." },
+      { type: "verify_screen_text", value: searchText, purpose: "Confirm the expected query is visible on the current screen." },
       { type: "ask_user", value: "Choose the result you want. I will not open a result automatically.", purpose: "Leave result selection to the user." }
     ]
   });
@@ -113,8 +117,12 @@ export function validateAgentPlan(candidate) {
     if (action.type === "type_text" && (value.length > 160 || NUMERIC_SECRET.test(value))) {
       throw new TypeError("The requested text is outside the allowed typing policy.");
     }
-    if (action.type === "open_app" && value.length > 60) {
+    if (["open_app", "verify_app_foreground"].includes(action.type) && value.length > 60) {
       throw new TypeError("The requested app label is too long.");
+    }
+    if (action.type === "verify_screen_text" &&
+      (value.length > 160 || NUMERIC_SECRET.test(value) || BLOCKED_LABEL.test(value))) {
+      throw new TypeError("The expected visible result is outside the safe verification policy.");
     }
 
     return {
@@ -123,6 +131,33 @@ export function validateAgentPlan(candidate) {
       purpose: typeof action.purpose === "string" ? action.purpose.trim().slice(0, 100) : ""
     };
   });
+
+  // Every app launch must be followed immediately by a matching foreground check.
+  for (let index = 0; index < actions.length; index += 1) {
+    const action = actions[index];
+    if (action.type === "open_app") {
+      const verifier = actions[index + 1];
+      if (verifier?.type !== "verify_app_foreground" ||
+        verifier.value.toLowerCase() !== action.value.toLowerCase()) {
+        throw new TypeError("Every app launch must be followed by a matching foreground-app verification.");
+      }
+    }
+    if (action.type === "verify_app_foreground") {
+      const previous = actions[index - 1];
+      if (previous?.type !== "open_app" ||
+        previous.value.toLowerCase() !== action.value.toLowerCase()) {
+        throw new TypeError("Foreground-app verification must immediately follow its matching app launch.");
+      }
+    }
+  }
+
+  const lastUiMutation = actions.findLastIndex((action) =>
+    ["tap_label", "type_text", "scroll_down", "scroll_up", "back", "home"].includes(action.type)
+  );
+  if (lastUiMutation >= 0 &&
+    !actions.slice(lastUiMutation + 1).some((action) => action.type === "verify_screen_text")) {
+    throw new TypeError("UI actions need expected visible-text verification before the plan can finish.");
+  }
 
   return {
     mode,
@@ -143,7 +178,7 @@ const RESPONSE_SCHEMA = {
         properties: {
           type: {
             type: "string",
-            enum: ["open_app", "read_screen", "tap_label", "type_text", "scroll_down", "scroll_up", "back", "home", "ask_user", "finish"]
+            enum: ["open_app", "verify_app_foreground", "read_screen", "tap_label", "type_text", "scroll_down", "scroll_up", "back", "home", "verify_screen_text", "ask_user", "finish"]
           },
           value: { type: "string" },
           purpose: { type: "string" }
@@ -161,9 +196,11 @@ const SYSTEM_INSTRUCTIONS = [
   "Use mode device_action only when the user clearly asks to operate the Android interface, such as opening an app, reading visible labels, searching, scrolling or navigating.",
   "Use mode clarification when a requested device action is ambiguous, unsafe, or outside the supported controls. Return actions as an empty array and put one short explanation or clarification question in reply.",
   "You do not control Android directly. The Android app validates and executes every device action locally.",
-  "Allowed device action types only: open_app, read_screen, tap_label, type_text, scroll_down, scroll_up, back, home, ask_user, finish.",
+  "Allowed device action types only: open_app, verify_app_foreground, read_screen, tap_label, type_text, scroll_down, scroll_up, back, home, verify_screen_text, ask_user, finish.",
   "Never create actions for sending messages, submitting forms, deleting, purchasing, paying, transferring money, changing account/security settings, handling OTP/PIN/password, granting permissions, installing apps, or bypassing system dialogs.",
-  "For a search workflow, open the requested app, tap the visible Search label, type the query, then ask the user to choose a result manually. Do not guess which search result they intend.",
+  "For a search workflow, open the requested app and immediately verify its foreground identity, tap the visible Search label, type the query, verify that the expected query text is visible, then ask the user to choose a result manually. Do not guess which search result they intend.",
+  "Every open_app action must be followed immediately by verify_app_foreground with the same app label. Every UI mutation (tap, type, scroll, back or home) must be followed by verify_screen_text for the expected visible result before the plan can finish.",
+  "A verification action is an observation only; it never taps, submits, sends, purchases, deletes or changes account state. If the expected result is not visible, stop and ask the user to review the screen. Never report completion without that check.",
   "A tap_label must be a short exact UI label such as Search or Library. If uncertain, choose clarification instead of guessing.",
   "type_text is only for ordinary search or draft text in a field the user has already focused. Never produce PINs, OTPs, passwords, payment details, or long numeric codes.",
   "Do not request or infer screen contents. The planner receives only the spoken transcript; screen text stays on the device.",
