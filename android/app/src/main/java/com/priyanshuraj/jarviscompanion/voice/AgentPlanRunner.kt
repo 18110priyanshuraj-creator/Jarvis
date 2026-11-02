@@ -188,7 +188,7 @@ object AgentPlanRunner {
         // UI mutations need an explicit expected visible result after the last mutation.
         val lastUiMutation = (0 until actions.length()).lastOrNull { index ->
             actions.getJSONObject(index).optString("type") in setOf(
-                "open_web_search", "tap_label", "type_text", "scroll_down", "scroll_up", "back", "home"
+                "tap_label", "type_text", "scroll_down", "scroll_up", "back", "home"
             )
         } ?: -1
         if (lastUiMutation >= 0) {
