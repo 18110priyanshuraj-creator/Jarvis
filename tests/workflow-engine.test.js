@@ -10,6 +10,7 @@ import {
   pauseWorkflowRun,
   recoverInterruptedWorkflowRuns,
   resumeWorkflowRun,
+  retryWorkflowRun,
   updateWorkflowDraft,
   validateWorkflow
 } from "../services/workflow-engine.js";
@@ -290,4 +291,47 @@ test("a stop request is observed before the next action and paused runs can be c
   const paused = { ...run, status: "paused" };
   assert.equal(cancelWorkflowRun(paused).status, "cancelled");
   assert.throws(() => pauseWorkflowRun(paused), /only a running/i);
+});
+
+
+test("manual retry replays only the failed step with a bounded attempt count", async () => {
+  const workflow = approveWorkflow(validateWorkflow(createWorkflowDraft({
+    name: "Retry a failed local draft",
+    steps: [
+      { type: "draft_text", title: "Prepare first draft", content: "Prepare a safe first draft before retry testing." },
+      { type: "draft_text", title: "Prepare second draft", content: "Prepare a safe second draft after retry testing." }
+    ]
+  })).workflow);
+  const run = createWorkflowRun(workflow);
+  let secondAttempts = 0;
+  const failed = await advanceWorkflowRun(run, {
+    draft_text: async (step) => {
+      if (step.title === "Prepare second draft" && secondAttempts++ === 0) {
+        throw new Error("Temporary local writer error.");
+      }
+      return { summary: "Draft prepared." };
+    }
+  });
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.steps[0].status, "completed");
+  assert.equal(failed.steps[1].attempts, 1);
+
+  const retry = retryWorkflowRun(failed);
+  assert.equal(retry.status, "running");
+  assert.equal(retry.nextStepIndex, 1);
+  assert.equal(retry.steps[0].status, "completed");
+  assert.equal(retry.steps[1].status, "pending");
+  assert.match(retry.logs.at(-1).summary, /manual retry/i);
+  const completed = await advanceWorkflowRun(retry, {
+    draft_text: async () => ({ summary: "Draft prepared." })
+  });
+  assert.equal(completed.status, "completed");
+  assert.equal(completed.steps[0].attempts, 1);
+  assert.equal(completed.steps[1].attempts, 2);
+
+  const exhausted = {
+    ...failed,
+    steps: failed.steps.map((step, index) => index === 1 ? { ...step, attempts: 3 } : step)
+  };
+  assert.throws(() => retryWorkflowRun(exhausted), /maximum of three attempts/i);
 });
