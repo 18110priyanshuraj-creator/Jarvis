@@ -1,6 +1,6 @@
 # JARVIS Phase 15 — Full Android Task Integration
 
-**Status:** VERIFIED — merged via PR #54 at e6773b7; PR and post-merge main CI both passed.  
+**Status:** VERIFIED for the original Phase 15 integration; verification hardening is under review in PR #55. Overall physical-device acceptance remains pending Phase 31.  
 **Branch:** feat/phase-15-full-android-task-integration  
 **Base:** 4073a0f466ec449816f07b84e302bbf8df7d0360
 
@@ -46,7 +46,7 @@ Make typed Orb input, one-shot voice and hands-free voice use one authenticated 
 
 ## Supported action boundary
 
-The existing allow-list remains unchanged: open_app, read_screen, tap_label, type_text, scroll_down, scroll_up, back, home, ask_user and finish.
+The bounded allow-list is extended with read-only `verify_app_foreground` and `verify_screen_text` checks. Other supported actions remain open_app, read_screen, tap_label, type_text, scroll_down, scroll_up, back, home, ask_user and finish.
 
 The engine does not add arbitrary gestures, coordinate taps, shell/code execution, sending/submitting messages, deleting data, purchasing, payments, transfers, security/account changes, credential/OTP entry, permission grants, app installation or automatic selection of search results. Sensitive actions must remain manual.
 
@@ -64,7 +64,7 @@ The engine does not add arbitrary gestures, coordinate taps, shell/code executio
 - Typed and one-shot commands use the background local-first/planner path and pass the correct source into the execution ledger.
 - Hands-free and Orb requests use the same on-device mode/action validator and execution gate.
 - Conversation/clarification modes containing hidden actions are rejected.
-- Screen-control plans are blocked when Accessibility is unavailable; app-open-only plans do not require Accessibility.
+- Screen-control and verification plans are blocked when Accessibility is unavailable; app launches that require foreground verification also require the user-enabled Accessibility service.
 - Device-action plans cannot run before a visible user approval. Cancel and dismiss remain no-op paths.
 - Exactly one execution ID can own the task gate; a non-owner cannot release it.
 - Existing protected-control, secret-text, bounded action count, local checkpoint, cancellation, pause/resume, journal and Android build regressions continue passing.
@@ -79,3 +79,48 @@ The repository CI is the automated acceptance source for Node syntax/tests/depen
 - Post-merge main CI: [run #41445057821](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41445057821) — Node 208/208, 0 failures, 0 production vulnerabilities; Android testDebugUnitTest, assembleDebug, APK verification and upload passed.
 - Verified main debug APK artifact: 13142356532, 23,971,126 bytes; SHA-256 9b1087cf894ebce2d2b830ad65127034a2e4e2e0dd8fd5872c5f1c2533f3d123.
 - Hardware validation: physical Samsung Galaxy Tab A9 acceptance remains Phase 31.
+
+## Phase 15 verification hardening — PR #55
+
+**Branch:** `fix/phase15-outcome-verification`  
+**Pull request:** [#55 — verify Phase 15 task outcomes before completion](https://github.com/18110priyanshuraj-creator/Jarvis/pull/55)  
+**Review status:** CI and merge are tracked separately; this section must not be read as physical-device acceptance.
+
+### Gap addressed
+
+The original action executor treated Android returning `true` from an accessibility action as a successful operation. That indicates that Android accepted the request; it does not demonstrate that the expected app or visible result appeared. This follow-up adds explicit postconditions and makes the planner and Android validator independently require them.
+
+### Implementation
+
+- `UIActionExecutor.verifyVisibleText` compares a short expected phrase with the currently exposed accessibility labels. It reads the tree on-device, in memory, skips password-node values, refuses protected screens and does not persist or upload the screen contents.
+- `LocalCommandProcessor.verifyAppForeground` compares the active accessibility window's package identity with the unique installed launcher-app label requested by the plan.
+- Every `open_app` action must be followed immediately by `verify_app_foreground` for the same normalized app label.
+- Every tap/type/scroll/Back/Home mutation must have a later `verify_screen_text` action before a plan can finish.
+- Server-side `services/agent-planner.js` and native `AgentPlanRunner` independently enforce those structural requirements.
+- A missing or mismatched verification stops execution at the user-review boundary; later actions are not run and the task is not reported as completed.
+- The local app-search template enters a query and verifies that it is visible, then pauses. Search submission and result selection remain manual because the current safe allow-list does not include submit or automatic result selection.
+- The local journal records only generic `verify app` and `verify screen` categories. It does not store expected phrases or screen text.
+
+### New regression coverage
+
+- Server tests reject app launches without a matching foreground check and UI mutations without a visible-result check.
+- Device API test expects the six-step verified search plan.
+- Android validator tests reject missing/mismatched app checks and missing UI-result checks.
+- UI policy tests cover normalized phrase matching.
+- Journal tests ensure verification steps remain generic and do not leak entered text.
+
+### Verification boundaries
+
+Visible phrase matching proves only that the expected phrase is exposed in the current accessibility tree. It does not prove that a web page is factually correct or that a complex external task has succeeded. A protected or inaccessible screen must pause for user review. Physical Samsung Galaxy Tab A9 execution remains Phase 31 and is not claimed here.
+
+### Follow-up acceptance checklist
+
+- [x] Foreground identity check implemented locally.
+- [x] Visible-text postcondition check implemented locally.
+- [x] Server and Android validators require corresponding checks.
+- [x] Generic privacy-minimized journal categories added.
+- [x] Node and Android regression tests updated.
+- [ ] Latest PR #55 Node CI and production dependency audit green.
+- [ ] Latest PR #55 Android unit tests/build/APK verification green.
+- [ ] PR #55 merged to main and resulting main SHA checked.
+- [ ] Physical Galaxy Tab A9 test (reserved for Phase 31).
