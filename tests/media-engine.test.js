@@ -29,6 +29,7 @@ test("creates a bounded local vertical-short storyboard without an external prov
   const project = await makeDraft();
   assert.equal(project.status, "draft");
   assert.equal(project.generationSource, "local-template");
+  assert.notEqual(project.id, "caller-controlled");
   assert.equal(project.format, "vertical-short");
   assert.equal(project.width, 720);
   assert.equal(project.height, 1280);
@@ -62,6 +63,7 @@ test("rejects empty briefs and projects without a title", () => {
 test("rejects credential-like content and restricted media requests", async () => {
   await assert.rejects(() => makeDraft({ brief: "Use this api_key=super-secret-value in the video." }), /credential or secret/);
   await assert.rejects(() => makeDraft({ brief: "Create a pornographic video." }), /safe-content scope/);
+  await assert.rejects(() => makeDraft({ audience: "api_key=private-value" }), /credential or secret/);
 });
 
 test("rejects credential-like content in individual scene fields", () => {
