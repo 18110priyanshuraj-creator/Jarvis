@@ -46,6 +46,10 @@ The planner cannot generate memory writes, shell/code execution, messages, publi
 - `POST /api/planner/plan` — authenticated goal-to-plan proposal; no persistence or execution.
 - `POST /api/workflows` — existing endpoint saves a chosen plan as an unapproved workflow draft.
 
+## Status
+
+**CODE_COMPLETE** — repository implementation, 191 Node regression tests, dependency audit, Android unit tests/build and APK verification all passed on the implementation commit. The live Render deployment is confirmed.
+
 ## Verification
 
-Automated tests cover local study/research/writing/project decomposition, clarification fallback, optional-model JSON handling, step allow-lists, review-checkpoint requirements, bounded constraints, private/sensitive text rejection and harmful-goal rejection. Full Node tests, dependency audit, Android unit tests and APK build/verification remain the repository CI gate.
+Automated tests cover local study/research/writing/project decomposition, clarification fallback, optional-model JSON handling, step allow-lists, review-checkpoint requirements, bounded constraints, private/sensitive text rejection and harmful-goal rejection. GitHub Actions run `41402806377` passed 191/191 Node tests, reported zero production dependency vulnerabilities, and passed Android `testDebugUnitTest assembleDebug` plus APK verification/upload. The Render deployment `dep-dbk36ttg1s2s738i9hr0` is live. Workflow execution still requires the user to save a draft, validate, approve and press Run.

@@ -42,7 +42,7 @@ See:
 | 6 | Independent Intelligence Engine | CODE_COMPLETE | Deterministic offline-first routing, local-first device planning, secret-safe capability status and optional model fallback are tested; no general local LLM is claimed. |
 | 7 | Natural Language Understanding | CODE_COMPLETE | Shared deterministic English/Hindi/Hinglish intent labels, heuristic confidence metadata and 18 multilingual regression examples; classification alone cannot execute Android actions. |
 | 8 | Local Memory System | CODE_COMPLETE | Separate on-device Room v1 store, Android Keystore AES-GCM encryption, explicit local remember/recall/exact-forget, and native add/search/edit/pause/resume/delete UI. CI run 41400751209 passed Node (183/183, 0 audit vulnerabilities) and Android testDebugUnitTest assembleDebug plus APK verification/upload. Physical Tab A9 Keystore/UI checks remain Phase 31. |
-| 9 | Autonomous Task Planner | IN_PROGRESS | Goal-to-workflow planner with deterministic local templates, optional server-configured model fallback, explicit assumptions/clarifications, allow-listed steps and review-gated drafts. CI and live-deployment verification pending. |
+| 9 | Autonomous Task Planner | CODE_COMPLETE | Authenticated dashboard goal-to-workflow planner; deterministic local templates before optional server model fallback; clarification/assumption handling; eight allow-listed step categories, private-data screening and no-execution plan previews; explicit save-as-draft and existing validate/approve/run gates. CI run 41402806377 passed 191 Node tests, zero vulnerabilities, Android unit tests/build and APK verification. Render is live; real-world workflow use remains user-approved. |
 | 10 | Persistent Execution Engine | PARTIAL | Workflows and cancellable sequences exist; full Android task recovery after restart is not verified. |
 | 11 | Screen Observation | PARTIAL | Bounded accessibility-tree inspection; no screenshot/vision perception. |
 | 12 | Android Action Engine | PARTIAL | Safe exact-label and navigation operations; no broad app automation or arbitrary gestures. |
@@ -77,7 +77,7 @@ See:
 6. Phase 5 offline voice system is code-complete: both Android voice input paths use one on-device selection policy, offline-only mode blocks online speech fallbacks, and TTS honors local-voice requirements. Device-specific model and audio acceptance remains Phase 31.
 7. Phase 6 is code-complete: supported deterministic requests route offline before the optional model adapter, current-information requests retain live-research precedence, and bounded Android device plans prefer local rules. See `JARVIS_PHASE_6_INDEPENDENT_INTELLIGENCE_ENGINE.md`.
 8. Phase 8 is code-complete at the repository/CI level: a separate Android-local encrypted memory store and native CRUD UI pass Node and Android CI. Local memories are never automatically sent to the server; no server-state import or migration was performed. See `JARVIS_PHASE_8_LOCAL_MEMORY.md`.
-9. Phase 9 adds a goal-to-workflow planner. It uses deterministic local templates first, an optional server-configured model only for unsupported goals, strict step allow-lists, and an explicit draft/validate/approve/run lifecycle. Creating a plan must never execute it. See `JARVIS_PHASE_9_AUTONOMOUS_TASK_PLANNER.md`.
+9. Phase 9 is code-complete: goal planning is exposed in the authenticated Workflows area, generates drafts only, and retains the existing validation, approval and execution gates. Deterministic templates run before optional model planning; no workflow or task is created by planning itself. See `JARVIS_PHASE_9_AUTONOMOUS_TASK_PLANNER.md`.
 10. Retain all current tests and add new regression/acceptance tests.
 11. Keep `main` as the release source of truth; use short-lived branches only when useful.
 12. Do not delete branches with unreviewed unique work or mark a phase verified because a file exists.
@@ -91,6 +91,14 @@ See:
 - Debug APK artifact: `jarvis-companion-debug`, artifact ID `13121625476`, SHA-256 `ec2d74774a18156b539cba0ea89340042a8a9876900cf5a6e7f3a46fecd0034b`, expires 2026-11-09.
 - Render deployment `dep-dbk2tr6417fc73bgneag` for the main commit is live. Phase 8 memory code is Android-native; no backend memory migration or API was introduced.
 - Samsung Galaxy Tab A9 Keystore and UI behavior have not been physically tested; keep these acceptance checks in Phase 31.
+
+## Phase 9 closeout evidence
+
+- Implementation commit: `a7ac6ac403e1b01f7e7bc5e8610c44f6a83eea8c`.
+- GitHub Actions run `41402806377`: 191 Node tests passed, zero failed; production dependency audit reported zero vulnerabilities; Android `testDebugUnitTest assembleDebug` passed; APK verification and upload passed.
+- Debug APK artifact: `jarvis-companion-debug`, artifact ID `13122630893`, SHA-256 `dc9ab74e60cb8e831e884c405ab43eac6c5c103c385f2ecf797521047e99eafd`, expires 2026-11-09.
+- Render deployment `dep-dbk36ttg1s2s738i9hr0` for the implementation commit is live.
+- Task planning remains proposal-only. Saving a plan creates an unapproved workflow draft; validation, approval and Run remain separate explicit user actions.
 
 ## Reconciliation of historical phases
 
