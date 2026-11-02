@@ -162,8 +162,6 @@ class CancellableActionSequenceTest {
         assertEquals(listOf("open", "tap"), executed)
         assertTrue(scheduler.pending.isEmpty())
     }
-}
-
 
     @Test
     fun reportsEveryStepAndExactlyOneTerminalState() {
@@ -253,3 +251,4 @@ class CancellableActionSequenceTest {
         assertEquals(listOf("running:0", "paused:1", "running:1"), states)
         assertEquals(listOf("completed"), terminal)
     }
+}
