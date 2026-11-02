@@ -15,7 +15,6 @@
 
 ## Phase 0 — Existing project audit and preservation gate
 
-<badge-placeholder />
 
 **Status: BLOCKED**
 
