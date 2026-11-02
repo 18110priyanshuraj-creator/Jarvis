@@ -1,7 +1,7 @@
 # JARVIS Phase 0 + Phase 1–32 Roadmap
 
 **Roadmap baseline:** 2026-11-02  
-**Repository baseline:** `1ed891ae5fc45c462843e1ed3f62fd1a841ac31a`  
+**Repository baseline:** `8b00096ea7b62611d5275656a292d5db78c07a72`  
 **Rule:** Historical implementation labels are evidence, not automatic completion of the new 32-phase plan.
 
 ## Status legend
@@ -48,7 +48,7 @@ See:
 | 12 | Android Action Engine | VERIFIED | Merged via PR #51 at `13093c6`; post-merge main CI run 41431242469 passed (197 Node tests, Android unit/build/APK checks, zero production vulnerabilities). Physical Tab A9 acceptance remains Phase 31. |
 | 13 | Universal Application Skill Registry | VERIFIED | Merged via PR #52 at `d149c1d`; post-merge main CI run 41435305226 passed (Node 203 tests, zero production vulnerabilities, Android unit/build/APK verification and artifact upload). Physical Galaxy Tab A9 acceptance remains Phase 31. |
 | 14 | Error Detection and Recovery | VERIFIED | Merged via PR #53 at `11acb45`; PR CI run 41438465662 passed (208 Node tests, zero production vulnerabilities, Android build/unit/APK verification and artifact upload). Post-merge main Node passed in run 41438983665; its duplicate Android job was still in progress, on an identical source tree to the green PR run. Hardware acceptance remains Phase 31. |
-| 15 | Full Android Task Integration | VERIFIED (original integration); HARDENING IN REVIEW | Original PR #54 passed PR and main CI. Follow-up PR #55 adds mandatory app-foreground and visible-result postconditions, enforced by both server and Android validators; query submission remains a manual handoff. Latest review CI is tracked in PR #55. Physical Galaxy Tab A9 acceptance remains Phase 31. |
+| 15 | Full Android Task Integration | VERIFIED (repository/automated scope) | Original PR #54 and verification hardening PR #55 are merged; PR CI #41451937432 and post-merge main CI #41452457643 passed (209 Node tests, 0 failures, 0 production vulnerabilities, Android unit tests/build/APK integrity). Search submission/results remain a manual handoff; physical Galaxy Tab A9 acceptance remains Phase 31. |
 | 16 | Internet and Google Research | PARTIAL | Configurable SearXNG search and secure page reader; no general Android browser agent. |
 | 17 | Media and Content Creation Engine | NOT_STARTED | No verified end-to-end media creation/export pipeline. |
 | 18 | YouTube Publishing Automation | NOT_STARTED | No upload/publish workflow or verified upload status. |
@@ -115,10 +115,10 @@ The existing repository has historical documents labelled Phase 11–23, includi
 
 ## Phase 15 follow-up — outcome verification
 
-The Phase 15 integration follow-up is tracked in [PR #55](https://github.com/18110priyanshuraj-creator/Jarvis/pull/55), branch `fix/phase15-outcome-verification`. It fixes the distinction between an Android accessibility API accepting an action and JARVIS observing that the requested outcome appeared.
+The Phase 15 integration follow-up was delivered in [PR #55](https://github.com/18110priyanshuraj-creator/Jarvis/pull/55), squash-merged to main at `8b00096ea7b62611d5275656a292d5db78c07a72` from branch `fix/phase15-outcome-verification`. It fixes the distinction between an Android accessibility API accepting an action and JARVIS observing that the requested outcome appeared.
 
 The follow-up adds a bounded foreground-package check after app launch and a local visible-text postcondition after UI mutations. Server and on-device plan validators independently reject missing or mismatched checks. Failure to observe the expected result stops the sequence for user review. Only generic verification categories are persisted in the Android journal; visible screen text and expected phrases are not stored.
 
 The current deterministic app-search template opens the requested app, checks its foreground identity, enters the phrase, checks that the phrase is visible, and pauses for the user to submit the search and select a result. It does not claim that search results were loaded. This is not the general browser-research capability in Phase 16.
 
-PR #55 remains subject to its latest full Node and Android CI result before merge. This repository-level work does not replace Phase 31 physical Galaxy Tab A9 acceptance.
+PR CI #41451937432 and post-merge main CI #41452457643 both passed. The post-merge Node suite passed 209/209 with zero production dependency vulnerabilities; Android unit tests, debug build, APK integrity verification and artifact upload passed on the merged main SHA. This repository-level work does not replace Phase 31 physical Galaxy Tab A9 acceptance.
