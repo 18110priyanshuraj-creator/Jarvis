@@ -20,13 +20,16 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.priyanshuraj.jarviscompanion.R
 import com.priyanshuraj.jarviscompanion.LocalActivityLog
-import com.priyanshuraj.jarviscompanion.device.DeviceConnector
-import com.priyanshuraj.jarviscompanion.device.DeviceTokenStore
+import com.priyanshuraj.jarviscompanion.JarvisApplication
+import com.priyanshuraj.jarviscompanion.CoreCommandSource
 import org.json.JSONObject
 import java.util.Locale
 import java.util.concurrent.Executors
 
 class VoiceControlService : Service() {
+    private val core by lazy(LazyThreadSafetyMode.NONE) {
+        (application as JarvisApplication).core
+    }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val networkExecutor = Executors.newSingleThreadExecutor()
     private var recognizer: SpeechRecognizer? = null
@@ -316,23 +319,24 @@ class VoiceControlService : Service() {
         cancelActivePlan = null
         val requestId = ++requestGeneration
 
-        val localResponse = LocalCommandProcessor.handle(this, transcript, allowUiActions = true)
+        val localResponse = core.handleLocalCommand(
+            transcript,
+            CoreCommandSource.HANDS_FREE,
+            allowUiActions = true
+        )
         if (localResponse != null) {
             speak(localResponse)
             return
         }
 
-        val token = DeviceTokenStore.read(applicationContext)
-        val serverUrl = getSharedPreferences("jarvis_companion_settings", MODE_PRIVATE)
-            .getString("server_url", null)
-        if (token.isNullOrBlank() || serverUrl.isNullOrBlank()) {
+        if (!core.isRemoteConnected()) {
             speak("That is a JARVIS chat request. Pair this device with your dashboard to send it to the assistant.")
             return
         }
 
         networkExecutor.execute {
             try {
-                val plan = DeviceConnector.agentPlan(serverUrl, token, transcript)
+                val plan = core.requestAgentPlan(transcript)
                 when (plan.optString("mode", "device_action")) {
                     "device_action" -> mainHandler.post {
                         if (running && requestId == requestGeneration) {
@@ -382,7 +386,7 @@ class VoiceControlService : Service() {
                         }
                     }
                     "conversation" -> {
-                        val answer = DeviceConnector.voiceCommand(serverUrl, token, transcript)
+                        val answer = core.requestAssistantReply(transcript, CoreCommandSource.HANDS_FREE)
                         mainHandler.post {
                             if (running && requestId == requestGeneration) speak(answer)
                         }
@@ -399,7 +403,7 @@ class VoiceControlService : Service() {
                 }
             } catch (_: Exception) {
                 try {
-                    val answer = DeviceConnector.voiceCommand(serverUrl, token, transcript)
+                    val answer = core.requestAssistantReply(transcript, CoreCommandSource.HANDS_FREE)
                     mainHandler.post {
                         if (running && requestId == requestGeneration) speak(answer)
                     }

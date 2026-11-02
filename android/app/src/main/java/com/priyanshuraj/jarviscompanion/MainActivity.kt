@@ -42,9 +42,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.priyanshuraj.jarviscompanion.accessibility.JarvisAccessibilityService
 import com.priyanshuraj.jarviscompanion.LocalActivityLog
-import com.priyanshuraj.jarviscompanion.device.DeviceConnector
 import com.priyanshuraj.jarviscompanion.device.DeviceTokenStore
-import com.priyanshuraj.jarviscompanion.voice.LocalCommandProcessor
 import com.priyanshuraj.jarviscompanion.voice.VoiceControlService
 import com.priyanshuraj.jarviscompanion.voice.VoiceOutput
 import java.util.Locale
@@ -52,6 +50,9 @@ import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
+    private val jarvisCore by lazy(LazyThreadSafetyMode.NONE) {
+        (application as JarvisApplication).core
+    }
     private lateinit var serverUrlInput: EditText
     private lateinit var pairingCodeInput: EditText
     private lateinit var statusText: TextView
@@ -728,13 +729,7 @@ class MainActivity : Activity() {
             return
         }
         homeMessageInput?.text?.clear()
-        val localResponse = LocalCommandProcessor.handle(this, message, allowUiActions = false)
-        if (localResponse != null) {
-            refreshStatus(localResponse)
-            speakReply(localResponse)
-        } else {
-            sendVoiceCommand(message)
-        }
+        dispatchCoreCommand(message, CoreCommandSource.HOME_TEXT)
     }
 
     @Suppress("DEPRECATION")
@@ -796,7 +791,15 @@ class MainActivity : Activity() {
     }
 
     private fun refreshActivityLog() {
-        activityLogText.text = LocalActivityLog.render(this)
+        val legacyHistory = LocalActivityLog.render(this)
+        activityLogText.text = legacyHistory + "\n\nNative core execution journal\nLoading…"
+        jarvisCore.loadRecentHistory(10) { recent ->
+            if (isFinishing || isDestroyed) return@loadRecentHistory
+            val nativeHistory = recent.joinToString("\n")
+                .ifBlank { "No native execution events recorded yet." }
+            activityLogText.text = legacyHistory +
+                "\n\nNative core execution journal (metadata only)\n" + nativeHistory
+        }
     }
 
     private fun openAppSettings() {
@@ -851,7 +854,7 @@ class MainActivity : Activity() {
 
         executor.execute {
             try {
-                val paired = DeviceConnector.pair(serverUrl, code)
+                val paired = jarvisCore.pairDevice(serverUrl, code)
                 DeviceTokenStore.save(applicationContext, paired.deviceToken)
                 getSharedPreferences("jarvis_companion_settings", MODE_PRIVATE)
                     .edit().putString("server_url", serverUrl.trimEnd('/')).apply()
@@ -874,7 +877,7 @@ class MainActivity : Activity() {
         val accessibilityEnabled = PermissionSetup.isAccessibilityEnabled(this)
         executor.execute {
             try {
-                DeviceConnector.heartbeat(serverUrl, token, accessibilityEnabled)
+                jarvisCore.heartbeat(serverUrl, token, accessibilityEnabled)
             } catch (error: Exception) {
                 runOnUiThread { refreshStatus("Paired locally. Server heartbeat failed: " + (error.message ?: "connection error")) }
             }
@@ -997,13 +1000,7 @@ class MainActivity : Activity() {
                 if (message.isBlank()) {
                     refreshStatus("No speech was recognized. Please try again.")
                 } else {
-                    val localResponse = LocalCommandProcessor.handle(this@MainActivity, message, allowUiActions = false)
-                    if (localResponse != null) {
-                        refreshStatus(localResponse)
-                        speakReply(localResponse)
-                    } else {
-                        sendVoiceCommand(message)
-                    }
+                    dispatchCoreCommand(message, CoreCommandSource.SPEAK_ONCE)
                 }
             }
             override fun onPartialResults(partialResults: Bundle?) {}
@@ -1035,25 +1032,15 @@ class MainActivity : Activity() {
     }
 
     private fun sendVoiceCommand(message: String) {
-        val token = DeviceTokenStore.read(applicationContext)
-        val serverUrl = getSharedPreferences("jarvis_companion_settings", MODE_PRIVATE)
-            .getString("server_url", null)
-        if (token.isNullOrBlank() || serverUrl.isNullOrBlank()) {
-            refreshStatus("Pair this device with your dashboard before sending general chat commands. Local app opening still works.")
-            return
-        }
+        dispatchCoreCommand(message, CoreCommandSource.SPEAK_ONCE)
+    }
 
-        refreshStatus("JARVIS is processing: " + message)
-        executor.execute {
-            try {
-                val answer = DeviceConnector.voiceCommand(serverUrl, token, message)
-                runOnUiThread {
-                    refreshStatus("JARVIS: " + answer)
-                    speakReply(answer)
-                }
-            } catch (error: Exception) {
-                runOnUiThread { refreshStatus(error.message ?: "Voice request failed.") }
-            }
+    private fun dispatchCoreCommand(message: String, source: CoreCommandSource) {
+        refreshStatus("JARVIS is processing your request…")
+        jarvisCore.submitCommand(message, source, allowUiActions = false) { result ->
+            if (isFinishing || isDestroyed) return@submitCommand
+            refreshStatus(result.reply)
+            speakReply(result.reply)
         }
     }
 

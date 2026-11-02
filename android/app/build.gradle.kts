@@ -2,6 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -12,13 +13,17 @@ android {
         applicationId = "com.priyanshuraj.jarviscompanion"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.1-phase21"
+        versionCode = 3
+        versionName = "0.3.0-phase3"
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
@@ -30,6 +35,10 @@ kotlin {
 
 
 dependencies {
+    implementation("androidx.room:room-runtime:2.8.5")
+    ksp("androidx.room:room-compiler:2.8.5")
+
+    testImplementation("org.robolectric:robolectric:4.17")
     testImplementation("junit:junit:4.13.2")
     // Android local unit tests use the real JVM JSON implementation, not android.jar stubs.
     testImplementation("org.json:json:20240303")
