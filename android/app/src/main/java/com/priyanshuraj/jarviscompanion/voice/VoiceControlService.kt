@@ -41,6 +41,8 @@ class VoiceControlService : Service() {
     private var lastSpeechUtteranceId: String? = null
     private var requestGeneration = 0L
     private var cancelActivePlan: (() -> Unit)? = null
+    private var pauseActivePlan: (() -> Unit)? = null
+    private var resumeActivePlan: (() -> Unit)? = null
     private var pendingPlan: JSONObject? = null
     private var pendingPlanTimeout: Runnable? = null
     private var voiceStatus = "Microphone session is active. Speak a command or use Stop to end it."
@@ -310,6 +312,39 @@ class VoiceControlService : Service() {
     }
 
     private fun handleTranscript(transcript: String) {
+        when (taskControlIntent(transcript)) {
+            "pause" -> {
+                val pause = pauseActivePlan
+                if (pause == null) speak("There is no active task to pause.")
+                else {
+                    pause()
+                    speak("Task paused at the current step. Say resume task when you are ready.")
+                }
+                return
+            }
+            "resume" -> {
+                val resume = resumeActivePlan
+                if (resume == null) speak("There is no paused task to resume.")
+                else {
+                    resume()
+                    speak("Task resumed from its saved in-memory checkpoint.")
+                }
+                return
+            }
+            "cancel" -> {
+                val cancel = cancelActivePlan
+                if (cancel == null) speak("There is no active task to cancel.")
+                else {
+                    cancel()
+                    cancelActivePlan = null
+                    pauseActivePlan = null
+                    resumeActivePlan = null
+                    speak("The active task was cancelled.")
+                }
+                return
+            }
+        }
+
         if (LocalCommandProcessor.isStopCommand(transcript)) {
             invalidatePendingWork()
             stopAfterSpeech = true
@@ -329,15 +364,20 @@ class VoiceControlService : Service() {
                     }
                     LocalActivityLog.record(this, "Plan approved", categories)
                     cancelActivePlan?.invoke()
-                    cancelActivePlan = AgentPlanRunner.execute(
+                    val controls = AgentPlanRunner.execute(
                         this@VoiceControlService,
                         waitingPlan,
                         mainHandler
                     ) { result ->
                         LocalActivityLog.record(this@VoiceControlService, "Execution ended", categories)
                         cancelActivePlan = null
+                        pauseActivePlan = null
+                        resumeActivePlan = null
                         if (running) speak(result)
                     }
+                    cancelActivePlan = controls?.cancel
+                    pauseActivePlan = controls?.pause
+                    resumeActivePlan = controls?.resume
                 }
                 -1 -> {
                     cancelPendingPlan("The user rejected the pending plan.")
@@ -350,6 +390,8 @@ class VoiceControlService : Service() {
 
         cancelActivePlan?.invoke()
         cancelActivePlan = null
+        pauseActivePlan = null
+        resumeActivePlan = null
         val requestId = ++requestGeneration
 
         val localResponse = core.handleLocalCommand(
@@ -455,6 +497,22 @@ class VoiceControlService : Service() {
         }
     }
 
+    private fun taskControlIntent(transcript: String): String? {
+        val normalized = transcript.lowercase(Locale.ROOT)
+            .replace(Regex("[^\\p{L}\\p{N} ]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        return when (normalized) {
+            "pause task", "pause plan", "pause current task", "task pause",
+            "pause karo", "task pause karo", "kaam roko", "kaam rok do" -> "pause"
+            "resume task", "resume plan", "continue task", "continue plan", "task resume",
+            "resume karo", "task resume karo", "kaam jari karo", "kaam chalu karo" -> "resume"
+            "cancel task", "cancel current task", "stop task", "cancel running task",
+            "cancel karo", "task cancel karo", "kaam cancel karo" -> "cancel"
+            else -> null
+        }
+    }
+
     /** 1 = approve, -1 = cancel, 0 = no explicit decision. */
     private fun approvalDecision(transcript: String): Int {
         val normalized = transcript.lowercase(Locale.ROOT)
@@ -495,6 +553,8 @@ class VoiceControlService : Service() {
         requestGeneration += 1
         cancelActivePlan?.invoke()
         cancelActivePlan = null
+        pauseActivePlan = null
+        resumeActivePlan = null
         cancelPendingPlan("Pending plan cleared when voice work was interrupted or stopped.")
     }
 

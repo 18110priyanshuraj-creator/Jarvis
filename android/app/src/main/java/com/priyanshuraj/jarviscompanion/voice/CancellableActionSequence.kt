@@ -24,11 +24,15 @@ internal class CancellableActionSequence<T>(
     private val executeAction: (T) -> TaskStepResult,
     private val delayAfter: (T) -> Long,
     initialMessages: List<String> = emptyList(),
+    private val onState: (String, Int) -> Unit = { _, _ -> },
+    private val onProgress: (Int, TaskStepResult) -> Unit = { _, _ -> },
+    private val onTerminal: (String) -> Unit = {},
     private val onComplete: (List<String>) -> Unit
 ) {
     private val messages = initialMessages.toMutableList()
     private var index = 0
     private var cancelled = false
+    private var paused = false
     private var completed = false
 
     private val runner = Runnable { runNext() }
@@ -38,38 +42,105 @@ internal class CancellableActionSequence<T>(
     }
 
     fun start() {
-        if (!cancelled && !completed) scheduler.post(runner, 0L)
+        if (cancelled || completed || paused) return
+        if (!persistState("running")) return
+        scheduler.post(runner, 0L)
+    }
+
+    fun pause() {
+        if (cancelled || completed || paused) return
+        scheduler.remove(runner)
+        if (!persistState("paused")) return
+        paused = true
+    }
+
+    fun resume() {
+        if (cancelled || completed || !paused) return
+        if (!persistState("running")) return
+        paused = false
+        scheduler.post(runner, 0L)
+    }
+
+    private fun persistState(state: String): Boolean {
+        return try {
+            onState(state, index)
+            true
+        } catch (error: Exception) {
+            failCheckpoint(error)
+            false
+        }
+    }
+
+    private fun failCheckpoint(error: Exception) {
+        if (cancelled || completed) return
+        completed = true
+        scheduler.remove(runner)
+        runCatching { onTerminal("failed") }
+        val detail = error.message?.take(160) ?: "The task progress could not be saved."
+        onComplete(messages.toList() + "Task paused safely: $detail No further actions were run.")
     }
 
     fun cancel() {
         if (cancelled || completed) return
         cancelled = true
+        paused = false
         scheduler.remove(runner)
+        runCatching { onState("cancelled", index) }
+        runCatching { onTerminal("cancelled") }
     }
 
     private fun runNext() {
-        if (cancelled || completed) return
+        if (cancelled || completed || paused) return
         if (index >= actions.size) {
-            finish()
+            finish("completed")
             return
         }
 
         val action = actions[index]
-        val result = executeAction(action)
+        val result = try {
+            executeAction(action)
+        } catch (error: Exception) {
+            TaskStepResult(
+                success = false,
+                shouldStop = true,
+                message = error.message?.take(380) ?: "The action failed unexpectedly."
+            )
+        }
+        try {
+            onProgress(index, result)
+        } catch (error: Exception) {
+            if (result.message.isNotBlank()) messages.add(result.message.take(380))
+            failCheckpoint(error)
+            return
+        }
         if (result.message.isNotBlank()) messages.add(result.message.take(380))
         index++
 
-        if (!result.success || result.shouldStop || index >= actions.size) {
-            finish()
+        if (!result.success) {
+            finish("failed")
+            return
+        }
+        if (result.shouldStop) {
+            finish("waiting_user")
+            return
+        }
+        if (index >= actions.size) {
+            finish("completed")
             return
         }
 
         scheduler.post(runner, delayAfter(action).coerceIn(0L, 3000L))
     }
 
-    private fun finish() {
+    private fun finish(status: String) {
         if (cancelled || completed) return
         completed = true
-        onComplete(messages.toList())
+        try {
+            onTerminal(status)
+            onComplete(messages.toList())
+        } catch (error: Exception) {
+            val detail = error.message?.take(160) ?: "The final task checkpoint could not be saved."
+            onComplete(messages.toList() + "The actions ended, but JARVIS could not verify the final saved status: $detail")
+        }
     }
 }

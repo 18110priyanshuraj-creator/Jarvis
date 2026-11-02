@@ -162,4 +162,137 @@ class CancellableActionSequenceTest {
         assertEquals(listOf("open", "tap"), executed)
         assertTrue(scheduler.pending.isEmpty())
     }
+
+    @Test
+    fun reportsEveryStepAndExactlyOneTerminalState() {
+        val scheduler = FakeScheduler()
+        val progress = mutableListOf<Pair<Int, Boolean>>()
+        val terminal = mutableListOf<String>()
+        val sequence = CancellableActionSequence(
+            actions = listOf("open", "read"),
+            scheduler = scheduler,
+            executeAction = { TaskStepResult(true, false, it) },
+            delayAfter = { 0L },
+            onProgress = { index, result -> progress.add(index to result.success) },
+            onTerminal = { terminal.add(it) },
+            onComplete = {}
+        )
+
+        sequence.start()
+        scheduler.runNext()
+        scheduler.runNext()
+
+        assertEquals(listOf(0 to true, 1 to true), progress)
+        assertEquals(listOf("completed"), terminal)
+    }
+
+    @Test
+    fun failedActionIsRecordedAndCancellationHasItsOwnTerminalState() {
+        val scheduler = FakeScheduler()
+        val progress = mutableListOf<Pair<Int, Boolean>>()
+        val terminal = mutableListOf<String>()
+        val failed = CancellableActionSequence(
+            actions = listOf("open", "tap"),
+            scheduler = scheduler,
+            executeAction = { value -> TaskStepResult(value != "tap", false, value) },
+            delayAfter = { 0L },
+            onProgress = { index, result -> progress.add(index to result.success) },
+            onTerminal = { terminal.add(it) },
+            onComplete = {}
+        )
+        failed.start()
+        scheduler.runNext()
+        scheduler.runNext()
+        assertEquals(listOf(0 to true, 1 to false), progress)
+        assertEquals(listOf("failed"), terminal)
+
+        val cancelScheduler = FakeScheduler()
+        val cancelTerminal = mutableListOf<String>()
+        val cancelled = CancellableActionSequence(
+            actions = listOf("open", "read"),
+            scheduler = cancelScheduler,
+            executeAction = { TaskStepResult(true, false, it) },
+            delayAfter = { 500L },
+            onTerminal = { cancelTerminal.add(it) },
+            onComplete = {}
+        )
+        cancelled.start()
+        cancelled.cancel()
+        assertEquals(listOf("cancelled"), cancelTerminal)
+    }
+
+
+    @Test
+    fun pauseRemovesTheQueuedStepAndResumeContinuesFromTheSameIndex() {
+        val scheduler = FakeScheduler()
+        val executed = mutableListOf<String>()
+        val states = mutableListOf<String>()
+        val terminal = mutableListOf<String>()
+        val sequence = CancellableActionSequence(
+            actions = listOf("open", "read", "tap"),
+            scheduler = scheduler,
+            executeAction = { executed.add(it); TaskStepResult(true, false, it) },
+            delayAfter = { 250L },
+            onState = { state, index -> states.add("$state:$index") },
+            onTerminal = { terminal.add(it) },
+            onComplete = {}
+        )
+
+        sequence.start()
+        scheduler.runNext()
+        sequence.pause()
+        assertTrue(scheduler.pending.isEmpty())
+        assertEquals(listOf("open"), executed)
+        sequence.resume()
+        scheduler.runNext()
+        scheduler.runNext()
+
+        assertEquals(listOf("open", "read", "tap"), executed)
+        assertEquals(listOf("running:0", "paused:1", "running:1"), states)
+        assertEquals(listOf("completed"), terminal)
+    }
+
+    @Test
+    fun failedProgressCheckpointStopsBeforeTheNextAction() {
+        val scheduler = FakeScheduler()
+        val executed = mutableListOf<String>()
+        val messages = mutableListOf<String>()
+        val terminal = mutableListOf<String>()
+        val sequence = CancellableActionSequence(
+            actions = listOf("open", "read"),
+            scheduler = scheduler,
+            executeAction = { executed.add(it); TaskStepResult(true, false, it) },
+            delayAfter = { 0L },
+            onProgress = { _, _ -> throw IllegalStateException("disk unavailable") },
+            onTerminal = { terminal.add(it) },
+            onComplete = { messages.addAll(it) }
+        )
+        sequence.start()
+        scheduler.runNext()
+
+        assertEquals(listOf("open"), executed)
+        assertEquals(listOf("failed"), terminal)
+        assertTrue(messages.any { it.contains("No further actions were run") })
+        assertTrue(scheduler.pending.isEmpty())
+    }
+
+    @Test
+    fun failedFinalCheckpointDoesNotReportTaskAsVerifiedComplete() {
+        val scheduler = FakeScheduler()
+        val messages = mutableListOf<String>()
+        val terminal = mutableListOf<String>()
+        val sequence = CancellableActionSequence(
+            actions = listOf("open"),
+            scheduler = scheduler,
+            executeAction = { TaskStepResult(true, false, "App opened.") },
+            delayAfter = { 0L },
+            onTerminal = { throw IllegalStateException("journal unavailable") },
+            onComplete = { messages.addAll(it) }
+        )
+        sequence.start()
+        scheduler.runNext()
+
+        assertTrue(terminal.isEmpty())
+        assertTrue(messages.any { it.contains("could not verify the final saved status") })
+    }
 }

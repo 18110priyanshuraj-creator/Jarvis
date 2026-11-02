@@ -1427,6 +1427,17 @@ async function refreshWorkflows() {
   renderWorkflows();
 }
 
+async function watchWorkflowRun(runId) {
+  // Poll only while this specific run is executing. A paused or review-gated
+  // run remains visible and waits for an explicit operator action.
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    await refreshWorkflows();
+    const run = state.workflowRuns.find((item) => item.id === runId);
+    if (!run || !["queued", "running"].includes(run.status)) return;
+  }
+}
+
 function renderWorkflows() {
   renderWorkflowBuilderSteps();
   const target = $("#workflow-list");
@@ -1470,7 +1481,7 @@ function renderWorkflows() {
       }
 
       const activeRun = state.workflowRuns.find((run) =>
-        run.workflowId === workflow.id && ["running", "waiting_review"].includes(run.status)
+        run.workflowId === workflow.id && ["queued", "running", "waiting_review", "paused"].includes(run.status)
       );
       const actions = document.createElement("div");
       actions.className = "workflow-actions";
@@ -1544,10 +1555,13 @@ function renderWorkflows() {
         runButton.disabled = true;
         try {
           const data = await api("/api/workflows/" + encodeURIComponent(workflow.id) + "/run", {
-            method: "POST", body: JSON.stringify({})
+            method: "POST",
+            headers: { Prefer: "respond-async" },
+            body: JSON.stringify({})
           });
           state.workflowRuns.unshift(data.run);
           renderWorkflows();
+          void watchWorkflowRun(data.run.id).catch((error) => toast(error.message, true));
           toast(data.run.status === "waiting_review" ? "Workflow paused for your review." :
             data.run.status === "completed" ? "Workflow completed." : "Workflow status: " + data.run.status);
         } catch (error) {
@@ -1710,10 +1724,13 @@ function renderWorkflows() {
           continueButton.disabled = true;
           try {
             const data = await api("/api/workflow-runs/" + encodeURIComponent(run.id) + "/continue", {
-              method: "POST", body: JSON.stringify({})
+              method: "POST",
+              headers: { Prefer: "respond-async" },
+              body: JSON.stringify({})
             });
             state.workflowRuns = state.workflowRuns.map((item) => item.id === run.id ? data.run : item);
             renderWorkflows();
+            void watchWorkflowRun(run.id).catch((error) => toast(error.message, true));
             toast(data.run.status === "completed" ? "Workflow completed." : "Workflow paused at another review checkpoint.");
           } catch (error) {
             toast(error.message, true);
@@ -1722,7 +1739,77 @@ function renderWorkflows() {
         });
         actions.append(continueButton);
       }
-      if (["running", "waiting_review"].includes(run.status)) {
+      if (run.status === "failed") {
+        const retryButton = document.createElement("button");
+        retryButton.type = "button";
+        retryButton.className = "item-action";
+        retryButton.textContent = "Retry failed step";
+        retryButton.addEventListener("click", async () => {
+          if (!confirm("Retry only the failed step? Previously completed steps will remain completed. A step is limited to three attempts.")) return;
+          retryButton.disabled = true;
+          try {
+            const data = await api("/api/workflow-runs/" + encodeURIComponent(run.id) + "/retry", {
+              method: "POST",
+              headers: { Prefer: "respond-async" },
+              body: JSON.stringify({})
+            });
+            state.workflowRuns = state.workflowRuns.map((item) => item.id === run.id ? data.run : item);
+            renderWorkflows();
+            toast("Retry started from the failed step.");
+            void watchWorkflowRun(run.id).catch((error) => toast(error.message, true));
+          } catch (error) {
+            toast(error.message, true);
+            retryButton.disabled = false;
+          }
+        });
+        actions.append(retryButton);
+      }
+      if (run.status === "paused") {
+        const resumeButton = document.createElement("button");
+        resumeButton.type = "button";
+        resumeButton.className = "item-action";
+        resumeButton.textContent = "Resume";
+        resumeButton.addEventListener("click", async () => {
+          if (!confirm("Resume this workflow from its last saved checkpoint?")) return;
+          resumeButton.disabled = true;
+          try {
+            const data = await api("/api/workflow-runs/" + encodeURIComponent(run.id) + "/resume", {
+              method: "POST",
+              headers: { Prefer: "respond-async" },
+              body: JSON.stringify({})
+            });
+            state.workflowRuns = state.workflowRuns.map((item) => item.id === run.id ? data.run : item);
+            renderWorkflows();
+            toast("Workflow resumed from its saved checkpoint.");
+            void watchWorkflowRun(run.id).catch((error) => toast(error.message, true));
+          } catch (error) {
+            toast(error.message, true);
+            resumeButton.disabled = false;
+          }
+        });
+        actions.append(resumeButton);
+      }
+      if (["queued", "running"].includes(run.status)) {
+        const pauseButton = document.createElement("button");
+        pauseButton.type = "button";
+        pauseButton.className = "item-action";
+        pauseButton.textContent = "Pause";
+        pauseButton.addEventListener("click", async () => {
+          pauseButton.disabled = true;
+          try {
+            const data = await api("/api/workflow-runs/" + encodeURIComponent(run.id) + "/pause", {
+              method: "POST", body: JSON.stringify({})
+            });
+            toast(data.paused ? "Queued task paused before execution." : "Pause requested. JARVIS will pause after the current safe step.");
+            void watchWorkflowRun(run.id).catch((error) => toast(error.message, true));
+          } catch (error) {
+            toast(error.message, true);
+            pauseButton.disabled = false;
+          }
+        });
+        actions.append(pauseButton);
+      }
+      if (["queued", "running", "waiting_review", "paused"].includes(run.status)) {
         const stopButton = document.createElement("button");
         stopButton.type = "button";
         stopButton.className = "item-action";
@@ -1736,7 +1823,8 @@ function renderWorkflows() {
             });
             state.workflowRuns = state.workflowRuns.map((item) => item.id === run.id ? data.run : item);
             renderWorkflows();
-            toast("Workflow stopped.");
+            toast(data.stopRequested ? "Stop requested. JARVIS will stop at the next safe checkpoint." : "Workflow stopped.");
+            if (data.stopRequested) void watchWorkflowRun(run.id).catch((error) => toast(error.message, true));
           } catch (error) {
             toast(error.message, true);
             stopButton.disabled = false;

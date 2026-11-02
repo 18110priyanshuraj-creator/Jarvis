@@ -2,8 +2,15 @@ package com.priyanshuraj.jarviscompanion.voice
 
 import android.content.Context
 import android.os.Handler
+import com.priyanshuraj.jarviscompanion.LocalTaskExecutionJournal
 import org.json.JSONArray
 import org.json.JSONObject
+
+data class AgentPlanControls(
+    val cancel: () -> Unit,
+    val pause: () -> Unit,
+    val resume: () -> Unit
+)
 
 object AgentPlanRunner {
     private val allowed = setOf(
@@ -114,24 +121,31 @@ object AgentPlanRunner {
 
     /**
      * Execute one small action at a time on the main thread.
-     * Returns a cancellation function that removes the queued next action.
+     * Returns pause, resume and cancellation controls for the active sequence.
      */
     fun execute(
         context: Context,
         plan: JSONObject,
         handler: Handler,
         onComplete: (String) -> Unit
-    ): () -> Unit {
+    ): AgentPlanControls? {
         val actions = try {
             validate(plan)
         } catch (error: Exception) {
             onComplete(error.message ?: "JARVIS rejected an invalid action plan.")
-            return {}
+            return null
         }
 
         val steps = (0 until actions.length()).map { actions.optJSONObject(it) }
         val intro = plan.optString("reply").trim()
         val initialMessages = if (intro.isBlank()) emptyList() else listOf(intro.take(180))
+        val taskKinds = actionKinds(plan).split(" → ")
+        val journalId = try {
+            LocalTaskExecutionJournal.start(context, taskKinds)
+        } catch (error: Exception) {
+            onComplete(error.message ?: "JARVIS could not save task progress. No Android actions were started.")
+            return null
+        }
 
         val sequence = CancellableActionSequence(
             actions = steps,
@@ -155,13 +169,30 @@ object AgentPlanRunner {
                 }
             },
             initialMessages = initialMessages,
+            onState = { status, index ->
+                if (status == "running" || status == "paused") {
+                    LocalTaskExecutionJournal.setState(context, journalId, status, index)
+                }
+            },
+            onProgress = { index, result ->
+                LocalTaskExecutionJournal.checkpoint(
+                    context, journalId, index, result.success, result.shouldStop
+                )
+            },
+            onTerminal = { status ->
+                LocalTaskExecutionJournal.finish(context, journalId, status)
+            },
             onComplete = { messages ->
                 onComplete(messages.joinToString(". ").take(1200))
             }
         )
 
         sequence.start()
-        return { sequence.cancel() }
+        return AgentPlanControls(
+            cancel = { sequence.cancel() },
+            pause = { sequence.pause() },
+            resume = { sequence.resume() }
+        )
     }
 
     private class HandlerTaskScheduler(private val handler: Handler) : TaskScheduler {

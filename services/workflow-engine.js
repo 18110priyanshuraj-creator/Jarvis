@@ -13,10 +13,11 @@ export const WORKFLOW_STEP_TYPES = Object.freeze([
 ]);
 
 const WORKFLOW_STATUSES = new Set(["draft", "approved", "paused"]);
-const RUN_STATUSES = new Set(["running", "waiting_review", "completed", "failed", "cancelled"]);
+const RUN_STATUSES = new Set(["queued", "running", "waiting_review", "paused", "completed", "failed", "cancelled"]);
 const MAX_WORKFLOWS = 50;
 const MAX_RUNS = 100;
 const MAX_STEPS = 10;
+export const WORKFLOW_STEP_TIMEOUT_MS = 60_000;
 const MAX_TITLE = 100;
 const MAX_DESCRIPTION = 600;
 
@@ -205,10 +206,37 @@ export function createWorkflowRun(workflowInput) {
   };
 }
 
-export async function advanceWorkflowRun(runInput, handlers) {
+export async function advanceWorkflowRun(runInput, handlers, options = {}) {
   const run = structuredClone(runInput);
   if (run.status !== "running") throw new Error("Only a running workflow can advance.");
   if (!handlers || typeof handlers !== "object") throw new TypeError("Workflow handlers are required.");
+
+  const onCheckpoint = typeof options.onCheckpoint === "function" ? options.onCheckpoint : async () => {};
+  const shouldPause = typeof options.shouldPause === "function" ? options.shouldPause : () => false;
+  const shouldCancel = typeof options.shouldCancel === "function" ? options.shouldCancel : () => false;
+  const requestedTimeout = Number(options.stepTimeoutMs);
+  const stepTimeoutMs = Number.isFinite(requestedTimeout)
+    ? Math.max(100, Math.min(120_000, Math.floor(requestedTimeout)))
+    : WORKFLOW_STEP_TIMEOUT_MS;
+
+  async function checkpoint() {
+    run.updatedAt = new Date().toISOString();
+    await onCheckpoint(structuredClone(run));
+  }
+
+  function finishCancelled(index) {
+    for (const step of run.steps) {
+      if (["pending", "waiting_review"].includes(step.status)) step.status = "skipped";
+    }
+    run.status = "cancelled";
+    run.finishedAt = new Date().toISOString();
+    addLog(run, {
+      stepIndex: Number.isInteger(index) ? index : run.nextStepIndex,
+      stepTitle: "Workflow stopped",
+      status: "cancelled",
+      summary: "The workflow was stopped at a safe step boundary. No later steps were run."
+    });
+  }
 
   for (const step of run.steps) {
     if (step.status === "waiting_review") {
@@ -219,9 +247,30 @@ export async function advanceWorkflowRun(runInput, handlers) {
 
   for (let index = run.nextStepIndex; index < run.steps.length; index++) {
     const step = run.steps[index];
+
+    if (shouldCancel()) {
+      finishCancelled(index);
+      await checkpoint();
+      return run;
+    }
+
+    if (shouldPause()) {
+      run.status = "paused";
+      run.pauseRequestedAt = run.pauseRequestedAt || new Date().toISOString();
+      addLog(run, {
+        stepIndex: index,
+        stepTitle: step.title,
+        status: "paused",
+        summary: "Paused at a safe checkpoint. Resume only when you are ready."
+      });
+      await checkpoint();
+      return run;
+    }
+
     if (step.type === "review_checkpoint") {
       step.status = "waiting_review";
       run.nextStepIndex = index + 1;
+      run.currentStepIndex = null;
       run.status = "waiting_review";
       step.result = { message: step.message || "Review the completed steps before continuing." };
       addLog(run, {
@@ -230,7 +279,7 @@ export async function advanceWorkflowRun(runInput, handlers) {
         status: "waiting_review",
         summary: "Paused for your review and approval to continue."
       });
-      run.updatedAt = new Date().toISOString();
+      await checkpoint();
       return run;
     }
 
@@ -238,59 +287,188 @@ export async function advanceWorkflowRun(runInput, handlers) {
     if (typeof handler !== "function") {
       step.status = "failed";
       run.status = "failed";
+      run.currentStepIndex = index;
       addLog(run, { stepIndex: index, stepTitle: step.title, status: "failed", summary: "This step has no registered handler." });
       run.finishedAt = new Date().toISOString();
-      run.updatedAt = run.finishedAt;
+      await checkpoint();
       return run;
     }
 
+    const executionKey = run.id + ":" + index;
+    step.attempts = Math.max(0, Number(step.attempts) || 0) + 1;
+    if (step.attempts > 3) {
+      step.status = "failed";
+      run.status = "failed";
+      run.currentStepIndex = index;
+      addLog(run, {
+        stepIndex: index,
+        stepTitle: step.title,
+        status: "failed",
+        summary: "The step reached the maximum of three attempts. Review it before changing the workflow."
+      });
+      run.finishedAt = new Date().toISOString();
+      await checkpoint();
+      return run;
+    }
     step.status = "running";
-    run.updatedAt = new Date().toISOString();
+    step.executionKey = executionKey;
+    run.currentStepIndex = index;
+    run.nextStepIndex = index;
+    await checkpoint();
+
     try {
-      const result = await handler({ ...step });
+      let timeout;
+      const handlerPromise = Promise.resolve().then(() =>
+        handler({ ...step, executionKey, runId: run.id, stepIndex: index })
+      );
+      const timeoutPromise = new Promise((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error("Workflow step timed out after " + stepTimeoutMs + " ms."));
+        }, stepTimeoutMs);
+      });
+      let result;
+      try {
+        result = await Promise.race([handlerPromise, timeoutPromise]);
+      } finally {
+        clearTimeout(timeout);
+      }
       step.status = "completed";
       step.result = result && typeof result === "object" ? result : { summary: cleanText(result, 300) };
       run.nextStepIndex = index + 1;
+      run.currentStepIndex = null;
       addLog(run, {
         stepIndex: index,
         stepTitle: step.title,
         status: "completed",
         summary: cleanText(step.result.summary || "Step completed.", 300)
       });
+      await checkpoint();
     } catch (error) {
       step.status = "failed";
       step.result = { error: cleanText(error?.message || "Step failed.", 200) };
       run.status = "failed";
       run.nextStepIndex = index;
+      run.currentStepIndex = index;
       addLog(run, {
         stepIndex: index,
         stepTitle: step.title,
         status: "failed",
-        summary: "Step failed. Review the error before creating a new run."
+        summary: "Step failed. Review the error before resuming or creating a new run."
       });
       run.finishedAt = new Date().toISOString();
-      run.updatedAt = run.finishedAt;
+      await checkpoint();
       return run;
     }
   }
 
   run.status = "completed";
+  run.currentStepIndex = null;
   run.finishedAt = new Date().toISOString();
-  run.updatedAt = run.finishedAt;
+  await checkpoint();
   return run;
+}
+
+export function pauseWorkflowRun(runInput) {
+  const run = structuredClone(runInput);
+  if (!["queued", "running"].includes(run.status)) throw new Error("Only a queued or running workflow can be paused.");
+  run.status = "paused";
+  run.pauseRequestedAt = new Date().toISOString();
+  run.updatedAt = run.pauseRequestedAt;
+  return run;
+}
+
+export function resumeWorkflowRun(runInput) {
+  const run = structuredClone(runInput);
+  if (run.status !== "paused") throw new Error("Only a paused workflow run can be resumed.");
+  run.status = "running";
+  run.pauseRequestedAt = "";
+  run.updatedAt = new Date().toISOString();
+  run.finishedAt = "";
+  addLog(run, {
+    stepIndex: run.nextStepIndex,
+    stepTitle: "Workflow resumed",
+    status: "running",
+    summary: "Execution resumed from the last durable checkpoint."
+  });
+  return run;
+}
+
+export function retryWorkflowRun(runInput) {
+  const run = structuredClone(runInput);
+  if (run.status !== "failed") throw new Error("Only a failed workflow run can be retried.");
+  const index = Number.isInteger(run.currentStepIndex)
+    ? run.currentStepIndex
+    : Number.isInteger(run.nextStepIndex) ? run.nextStepIndex : -1;
+  const step = run.steps?.[index];
+  if (!step || step.status !== "failed") throw new Error("The failed step could not be identified safely.");
+  if ((Number(step.attempts) || 0) >= 3) throw new Error("This step reached the maximum of three attempts.");
+  step.lastFailure = step.result || null;
+  step.result = null;
+  step.status = "pending";
+  run.status = "running";
+  run.nextStepIndex = index;
+  run.currentStepIndex = null;
+  run.finishedAt = "";
+  run.updatedAt = new Date().toISOString();
+  addLog(run, {
+    stepIndex: index,
+    stepTitle: step.title,
+    status: "running",
+    summary: "A manual retry was approved. The runner will replay the same idempotency key for this step."
+  });
+  return run;
+}
+
+export function recoverInterruptedWorkflowRuns(runs, recoveredAt = new Date().toISOString()) {
+  if (!Array.isArray(runs)) return [];
+  return runs.map((input) => {
+    const run = structuredClone(input);
+    if (!["queued", "running"].includes(run.status)) return run;
+
+    const index = Number.isInteger(run.currentStepIndex)
+      ? run.currentStepIndex
+      : Number.isInteger(run.nextStepIndex) ? run.nextStepIndex : 0;
+    const step = run.steps?.[index];
+    if (step?.status === "running") {
+      // The previous process may have stopped after the effect but before its
+      // completion checkpoint. Stable execution keys let write handlers replay
+      // the stored result instead of repeating a committed local effect.
+      step.status = "pending";
+      step.recoveredFromInterrupted = true;
+    }
+
+    run.status = "paused";
+    run.nextStepIndex = Math.max(0, Math.min(index, run.steps?.length || 0));
+    run.currentStepIndex = null;
+    run.recovery = {
+      reason: "process_restart",
+      recoveredAt,
+      resumeFromStep: run.nextStepIndex,
+      requiresManualResume: true
+    };
+    run.updatedAt = recoveredAt;
+    addLog(run, {
+      stepIndex: run.nextStepIndex,
+      stepTitle: "Recovered after restart",
+      status: "paused",
+      summary: "The previous process stopped during execution. JARVIS preserved the last checkpoint and paused for manual resume."
+    });
+    return run;
+  });
 }
 
 export function cancelWorkflowRun(runInput) {
   const run = structuredClone(runInput);
-  if (!["running", "waiting_review"].includes(run.status)) {
+  if (!["queued", "running", "waiting_review", "paused"].includes(run.status)) {
     throw new Error("Only an active workflow run can be stopped.");
   }
   for (const step of run.steps) {
-    if (step.status === "pending" || step.status === "waiting_review") step.status = "skipped";
+    if (["pending", "waiting_review"].includes(step.status)) step.status = "skipped";
   }
   run.status = "cancelled";
   run.finishedAt = new Date().toISOString();
   run.updatedAt = run.finishedAt;
+  run.currentStepIndex = null;
   addLog(run, {
     stepIndex: run.nextStepIndex,
     stepTitle: "Workflow stopped",
