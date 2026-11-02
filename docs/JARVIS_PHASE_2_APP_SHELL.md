@@ -44,3 +44,10 @@ Keep the native JARVIS orb as the Android launch screen, then expose the existin
 - If Android reports that the WebView renderer process has exited, discard the destroyed WebView and recreate the dashboard on the configured server origin.
 - Google OAuth navigation is allow-listed by exact hostname, not broad wildcard Google domains.
 - These lifecycle and renderer recovery paths compile in CI; they still require manual Galaxy Tab A9 rotation, login persistence and renderer-recovery acceptance.
+
+
+## Existing dashboard compatibility
+
+- JavaScript alert, confirm and prompt dialogs are rendered as native Android dialogs only when requested by the configured JARVIS workspace origin.
+- The existing workspace uses confirm() for delete, revoke, approve and stop checkpoints, and prompt() for exact action confirmation phrases and optional review notes. Those explicit decision controls remain usable inside Android.
+- Dialog requests from Google OAuth pages or other origins are cancelled rather than being allowed to impersonate a JARVIS confirmation.

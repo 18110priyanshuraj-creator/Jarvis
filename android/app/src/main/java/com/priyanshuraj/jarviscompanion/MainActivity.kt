@@ -34,6 +34,9 @@ import android.webkit.SslErrorHandler
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.RenderProcessGoneDetail
+import android.webkit.WebChromeClient
+import android.webkit.JsResult
+import android.webkit.JsPromptResult
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -383,6 +386,66 @@ class MainActivity : Activity() {
             }
         }
         dashboardWebView = webView
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onJsAlert(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
+                val callback = result ?: return true
+                if (isFinishing || !DashboardUrlPolicy.isWorkspaceOrigin(url, dashboardBaseUrl)) {
+                    callback.cancel()
+                    return true
+                }
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("JARVIS workspace")
+                    .setMessage(message.orEmpty().take(2000))
+                    .setPositiveButton("OK") { _, _ -> callback.confirm() }
+                    .setOnCancelListener { callback.cancel() }
+                    .show()
+                return true
+            }
+
+            override fun onJsConfirm(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
+                val callback = result ?: return true
+                if (isFinishing || !DashboardUrlPolicy.isWorkspaceOrigin(url, dashboardBaseUrl)) {
+                    callback.cancel()
+                    return true
+                }
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Confirm in JARVIS")
+                    .setMessage(message.orEmpty().take(2000))
+                    .setNegativeButton("Cancel") { _, _ -> callback.cancel() }
+                    .setPositiveButton("Continue") { _, _ -> callback.confirm() }
+                    .setOnCancelListener { callback.cancel() }
+                    .show()
+                return true
+            }
+
+            override fun onJsPrompt(
+                view: WebView?,
+                url: String?,
+                message: String?,
+                defaultValue: String?,
+                result: JsPromptResult?
+            ): Boolean {
+                val callback = result ?: return true
+                if (isFinishing || !DashboardUrlPolicy.isWorkspaceOrigin(url, dashboardBaseUrl)) {
+                    callback.cancel()
+                    return true
+                }
+                val response = EditText(this@MainActivity).apply {
+                    setSingleLine(true)
+                    setText(defaultValue.orEmpty())
+                    setSelection(text.length)
+                }
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("JARVIS confirmation")
+                    .setMessage(message.orEmpty().take(2000))
+                    .setView(response)
+                    .setNegativeButton("Cancel") { _, _ -> callback.cancel() }
+                    .setPositiveButton("Submit") { _, _ -> callback.confirm(response.text.toString()) }
+                    .setOnCancelListener { callback.cancel() }
+                    .show()
+                return true
+            }
+        }
         CookieManager.getInstance().apply {
             setAcceptCookie(true)
             setAcceptThirdPartyCookies(webView, false)

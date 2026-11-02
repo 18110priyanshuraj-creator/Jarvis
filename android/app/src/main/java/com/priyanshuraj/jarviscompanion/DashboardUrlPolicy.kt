@@ -36,6 +36,13 @@ internal object DashboardUrlPolicy {
             targetHost == "oauth2.googleapis.com"
     }
 
+    fun isWorkspaceOrigin(rawUrl: String?, configuredBaseUrl: String?): Boolean {
+        val target = rawUrl?.let(::parseHttpsUri) ?: return false
+        val base = normalizeBaseUrl(configuredBaseUrl) ?: return false
+        if (target.userInfo != null || (target.port != -1 && target.port != 443)) return false
+        return target.host.equals(URI(base).host, ignoreCase = true)
+    }
+
     fun isSafeExternalHttpsUrl(rawUrl: String?): Boolean {
         val uri = rawUrl?.let(::parseHttpsUri) ?: return false
         return uri.userInfo == null && (uri.port == -1 || uri.port == 443)

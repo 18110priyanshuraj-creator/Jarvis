@@ -37,6 +37,15 @@ class DashboardUrlPolicyTest {
     }
 
     @Test
+    fun workspaceJavaScriptDialogsAreLimitedToTheConfiguredOrigin() {
+        val base = "https://jarvis.example"
+        assertTrue(DashboardUrlPolicy.isWorkspaceOrigin("https://jarvis.example/actions", base))
+        assertFalse(DashboardUrlPolicy.isWorkspaceOrigin("https://accounts.google.com/signin", base))
+        assertFalse(DashboardUrlPolicy.isWorkspaceOrigin("https://jarvis.example.evil.test/", base))
+        assertFalse(DashboardUrlPolicy.isWorkspaceOrigin("http://jarvis.example/", base))
+    }
+
+    @Test
     fun externalLinksMustUseHttpsAndAStandardPort() {
         assertTrue(DashboardUrlPolicy.isSafeExternalHttpsUrl("https://example.org/article"))
         assertFalse(DashboardUrlPolicy.isSafeExternalHttpsUrl("http://example.org/article"))
