@@ -337,8 +337,9 @@ object UIActionExecutor {
         var depth = 0
         while (current != null && depth <= MAX_CONTEXT_DEPTH) {
             if (current.isClickable) return current
-            val parent = current.parent
-            runCatching { current.recycle() }
+            val item = current
+            val parent = item.parent
+            runCatching { item.recycle() }
             current = parent
             depth++
         }
