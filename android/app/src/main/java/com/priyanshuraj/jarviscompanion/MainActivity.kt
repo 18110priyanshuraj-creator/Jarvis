@@ -1218,7 +1218,7 @@ class MainActivity : Activity() {
             .setMessage(
                 "Android Accessibility lets JARVIS inspect visible app labels and perform the specific action you speak. " +
                     "When you explicitly ask it to read the screen, JARVIS takes one screenshot for on-device text recognition. " +
-                    "Screen images and recognized text remain in memory on this tablet; they are not saved or sent to the JARVIS server. This is not continuous screen recording. " +
+                    "Screen images and recognized text remain in memory on this tablet; they are not saved or sent to the JARVIS server. Spoken screen results require an installed offline voice, with no network TTS fallback. This is not continuous screen recording. " +
                     "Password and verification fields, plus send, delete, payment and confirmation controls are blocked. " +
                     "You can disable this service anytime in Android Settings."
             )
