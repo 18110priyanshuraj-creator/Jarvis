@@ -18,7 +18,7 @@ const TONES = new Set(["clear", "friendly", "energetic", "calm", "documentary", 
 const PROJECT_STATES = new Set(["draft", "approved"]);
 const SECRET_PATTERN = /(?:\b|_)(?:api[_ -]?key|access[_ -]?token|password|passcode|one[- ]time code|otp|private key)\b\s*[:=]\s*\S+/i;
 const TOKEN_PATTERN = /\bBearer\s+[A-Za-z0-9._~+/-]{24,}/i;
-const RESTRICTED_MEDIA_PATTERN = /\b(?:porn(?:ography)?|erotic|masturbat(?:e|ion)|explicit sexual|nude|suicid(?:e|al)|self[- ]harm|cutting tutorial|weapon construction|build (?:a )?(?:bomb|gun|weapon)|make (?:a )?(?:bomb|explosive)|explosive device|drug synthesis|how to (?:hide|use) (?:drugs|a weapon)|vape tricks|nicotine challenge)\b/i;
+const RESTRICTED_MEDIA_PATTERN = /\b(?:porn(?:ography|ographic)?|erotic|masturbat(?:e|ion)|explicit sexual|nude|suicid(?:e|al)|self[- ]harm|cutting tutorial|weapon construction|build (?:a )?(?:bomb|gun|weapon)|make (?:a )?(?:bomb|explosive)|explosive device|drug synthesis|how to (?:hide|use) (?:drugs|a weapon)|vape tricks|nicotine challenge)\b/i;
 
 function cleanText(value, maxLength) {
   return typeof value === "string" ? value.normalize("NFKC").replace(/\u0000/g, "").trim().slice(0, maxLength) : "";
