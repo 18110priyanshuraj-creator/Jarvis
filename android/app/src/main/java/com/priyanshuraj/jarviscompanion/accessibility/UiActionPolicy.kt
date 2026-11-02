@@ -31,10 +31,10 @@ data class UiActionPolicyDecision(
  */
 object UiActionPolicy {
     private val protectedControl = Regex(
-        """(?i)\b(send|submit|delete|remove|pay|payment|purchase|buy|transfer|confirm|otp|one.?time|password|passcode|pin|verification|checkout|order|uninstall|grant|allow|deny|revoke|permission|sign.?out|log.?out|cvv|cvc|card number|credit card|bank account)\b"""
+        """(?i)\b(send|submit|delete|remove|pay|payment|purchase|buy|transfer|confirm|otp|one.?time|password|passcode|pin|verification|checkout|order|uninstall|grant|allow|deny|revoke|permission|approve|authorize|accept|verify|sign.?in|log.?in|sign.?out|log.?out|cvv|cvc|card number|credit card|debit card|bank account)\b"""
     )
     private val protectedScreen = Regex(
-        """(?i)\b(password|passcode|pin|otp|one[- ]time(?:[- ](?:password|code))?|verification(?: code)?|security code|recovery code|cvv|cvc|card number|bank account)\b"""
+        """(?i)\b(password|passcode|pin|otp|one[- ]time(?:[- ](?:password|code))?|verification(?: code)?|security code|recovery code|cvv|cvc|card number|credit card|debit card|bank account|sign.?in|log.?in|authenticate)\b"""
     )
     private val sensitiveText = Regex(
         """(?i)\b(password|passcode|otp|one[- ]time(?:[- ]code)?|pin|cvv|cvc|security code|bank account|card number|payment|transfer|delete|submit|send)\b"""
