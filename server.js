@@ -1792,8 +1792,12 @@ app.post("/api/workflows/:id/run", requireAuth, async (req, res) => {
   const run = createWorkflowRun(workflow);
   store.workflowRuns.push(run);
   await saveStore();
-  scheduleWorkflowExecution(run.id);
-  res.status(202).json({ run: store.workflowRuns.find((item) => item.id === run.id) });
+  if (req.get("Prefer") === "respond-async") {
+    scheduleWorkflowExecution(run.id);
+    return res.status(202).json({ run: store.workflowRuns.find((item) => item.id === run.id) });
+  }
+  const result = await executeWorkflowRun(run.id);
+  res.status(201).json({ run: result });
 });
 
 app.post("/api/workflow-runs/:id/continue", requireAuth, async (req, res) => {
@@ -1806,8 +1810,12 @@ app.post("/api/workflow-runs/:id/continue", requireAuth, async (req, res) => {
   const continued = { ...existing, status: "running", updatedAt: new Date().toISOString() };
   store.workflowRuns = store.workflowRuns.map((item) => item.id === existing.id ? continued : item);
   await saveStore();
-  scheduleWorkflowExecution(existing.id);
-  res.status(202).json({ run: store.workflowRuns.find((item) => item.id === existing.id) });
+  if (req.get("Prefer") === "respond-async") {
+    scheduleWorkflowExecution(existing.id);
+    return res.status(202).json({ run: store.workflowRuns.find((item) => item.id === existing.id) });
+  }
+  const result = await executeWorkflowRun(existing.id);
+  res.json({ run: result });
 });
 
 app.post("/api/workflow-runs/:id/resume", requireAuth, async (req, res) => {
@@ -1822,8 +1830,12 @@ app.post("/api/workflow-runs/:id/resume", requireAuth, async (req, res) => {
   }
   store.workflowRuns = store.workflowRuns.map((item) => item.id === existing.id ? resumed : item);
   await saveStore();
-  scheduleWorkflowExecution(existing.id);
-  res.status(202).json({ run: store.workflowRuns.find((item) => item.id === existing.id) });
+  if (req.get("Prefer") === "respond-async") {
+    scheduleWorkflowExecution(existing.id);
+    return res.status(202).json({ run: store.workflowRuns.find((item) => item.id === existing.id) });
+  }
+  const result = await executeWorkflowRun(existing.id);
+  res.json({ run: result });
 });
 
 app.post("/api/workflow-runs/:id/pause", requireAuth, async (req, res) => {
