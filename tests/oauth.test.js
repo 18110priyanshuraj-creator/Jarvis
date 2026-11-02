@@ -273,12 +273,21 @@ test("Google Docs permission upgrade requests metadata plus drive.file and store
 });
 
 test("YouTube OAuth upgrade adds only the upload scope and preserves existing Drive permissions", async () => {
-  const existingConnection = await authorize(async () => response({
-    access_token: "drive-access",
-    refresh_token: "drive-refresh",
-    expires_in: 3600,
-    scope: GOOGLE_DRIVE_METADATA_SCOPE + " " + GOOGLE_DRIVE_FILE_SCOPE
-  }));
+  const driveFlow = beginGoogleOAuth({ sessionToken: "test-session-id", capability: "create_docs", env });
+  const driveState = new URL(driveFlow.authorizationUrl).searchParams.get("state");
+  const existingConnection = await finishGoogleOAuth({
+    state: driveState,
+    browserBinding: driveFlow.browserBinding,
+    code: "drive-docs-upgrade-code",
+    isSessionValid: (id) => id === "test-session-id",
+    env,
+    fetchImpl: async () => response({
+      access_token: "drive-access",
+      refresh_token: "drive-refresh",
+      expires_in: 3600,
+      scope: [GOOGLE_DRIVE_METADATA_SCOPE, GOOGLE_DRIVE_FILE_SCOPE].join(" ")
+    })
+  });
   const flow = beginGoogleOAuth({
     sessionToken: "test-session-id",
     capability: "youtube_upload",

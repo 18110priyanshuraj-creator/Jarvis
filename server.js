@@ -1346,7 +1346,7 @@ function integrationCatalogResponse() {
     googleDriveOAuth,
     permissions: getIntegrationPermissionCatalog(googleConnection, process.env),
     credentialStorage: "server-environment-or-encrypted-vault",
-    supportedOperations: "Existing integration probes are read-only; YouTube video uploads require the separate youtube.upload scope and explicit owner confirmation."
+    supportedOperations: "read-only"
   };
 }
 
@@ -2379,7 +2379,7 @@ app.post("/api/youtube/publications/:id/upload", requireAuth, youtubeUploadLimit
       message: "YouTube accepted the video upload. Video processing and visibility may take additional time."
     });
   } catch (error) {
-    const uncertain = error?.uploadStarted === true;
+    const uncertain = error?.uploadStarted === true || providerResult !== null;
     const failed = normalizeYouTubePublication({
       ...uploading,
       ...(providerResult ? {
