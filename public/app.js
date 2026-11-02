@@ -1797,10 +1797,10 @@ function renderWorkflows() {
         pauseButton.addEventListener("click", async () => {
           pauseButton.disabled = true;
           try {
-            await api("/api/workflow-runs/" + encodeURIComponent(run.id) + "/pause", {
+            const data = await api("/api/workflow-runs/" + encodeURIComponent(run.id) + "/pause", {
               method: "POST", body: JSON.stringify({})
             });
-            toast("Pause requested. JARVIS will pause after the current safe step.");
+            toast(data.paused ? "Queued task paused before execution." : "Pause requested. JARVIS will pause after the current safe step.");
             void watchWorkflowRun(run.id).catch((error) => toast(error.message, true));
           } catch (error) {
             toast(error.message, true);
