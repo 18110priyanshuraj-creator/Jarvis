@@ -144,6 +144,8 @@ export function createMediaWorkspace({ api, toast }) {
           renderPreview(currentProject, 0);
         });
         card.append(remove);
+      } else {
+        card.querySelectorAll("input, textarea").forEach((control) => { control.disabled = true; });
       }
       target.append(card);
     });
