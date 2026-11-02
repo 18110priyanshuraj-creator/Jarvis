@@ -41,7 +41,7 @@ See:
 | 5 | Offline Voice System | CODE_COMPLETE | One-shot and hands-free voice now share on-device-first policy with persistent Prefer offline / Offline only modes; offline-only refuses online recognition and network TTS fallbacks. Actual language-pack/device acceptance remains Phase 31. See `JARVIS_PHASE_5_OFFLINE_VOICE.md`. |
 | 6 | Independent Intelligence Engine | CODE_COMPLETE | Deterministic offline-first routing, local-first device planning, secret-safe capability status and optional model fallback are tested; no general local LLM is claimed. |
 | 7 | Natural Language Understanding | CODE_COMPLETE | Shared deterministic English/Hindi/Hinglish intent labels, heuristic confidence metadata and 18 multilingual regression examples; classification alone cannot execute Android actions. |
-| 8 | Local Memory System | PARTIAL | User-controlled memory service exists server-side; local Android canonical storage is not implemented. |
+| 8 | Local Memory System | IN_PROGRESS | Android-local Room storage, Android Keystore AES-GCM payload encryption, explicit local remember/recall/forget commands and a native CRUD screen are implemented in the working tree; CI and device acceptance are pending. |
 | 9 | Autonomous Task Planner | PARTIAL | Optional model planner plus bounded local plans; not unrestricted autonomous planning. |
 | 10 | Persistent Execution Engine | PARTIAL | Workflows and cancellable sequences exist; full Android task recovery after restart is not verified. |
 | 11 | Screen Observation | PARTIAL | Bounded accessibility-tree inspection; no screenshot/vision perception. |
