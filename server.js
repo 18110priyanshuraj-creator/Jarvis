@@ -775,7 +775,7 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
     tasks: store.tasks,
     skills: getActiveSkillContext(store.skills, message, 3, applicationId),
     feedback: store.feedback,
-    knowledge: buildKnowledgeContext(store.knowledge, message, 3)
+    knowledge: buildAssistantKnowledgeContext(message)
   });
   return {
     answer: webNotice ? webNotice + "\n\n" + answer : answer,
@@ -2153,7 +2153,7 @@ app.post("/api/learning/preview", requireAuth, (req, res) => {
 });
 
 app.get("/api/knowledge/documents/status", requireAuth, (_req, res) => {
-  const persistentDirectoryConfigured = Boolean(process.env.JARVIS_DOCUMENTS_DIR);
+  const persistentDirectoryConfigured = Boolean(process.env.JARVIS_DOCUMENTS_DIR || process.env.JARVIS_DATA_DIR);
   res.setHeader("Cache-Control", "no-store");
   res.json({
     enabled: true,
