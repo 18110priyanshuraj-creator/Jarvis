@@ -604,7 +604,8 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(documentStorageStatus.status, 200);
   const documentStorageInfo = await documentStorageStatus.json();
   assert.equal(documentStorageInfo.enabled, true);
-  assert.equal(documentStorageInfo.durableStorageConfigured, true);
+  assert.equal(documentStorageInfo.storagePathConfigured, true);
+  assert.equal(documentStorageInfo.durabilityVerified, false);
   assert.equal(documentStorageInfo.extraction.pdfTextExtraction, false);
 
   const documentBytes = Buffer.from("# Average speed\nAverage speed equals total distance divided by total time.", "utf8");
