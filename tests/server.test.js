@@ -668,7 +668,7 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
 
   const documentAnswer = await request("/api/chat", {
     method: "POST",
-    body: JSON.stringify({ message: "Explain average speed from my saved notes" })
+    body: JSON.stringify({ message: "Explain average speed" })
   });
   assert.equal(documentAnswer.status, 200);
   const documentAnswerPayload = await documentAnswer.json();
