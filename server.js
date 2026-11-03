@@ -2550,4 +2550,4 @@ const server = app.listen(PORT, "0.0.0.0", () => {
 // deadline while still closing sockets that remain inactive for too long.
 server.requestTimeout = 31 * 60 * 1000;
 server.headersTimeout = 60 * 1000;
-server.setTimeout(90 * 1000, (socket) => socket.destroy());
+server.setTimeout(31 * 60 * 1000, (socket) => socket.destroy());
