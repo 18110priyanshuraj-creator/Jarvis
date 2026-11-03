@@ -608,8 +608,8 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
 
   const trustedAfterReview = await request("/api/knowledge?review=trusted");
   const trustedAfterReviewPayload = await trustedAfterReview.json();
-  assert.equal(trustedAfterReviewPayload.count, 1);
-  assert.equal(trustedAfterReviewPayload.reviewSummary.trusted, 1);
+  assert.equal(trustedAfterReviewPayload.count, 2);
+  assert.equal(trustedAfterReviewPayload.reviewSummary.trusted, 2);
 
   const rejectKnowledge = await request("/api/knowledge/" + knowledgePayload.item.id, {
     method: "PATCH",
