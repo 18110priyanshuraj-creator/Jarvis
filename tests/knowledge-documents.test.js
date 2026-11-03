@@ -44,6 +44,15 @@ test("binary document types are stored as metadata-only and do not pretend to ex
   assert.equal(item.extractedText, "");
 });
 
+test("audio WebM and video WebM share the extension but preserve their MIME type", () => {
+  const webm = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x93, 0x42]);
+  const audio = createKnowledgeDocument({ fileName: "voice.webm", mimeType: "audio/webm" }, webm, now);
+  const video = createKnowledgeDocument({ fileName: "clip.webm", mimeType: "video/webm" }, webm, now);
+  assert.equal(audio.mimeType, "audio/webm");
+  assert.equal(video.mimeType, "video/webm");
+  assert.equal(audio.indexingMode, "metadata-only");
+});
+
 test("file extension, MIME and file signature must agree", () => {
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   assert.throws(() => createKnowledgeDocument({ fileName: "chart.jpg", mimeType: "image/png" }, png));
