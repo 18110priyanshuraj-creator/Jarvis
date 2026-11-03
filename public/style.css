@@ -1470,3 +1470,12 @@ body::before { display: none; }
   .knowledge-documents-panel .search-form { display: grid; }
   .knowledge-upload-form .form-row { display: grid; }
 }
+
+.knowledge-document-edit { margin-top: 10px; }
+.knowledge-document-edit summary { cursor: pointer; color: #b8c9eb; font-size: .8rem; }
+.knowledge-document-edit-form { display: grid; gap: 8px; max-width: 620px; margin-top: 9px; }
+.knowledge-document-edit-form input, .knowledge-document-edit-form textarea {
+  width: 100%; color: var(--text); background: #090f1d; border: 1px solid var(--line);
+  border-radius: 9px; padding: 10px 12px; font: inherit;
+}
+.knowledge-document-edit-form textarea { resize: vertical; }
