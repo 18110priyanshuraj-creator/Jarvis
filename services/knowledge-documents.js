@@ -92,9 +92,19 @@ function verifyMagic(bytes, mimeType) {
   if (mimeType === "audio/mpeg") return bytes.subarray(0, 3).toString("ascii") === "ID3" ||
     (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0);
   if (TEXT_MIME_TYPES.has(mimeType)) {
+    // A few binary formats are valid UTF-8 at the header; reject known signatures
+    // rather than indexing a mislabeled PDF/image/archive as plain text.
+    const prefix = bytes.subarray(0, 12);
+    if (prefix.subarray(0, 5).toString("ascii") === "%PDF-" ||
+        prefix.subarray(0, 4).toString("ascii") === "RIFF" ||
+        prefix.subarray(0, 4).toString("ascii") === "PK\\u0003\\u0004" ||
+        starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a) ||
+        starts(0xff, 0xd8, 0xff) ||
+        prefix.subarray(4, 8).toString("ascii") === "ftyp" ||
+        starts(0x1a, 0x45, 0xdf, 0xa3)) return false;
     try {
       const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      return !text.includes("\u0000");
+      return !text.includes("\\u0000");
     } catch { return false; }
   }
   return false;
