@@ -1479,3 +1479,18 @@ body::before { display: none; }
   border-radius: 9px; padding: 10px 12px; font: inherit;
 }
 .knowledge-document-edit-form textarea { resize: vertical; }
+
+
+/* Phase 23 — internal specialist worker workspace */
+.specialist-workers-panel { margin-top: 22px; }
+.specialist-dispatch-form { margin: 14px 0 18px; }
+.specialist-dispatch-form textarea { width: 100%; }
+.specialist-worker-item, .specialist-run-item { align-items: flex-start; }
+.specialist-worker-item .list-item-main, .specialist-run-item .list-item-main { min-width: 0; }
+.specialist-worker-item p, .specialist-run-item p { line-height: 1.55; overflow-wrap: anywhere; }
+.specialist-run-steps { margin: 10px 0 0; padding-left: 22px; color: var(--muted); font-size: .82rem; line-height: 1.7; overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .specialist-workers-panel { padding: 13px; }
+  .specialist-dispatch-form .form-row { display: grid; }
+  .specialist-run-steps { padding-left: 18px; }
+}

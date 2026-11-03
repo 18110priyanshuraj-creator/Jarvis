@@ -12,7 +12,7 @@ import { classifyIntent } from "./services/nlu.js";
 import { fileURLToPath } from "node:url";
 import { createDevicesRouter } from "./routes/devices.js";
 import { createRuntimeStore } from "./services/runtime-store.js";
-import { createAgentPlan } from "./services/agent-planner.js";
+import { createAgentPlan, createLocalAgentPlan } from "./services/agent-planner.js";
 import { createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
 import { createWebResearch, getWebResearchStatus, isRestrictedResearchQuery, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
 import { createPageReadToken, createWebPageRead, getWebPageReadStatus, verifyPageReadToken } from "./services/web-page-reader.js";
@@ -36,7 +36,8 @@ import { approveSkillProgram, createSkillProgramCandidate, createSkillProgramVer
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
 import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, classifyWorkflowError, createWorkflowDraft, createWorkflowRun, getWorkflowRecoverySummary, normalizeWorkflow, pauseWorkflow, pauseWorkflowRun, recoverInterruptedWorkflowRuns, resumeWorkflowRun, retryWorkflowRun, sanitizeWorkflowRunRecord, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
 import { approveRepairProposal, AUTO_HEAL_LIMITS, createDefaultAutoHealState, createRepairProposal, getAutoHealStatus, inspectWorkflowFailures, normalizeAutoHealState, rollbackRepairProposal } from "./services/auto-heal-engine.js";
-import { createTaskPlan, TASK_PLANNER_LIMITS } from "./services/task-planner.js";
+import { createLocalTaskPlan, createTaskPlan, TASK_PLANNER_LIMITS } from "./services/task-planner.js";
+import { createSpecialistRun, executeSpecialistRun, getSpecialistWorkerCatalog, inspectSpecialistRequest, normalizeSpecialistRun, recoverInterruptedSpecialistRuns, SPECIALIST_WORKER_LIMITS } from "./services/specialist-workers.js";
 import { getIntegrationCatalog, INTEGRATION_PROVIDER_IDS, probeIntegration, runIntegrationAction } from "./services/integrations.js";
 import { appendActionStatus, createPendingExternalAction, executeExternalAction, getExternalActionCapabilities, MAX_ACTION_HISTORY, MAX_PENDING_ACTIONS, normalizeExternalAction } from "./services/external-actions.js";
 import {
@@ -200,7 +201,7 @@ const oauthLaunchLimiter = rateLimit({
 
 app.use("/api", apiLimiter);
 
-let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], skillPrograms: [], autoHeal: createDefaultAutoHealState(), workflows: [], workflowRuns: [], workflowStepEffects: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [], knowledgeDocuments: [], mediaProjects: [], youtubePublications: [] };
+let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], skillPrograms: [], autoHeal: createDefaultAutoHealState(), workflows: [], workflowRuns: [], workflowStepEffects: [], workerRuns: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [], knowledgeDocuments: [], mediaProjects: [], youtubePublications: [] };
 let writeQueue = Promise.resolve();
 let neonSql;
 let databaseRevision = null;
@@ -214,6 +215,7 @@ function getNeonSql() {
 
 const runtimeStore = createRuntimeStore({ getSql: getNeonSql });
 const activeWorkflowExecutions = new Set();
+let specialistDispatchActive = false;
 const activeYouTubeUploads = new Set();
 const activeDocumentUploads = new Map();
 const pauseWorkflowRequests = new Set();
@@ -345,6 +347,12 @@ function normalizeStore(parsed = {}) {
           item && typeof item.executionKey === "string" && item.executionKey.length <= 120 &&
           typeof item.type === "string" && item.result && typeof item.result === "object" && !Array.isArray(item.result)
         )
+      : [],
+    workerRuns: Array.isArray(parsed.workerRuns)
+      ? parsed.workerRuns.slice(-SPECIALIST_WORKER_LIMITS.runs).flatMap((item) => {
+          const normalized = normalizeSpecialistRun(item);
+          return normalized ? [normalized] : [];
+        })
       : [],
     disabledIntegrations: Array.isArray(parsed.disabledIntegrations)
       ? [...new Set(parsed.disabledIntegrations.filter((item) => INTEGRATION_PROVIDER_IDS.includes(item)))]
@@ -1110,6 +1118,7 @@ app.get("/api/export", requireAuth, (req, res) => {
       workflows: store.workflows,
       workflowRuns: store.workflowRuns,
       workflowStepEffects: store.workflowStepEffects,
+      workerRuns: store.workerRuns,
       disabledIntegrations: store.disabledIntegrations,
       externalActions: store.externalActions,
       youtubePublications: store.youtubePublications
@@ -1874,6 +1883,195 @@ app.post("/api/auto-heal/proposals/:id/rollback", requireAuth, async (req, res) 
     return res.json({ state: store.autoHeal, status: getAutoHealStatus(store.autoHeal) });
   } catch (error) {
     return res.status(409).json({ error: error.message || "Repair proposal could not be rolled back." });
+  }
+});
+
+
+
+function createSpecialistWorkerAdapters() {
+  return {
+    security: ({ goal }) => inspectSpecialistRequest(goal),
+    research: async ({ goal }) => {
+      if (!isWebResearchEnabled()) return {
+        status: "blocked",
+        summary: "Live research is not configured. Enable the existing trusted public search service before assigning this task to the Research Worker.",
+        details: { reason: "public_search_not_configured" }
+      };
+      const result = await createWebResearch(goal);
+      return {
+        status: "completed",
+        summary: "Research search completed with " + result.sources.length + " HTTPS source(s).",
+        details: { answer: result.answer, sourceCount: result.sources.length, searchedAt: result.searchedAt, searchProvider: result.searchProvider, aiSynthesized: result.aiSynthesized === true, synthesisMode: result.engine },
+        evidence: result.sources.map((source) => ({ title: source.title, url: source.url, publishedAt: source.publishedAt, retrievedAt: source.retrievedAt }))
+      };
+    },
+    coding: ({ goal }) => {
+      const plan = createLocalTaskPlan(goal, []);
+      if (!plan || !Array.isArray(plan.steps) || !plan.steps.length) return {
+        status: "blocked",
+        summary: "The local Coding Worker could not create a reliable bounded plan for this request. Clarify the software result and try again.",
+        details: { reason: "local_coding_plan_not_supported" }
+      };
+      return {
+        status: "completed",
+        summary: "A deterministic implementation and review plan was prepared. No repository files were changed and no code was executed.",
+        details: { mode: plan.mode, planSource: plan.source, steps: plan.steps.map((step) => ({ title: step.title, type: step.type })) }
+      };
+    },
+    android_operator: ({ goal }) => {
+      const plan = createLocalAgentPlan(goal);
+      if (!plan) return {
+        status: "blocked",
+        summary: "This Android request is outside the currently supported local planning patterns. No device action was sent.",
+        details: { reason: "local_android_intent_not_supported", execution: "not_started" }
+      };
+      return {
+        status: "completed",
+        summary: "A supported Android action plan was prepared. This specialist did not tap, type, navigate or change the device.",
+        details: { mode: plan.mode, actionTypes: plan.actions.map((action) => action.type), actionCount: plan.actions.length, execution: "not_started", operatorPrompt: plan.reply }
+      };
+    },
+    media_creator: async ({ goal }) => {
+      if (store.mediaProjects.length >= MEDIA_LIMITS.projects) return {
+        status: "blocked",
+        summary: "The Media Studio project limit has been reached. Remove an old draft from Media Studio before creating another.",
+        details: { reason: "media_project_limit" }
+      };
+      const project = await createMediaDraft({
+        brief: goal,
+        format: /short|reel|vertical/i.test(goal) ? "vertical-short" : "landscape-explainer",
+        platform: "general",
+        language: "en-IN",
+        tone: "clear"
+      });
+      store.mediaProjects.push(project);
+      await saveStore();
+      return {
+        status: "completed",
+        summary: "A local editable storyboard draft was created and saved in Media Studio. No rendered video or public post was produced.",
+        details: { artifactId: project.id, title: project.title, format: project.format, sceneCount: project.scenes.length, generationSource: project.generationSource },
+        artifact: { type: "media_storyboard", id: project.id, label: project.title }
+      };
+    },
+    memory: ({ goal }) => {
+      const memoryItems = buildMemoryContext(store.memories, goal, 3);
+      const knowledgeItems = buildKnowledgeContext(store.knowledge, goal, 3);
+      return {
+        status: "completed",
+        summary: "Read-only retrieval inspected " + memoryItems.length + " active memory item(s) and " + knowledgeItems.length + " trusted Knowledge item(s). Nothing was saved or changed.",
+        details: {
+          memoryCount: memoryItems.length,
+          knowledgeCount: knowledgeItems.length,
+          matches: [
+            ...memoryItems.map((item) => ({ kind: "memory", category: item.category })),
+            ...knowledgeItems.map((item) => ({ kind: "knowledge", title: item.title, reviewStatus: item.reviewStatus }))
+          ]
+        }
+      };
+    },
+    learning: ({ goal }) => {
+      const preview = previewIndependentLearning(store.knowledge, goal.slice(0, 300));
+      return {
+        status: "completed",
+        summary: "A read-only learning preview found " + preview.counts.included + " trusted context item(s). No lesson was saved and no model was trained.",
+        details: {
+          counts: preview.counts,
+          policy: preview.policy,
+          items: preview.contextItems.map((item) => ({ title: item.title, category: item.category, reviewStatus: item.reviewStatus }))
+        }
+      };
+    },
+    verification: ({ completedSteps }) => {
+      const workSteps = completedSteps.filter((step) => !["security", "verification"].includes(step.workerId));
+      const checks = workSteps.map((step) => {
+        let passed = step.status === "completed" && Boolean(step.result?.summary);
+        let evidence = step.result?.summary || "No worker summary was recorded.";
+        if (step.workerId === "research") {
+          passed = passed && Number(step.result?.details?.sourceCount) > 0 && step.result?.evidence?.length > 0;
+          evidence = passed ? step.result.details.sourceCount + " HTTPS source(s) returned." : "Research source evidence is missing.";
+        } else if (step.workerId === "media_creator") {
+          const artifactId = step.result?.artifact?.id;
+          const saved = typeof artifactId === "string" && store.mediaProjects.some((project) => project.id === artifactId);
+          passed = passed && saved;
+          evidence = saved ? "Storyboard draft exists in the persistent Media Studio project store." : "Storyboard project was not found in Media Studio state.";
+        } else if (step.workerId === "coding") {
+          passed = passed && Array.isArray(step.result?.details?.steps) && step.result.details.steps.length > 0;
+          evidence = passed ? "Bounded implementation-plan steps were returned; no source-code execution is claimed." : "Coding plan is missing its steps.";
+        } else if (step.workerId === "android_operator") {
+          passed = passed && step.result?.details?.execution === "not_started" && Number(step.result?.details?.actionCount) > 0;
+          evidence = passed ? "Permission-bounded plan recorded; actual device execution remains with the Android action engine." : "Android plan or execution boundary is missing.";
+        }
+        return { name: step.workerId + " result evidence", passed, evidence };
+      });
+      const passed = checks.length > 0 && checks.every((check) => check.passed);
+      return {
+        status: "completed",
+        summary: passed ? "All assigned specialist results have the evidence required for their documented scope." : "One or more specialist results are incomplete or lack the required evidence.",
+        verification: { passed, checks }
+      };
+    }
+  };
+}
+
+app.get("/api/workers", requireAuth, async (_req, res) => {
+  if (!specialistDispatchActive) {
+    const recovered = recoverInterruptedSpecialistRuns(store.workerRuns);
+    if (JSON.stringify(recovered) !== JSON.stringify(store.workerRuns)) {
+      store.workerRuns = recovered;
+      await saveStore();
+    }
+  }
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    workers: getSpecialistWorkerCatalog(),
+    runs: store.workerRuns.slice().reverse().slice(0, 20),
+    limits: SPECIALIST_WORKER_LIMITS,
+    dispatchActive: specialistDispatchActive
+  });
+});
+
+app.get("/api/workers/runs/:id", requireAuth, (req, res) => {
+  const run = store.workerRuns.find((item) => item.id === req.params.id);
+  if (!run) return res.status(404).json({ error: "Specialist run not found." });
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ run });
+});
+
+app.post("/api/workers/dispatch", requireAuth, async (req, res) => {
+  if (specialistDispatchActive) return res.status(409).json({ error: "A specialist team is already running. Review its status before starting another run." });
+  let run;
+  try {
+    run = createSpecialistRun(req.body?.goal, { requestedWorkerIds: req.body?.workerIds });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "The specialist task is invalid." });
+  }
+
+  specialistDispatchActive = true;
+  store.workerRuns.push(run);
+  store.workerRuns = store.workerRuns.slice(-SPECIALIST_WORKER_LIMITS.runs);
+  try {
+    await saveStore();
+    const completed = await executeSpecialistRun(run, createSpecialistWorkerAdapters(), {
+      onCheckpoint: async (checkpoint) => {
+        store.workerRuns = store.workerRuns.map((item) => item.id === checkpoint.id ? checkpoint : item);
+        await saveStore();
+      }
+    });
+    store.workerRuns = store.workerRuns.map((item) => item.id === completed.id ? completed : item);
+    await saveStore();
+    return res.status(completed.status === "completed" ? 200 : 202).json({ run: completed });
+  } catch (error) {
+    const failed = store.workerRuns.find((item) => item.id === run.id);
+    if (failed) {
+      failed.status = "failed";
+      failed.summary = "The specialist run could not save or complete its latest checkpoint. Review persistent history before restarting.";
+      failed.finishedAt = new Date().toISOString();
+      await saveStore().catch(() => {});
+    }
+    console.error("Specialist dispatch failed:", safeErrorMetadata(error));
+    return res.status(503).json({ error: "The specialist run could not be safely completed. Its last durable checkpoint was preserved where available." });
+  } finally {
+    specialistDispatchActive = false;
   }
 });
 

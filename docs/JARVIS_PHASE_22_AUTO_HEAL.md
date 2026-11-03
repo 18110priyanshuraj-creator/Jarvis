@@ -55,6 +55,6 @@ Core implementation PR #71 merged at `aa6f708f1f0559a2132bfd04c77100b0f55c5390`.
 
 Automated coverage includes default/range validation, rejection of extra settings, sanitization and incident de-duplication, unsupported repair classes, proposal testing, explicit confirmation, expected-revision checks, stale proposal invalidation, configuration application, rollback preconditions and history. Server integration coverage verifies unauthenticated access is rejected, failed runs create sanitized incidents, unsupported proposals do not mutate state, and authenticated inspection is idempotent.
 
-Dashboard wiring and the associated authenticated API guard tests are included in PR #72; its final CI result is recorded in the merged pull request and GitHub Actions history.
+Dashboard wiring, authenticated API guard tests and Phase 22 closeout documentation are included in PR #72, merged into main at 39643564e8e01c39272b2f4b4cdac8030605fee9. Post-merge main CI run 41606205186 passed on retry attempt 2: the Node.js test/dependency-audit job and Android Companion build/APK-verification job both completed successfully. The first Android attempt encountered Maven Central HTTP 429 while downloading a Robolectric artifact; retrying that one job resolved the transient dependency-host rate limit.
 
 Physical Samsung Galaxy Tab A9 workflow failure, review, apply and rollback acceptance remains Phase 31. This document does not claim the tablet has been tested.
