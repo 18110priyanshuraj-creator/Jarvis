@@ -23,7 +23,7 @@ Extend the approved Phase 17 Media Studio workflow into a user-controlled YouTub
 - Rate limit of three upload requests per hour and one active upload per preview.
 - Subscriber notifications are disabled by default.
 - Upload receipts are validated against the actual provider result: a valid returned video ID and a confirmed `uploaded` or `processed` state are required before JARVIS records success.
-- The HTTP server allows a bounded 31-minute request deadline for large uploads, a 60-second headers deadline and a 90-second idle-socket timeout. This avoids the previous 95-second total-request cutoff while retaining idle-connection cleanup.
+- The HTTP server allows a bounded 31-minute request deadline for large uploads, a 60-second headers deadline and a bounded 31-minute idle-socket timeout. This avoids the previous 95-second total-request cutoff while retaining a hard idle-connection cleanup bound compatible with the upstream 30-minute upload timeout.
 - A mocked-provider route integration test covers authenticated access, interrupted-upload recovery, preview-size rejection, OAuth token refresh, resumable upload, receipt persistence and duplicate-attempt rejection. It does not represent a live YouTube upload.
 
 ## Setup requirements
