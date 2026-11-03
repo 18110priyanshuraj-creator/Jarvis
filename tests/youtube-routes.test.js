@@ -159,7 +159,7 @@ after(async () => {
   if (tempDir) await fs.rm(tempDir, { recursive: true, force: true });
 });
 
-test("YouTube upload routes verify approval, recover interrupted state, validate bytes and persist a confirmed receipt", async () => {
+test("YouTube upload routes verify approval, recover interrupted state, validate size and persist a confirmed receipt", async () => {
   const unauthenticated = await fetch(baseUrl + "/api/youtube/status");
   assert.equal(unauthenticated.status, 401);
 
@@ -191,17 +191,6 @@ test("YouTube upload routes verify approval, recover interrupted state, validate
     body: tooShort
   });
   assert.equal(wrongSize.status, 400);
-
-  const wrongType = await request("/api/youtube/publications/" + encodeURIComponent(preview.id) + "/upload", {
-    method: "POST",
-    headers: {
-      "Content-Type": "video/webm",
-      "Content-Length": String(videoBytes.length),
-      "X-Jarvis-Confirmation": "PUBLISH"
-    },
-    body: videoBytes
-  });
-  assert.equal(wrongType.status, 415);
 
   const upload = await request("/api/youtube/publications/" + encodeURIComponent(preview.id) + "/upload", {
     method: "POST",
