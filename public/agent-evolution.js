@@ -216,6 +216,16 @@ export function createAgentEvolution({ api, toast, getSkills }) {
 
   function init() {
     const form = $("#crucible-form");
+    $("#autoheal-inspect-button")?.addEventListener("click", async () => {
+      const inspect = $("#autoheal-inspect-button");
+      inspect.disabled = true;
+      try {
+        await api("/api/auto-heal/inspect", { method: "POST", body: JSON.stringify({}) });
+        await loadAutoHeal();
+        toast("Workflow failure inspection completed.");
+      } catch (error) { toast(error.message, true); }
+      finally { inspect.disabled = false; }
+    });
     if (!form) return;
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -270,12 +280,154 @@ export function createAgentEvolution({ api, toast, getSkills }) {
     $("#crucible-cancel-edit").classList.add("hidden");
   }
 
+  async function loadAutoHeal() {
+    const response = await api("/api/auto-heal");
+    state.autoHealState = response.state || null;
+    state.autoHealStatus = response.status || null;
+    renderAutoHeal();
+    return state.autoHealState;
+  }
+
+  function renderAutoHeal() {
+    const status = $("#autoheal-policy-status");
+    const autoState = state.autoHealState;
+    const autoStatus = state.autoHealStatus;
+    if (status && autoState && autoStatus) {
+      status.textContent = "Revision " + autoStatus.revision +
+        " · Step timeout " + autoStatus.config.workflowStepTimeoutMs + " ms" +
+        " · Step-attempt cap " + autoStatus.config.maxManualRetryAttempts +
+        " · Auto-repair " + (autoStatus.automaticRepair ? "on" : "off") +
+        " · Auto-retry " + (autoStatus.automaticRetry ? "on" : "off");
+    }
+
+    const incidentsTarget = $("#autoheal-incidents-list");
+    if (incidentsTarget) {
+      incidentsTarget.replaceChildren();
+      const incidents = autoState?.incidents || [];
+      if (!incidents.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = "No workflow failure incidents have been recorded.";
+        incidentsTarget.append(empty);
+      }
+      for (const incident of [...incidents].reverse()) {
+        const row = document.createElement("article");
+        row.className = "list-item";
+        const heading = document.createElement("strong");
+        heading.textContent = incident.failureCode.replaceAll("_", " ") + " · " + incident.status;
+        const detail = document.createElement("p");
+        detail.textContent = incident.message;
+        const meta = document.createElement("div");
+        meta.className = "list-item-meta";
+        meta.textContent = "Workflow run " + incident.runId +
+          (incident.stepTitle ? " · Step " + incident.stepTitle : "") +
+          " · Attempts " + incident.attempts +
+          " · " + new Date(incident.createdAt).toLocaleString();
+        row.append(heading, detail, meta);
+        if (incident.failureCode === "timeout" && ["open", "proposal_ready"].includes(incident.status)) {
+          row.append(button("Create tested repair proposal", async () => {
+            try {
+              await api("/api/auto-heal/incidents/" + encodeURIComponent(incident.id) + "/propose", {
+                method: "POST", body: JSON.stringify({})
+              });
+              await loadAutoHeal();
+              toast("A bounded repair proposal passed its policy checks. Review it before approval.");
+            } catch (error) { toast(error.message, true); }
+          }));
+        } else if (incident.failureCode !== "timeout") {
+          const note = document.createElement("div");
+          note.className = "list-item-meta";
+          note.textContent = "No automated repair is supported for this failure. Manual review is required.";
+          row.append(note);
+        }
+        incidentsTarget.append(row);
+      }
+    }
+
+    const proposalsTarget = $("#autoheal-proposals-list");
+    if (!proposalsTarget) return;
+    proposalsTarget.replaceChildren();
+    const proposals = autoState?.proposals || [];
+    if (!proposals.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.textContent = "No repair proposals yet. A proposal is never applied automatically.";
+      proposalsTarget.append(empty);
+    }
+    for (const proposal of [...proposals].reverse()) {
+      const row = document.createElement("article");
+      row.className = "list-item";
+      const heading = document.createElement("strong");
+      heading.textContent = "Workflow timeout proposal · " + proposal.status;
+      const detail = document.createElement("p");
+      detail.textContent = proposal.summary +
+        " Current " + proposal.before.workflowStepTimeoutMs + " ms → proposed " +
+        proposal.after.workflowStepTimeoutMs + " ms.";
+      const checks = document.createElement("div");
+      checks.className = "list-item-meta";
+      checks.textContent = "Policy checks: " +
+        ((proposal.validation?.checks || []).filter((item) => item.passed).length) +
+        "/" + ((proposal.validation?.checks || []).length) +
+        " passed · Base revision " + proposal.baseRevision;
+      row.append(heading, detail, checks);
+
+      if (proposal.status === "tested") {
+        row.append(button("Approve & apply", async () => {
+          if (!confirm("Apply the tested workflow timeout change? This only changes a runtime setting.")) return;
+          try {
+            await api("/api/auto-heal/proposals/" + encodeURIComponent(proposal.id) + "/approve", {
+              method: "POST",
+              body: JSON.stringify({
+                expectedRevision: state.autoHealState.revision,
+                confirm: true
+              })
+            });
+            await loadAutoHeal();
+            toast("Repair applied. It is recorded and can be rolled back.");
+          } catch (error) { toast(error.message, true); }
+        }));
+      } else if (proposal.status === "applied") {
+        row.append(button("Roll back", async () => {
+          if (!confirm("Restore the exact configuration saved before this repair?")) return;
+          try {
+            await api("/api/auto-heal/proposals/" + encodeURIComponent(proposal.id) + "/rollback", {
+              method: "POST",
+              body: JSON.stringify({
+                expectedRevision: state.autoHealState.revision,
+                confirm: true
+              })
+            });
+            await loadAutoHeal();
+            toast("The previous runtime configuration has been restored.");
+          } catch (error) { toast(error.message, true); }
+        }));
+      }
+      row.append(document.createElement("div"));
+      proposalsTarget.append(row);
+    }
+    for (const entry of [...(autoState?.history || [])].reverse()) {
+      const row = document.createElement("div");
+      row.className = "list-item-meta";
+      row.textContent = "Revision " + entry.revision + " · " + entry.action +
+        " · Timeout " + entry.before.workflowStepTimeoutMs + " → " +
+        entry.after.workflowStepTimeoutMs + " ms · " +
+        new Date(entry.createdAt).toLocaleString();
+      proposalsTarget.append(row);
+    }
+  }
+
   async function safeLoad() {
     try {
       await load();
     } catch (error) {
       const runtime = $("#crucible-runtime-status");
       if (runtime) runtime.textContent = "Skill Crucible unavailable: " + error.message;
+    }
+    try {
+      await loadAutoHeal();
+    } catch (error) {
+      const status = $("#autoheal-policy-status");
+      if (status) status.textContent = "Auto-heal unavailable: " + error.message;
     }
   }
 

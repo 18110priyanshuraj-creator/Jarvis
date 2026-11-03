@@ -484,3 +484,22 @@ test("workflow step timeout fails only the current step and prevents later work"
   assert.equal(failed.steps[1].status, "pending");
   assert.equal(laterCalled, false);
 });
+
+
+test("manual retry and recovery preview respect a configurable bounded attempt limit", async () => {
+  const workflow = approveWorkflow(validateWorkflow(createWorkflowDraft({
+    name: "Configured retry cap",
+    steps: [{ type: "draft_text", title: "Prepare a draft", content: "Prepare a draft for configurable retry testing." }]
+  })).workflow);
+  const failed = await advanceWorkflowRun(createWorkflowRun(workflow), {
+    draft_text: async () => { throw new Error("Temporary local writer connection error."); }
+  });
+  assert.equal(failed.status, "failed");
+  assert.equal(getWorkflowRecoverySummary(failed).canRetry, true);
+  const limited = getWorkflowRecoverySummary(failed, { maxAttempts: 1 });
+  assert.equal(limited.maxAttempts, 1);
+  assert.equal(limited.canRetry, false);
+  assert.throws(() => retryWorkflowRun(failed, { maxAttempts: 1 }), /maximum of one attempt/i);
+  assert.equal(retryWorkflowRun(failed, { maxAttempts: 2 }).status, "running");
+  assert.equal(retryWorkflowRun(failed, { maxAttempts: 9 }).status, "running");
+});

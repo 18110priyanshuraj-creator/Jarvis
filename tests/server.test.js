@@ -159,6 +159,8 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
     method: "POST", headers: {}, body: JSON.stringify({})
   });
   assert.equal(blockedSkillProgramCreate.status, 401);
+  const blockedAutoHeal = await request("/api/auto-heal", { headers: {} });
+  assert.equal(blockedAutoHeal.status, 401);
   const blockedExperience = await request("/api/experience", { headers: {} });
   assert.equal(blockedExperience.status, 401);
   const blockedWorkflows = await request("/api/workflows", { headers: {} });
@@ -928,6 +930,22 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(blockedRunPayload.run.failure.code, "configuration_missing");
   assert.equal(blockedRunPayload.run.failure.retryable, false);
   assert.match(blockedRunPayload.run.steps[0].result.error, /not configured or is disabled/i);
+  const autoHealCapturedFailure = await request("/api/auto-heal");
+  assert.equal(autoHealCapturedFailure.status, 200);
+  const autoHealCapturedState = await autoHealCapturedFailure.json();
+  const capturedIncident = autoHealCapturedState.state.incidents.find((item) => item.runId === blockedRunPayload.run.id);
+  assert.ok(capturedIncident);
+  assert.equal(capturedIncident.failureCode, "configuration_missing");
+  assert.equal(autoHealCapturedState.status.automaticRepair, false);
+  assert.equal(autoHealCapturedState.status.automaticRetry, false);
+
+  const manualAutoHealScan = await request("/api/auto-heal/inspect", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(manualAutoHealScan.status, 200);
+  const scannedAutoHealState = await manualAutoHealScan.json();
+  assert.equal(scannedAutoHealState.state.incidents.filter((item) => item.runId === blockedRunPayload.run.id).length, 1);
+
   const blockedRecovery = await request("/api/workflow-runs/" + blockedRunPayload.run.id + "/recovery");
   assert.equal(blockedRecovery.status, 200);
   const blockedRecoveryPayload = await blockedRecovery.json();
