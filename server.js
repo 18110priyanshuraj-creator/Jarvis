@@ -2179,15 +2179,19 @@ app.post("/api/learning/preview", requireAuth, (req, res) => {
 });
 
 app.get("/api/knowledge/documents/status", requireAuth, (_req, res) => {
-  const persistentDirectoryConfigured = Boolean(process.env.JARVIS_DOCUMENTS_DIR || process.env.JARVIS_DATA_DIR);
+  const storagePathConfigured = Boolean(process.env.JARVIS_DOCUMENTS_DIR || process.env.JARVIS_DATA_DIR);
+  const warning = process.env.NODE_ENV !== "production"
+    ? ""
+    : storagePathConfigured
+      ? "A storage path is configured, but JARVIS cannot verify that the hosting platform persists it across deployments. Confirm it is backed by a durable mounted volume."
+      : "No explicit persistent storage path is configured. Set JARVIS_DOCUMENTS_DIR (or JARVIS_DATA_DIR) to a durable mounted volume before relying on uploaded files.";
   res.setHeader("Cache-Control", "no-store");
   res.json({
     enabled: true,
     storage: "server-filesystem",
-    durableStorageConfigured: persistentDirectoryConfigured || process.env.NODE_ENV !== "production",
-    warning: process.env.NODE_ENV === "production" && !persistentDirectoryConfigured
-      ? "Set JARVIS_DOCUMENTS_DIR to a durable mounted volume before relying on uploaded files. Database metadata alone does not preserve binary files."
-      : "",
+    storagePathConfigured,
+    durabilityVerified: false,
+    warning,
     limits: DOCUMENT_LIMITS,
     storedBytes: store.knowledgeDocuments.reduce((sum, item) => sum + item.byteSize, 0),
     supportedMimeTypes: [
