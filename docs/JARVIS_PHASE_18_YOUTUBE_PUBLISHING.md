@@ -1,9 +1,9 @@
 # JARVIS Phase 18 — YouTube Publishing Automation
 
-**Status:** IN_PROGRESS (feature implementation and branch CI complete; merge and live-provider acceptance pending)  
+**Status:** IN_PROGRESS (implementation and mock route coverage added; latest CI rerun, merge and real-provider acceptance remain open)  
 **Branch:** `feat/phase-18-youtube-publishing`  
 **Base:** `main` at `bf3dfb30fc4180b960f7d227b68c69be129b1afc`  
-**Feature head:** `300b03ab03301b6f1a369d6674f0f7c1c2e80c92`
+**Pull request:** [#60](https://github.com/18110priyanshuraj-creator/Jarvis/pull/60)
 
 ## Goal
 
@@ -22,6 +22,9 @@ Extend the approved Phase 17 Media Studio workflow into a user-controlled YouTub
 - Short-lived previews expire after ten minutes. An upload attempt is single-use; no automatic retry follows a network failure. Interrupted in-flight states are recovered as `needs_review` after restart so the owner checks YouTube Studio before creating another attempt.
 - Rate limit of three upload requests per hour and one active upload per preview.
 - Subscriber notifications are disabled by default.
+- Upload receipts are validated against the actual provider result: a valid returned video ID and a confirmed `uploaded` or `processed` state are required before JARVIS records success.
+- The HTTP server allows a bounded 31-minute request deadline for large uploads, a 60-second headers deadline and a 90-second idle-socket timeout. This avoids the previous 95-second total-request cutoff while retaining idle-connection cleanup.
+- A mocked-provider route integration test covers authenticated access, interrupted-upload recovery, preview-size rejection, OAuth token refresh, resumable upload, receipt persistence and duplicate-attempt rejection. It does not represent a live YouTube upload.
 
 ## Setup requirements
 
@@ -56,14 +59,17 @@ GitHub Actions run [41482952684](https://github.com/18110priyanshuraj-creator/Ja
 - APK integrity check and artifact upload: passed.
 - Debug APK artifact: `jarvis-companion-debug`, artifact ID `13159414246`, SHA-256 `0f4a6a9bd8bc62120b5cfdea8f3bd1af1daaa18dab661f28ea88806d2b2a2eab`, expires 2026-11-09.
 
-The GitHub PR-creation action rejected the linked repository owner even though the connection has repository Admin permission. No PR was opened and `main` was not modified. Create the PR from the [branch comparison page](https://github.com/18110priyanshuraj-creator/Jarvis/compare/main...feat/phase-18-youtube-publishing), then merge and verify post-merge CI. This is an integration/tooling blocker, not a claim that the phase is merged.
+PR #60 is open against `main`; no merge has occurred. The original feature CI is historical evidence only. The upload-receipt defect and route-test coverage were hardened on the same feature branch. An initial hardening run exposed that the test's fourth upload request correctly hit the production three-per-hour limiter (242 passed, 1 failed); the test was adjusted to stay within the real limit without changing production rate limiting. The corrected branch head is being rechecked by GitHub Actions before merge.
 
 ## Completion gates
 
 - [x] Dedicated YouTube upload scope and incremental OAuth tested.
 - [x] Approved-project-only preview and explicit rights/audience/privacy review tested.
 - [x] Resumable server-streamed upload tested with a mock provider, including exact byte-count enforcement.
-- [ ] Authentication, no-consent, size/type validation, timeout and duplicate/restart recovery fully covered by route-level tests.
-- [x] Full Node suite, dependency audit and Android unit/build/APK CI pass on the feature branch.
-- [ ] Merge to `main` and verify post-merge CI.
+- [x] Authentication and no-consent guards are covered in server route tests.
+- [x] Mock-provider route test covers exact preview-size rejection, upload receipt persistence, duplicate-use rejection and interrupted-upload recovery.
+- [x] Service tests cover approved-project review, supported MIME types, 256 MiB cap, byte-count enforcement, URL allow-listing and no automatic retry.
+- [ ] Latest full Node suite, dependency audit and Android unit/build/APK CI must pass on the corrected feature head.
+- [ ] Additional real-network timeout and MIME mismatch route tests remain a hardening gap.
+- [ ] Merge PR #60 to `main` and verify post-merge CI.
 - [ ] Real account upload and physical tablet acceptance recorded separately; no live upload was performed as part of this implementation.
