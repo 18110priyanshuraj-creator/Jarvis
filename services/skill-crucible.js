@@ -305,6 +305,9 @@ export function runApprovedSkillProgram(programInput, skills, input, application
   if (skill.activeVersion !== program.skillVersion) {
     throw new Error("The linked skill changed. Revalidate and approve a new program version before running.");
   }
+  if (!isSafeInput(input) || input.trim().length < 1) {
+    throw new TypeError("Input must be non-empty, under 1,200 characters and free of secrets or contact details.");
+  }
   const currentSkill = (skill.versions || []).find((item) => item.version === skill.activeVersion) || skill;
   const requestedApp = cleanText(applicationId, 80).toLocaleLowerCase();
   const inScope = Array.isArray(currentSkill.applicationIds) &&
