@@ -4,6 +4,7 @@ import path from "node:path";
 export const DOCUMENT_LIMITS = Object.freeze({
   files: 120,
   fileBytes: 15 * 1024 * 1024,
+  totalBytes: 200 * 1024 * 1024,
   title: 180,
   fileName: 160,
   collection: 60,
