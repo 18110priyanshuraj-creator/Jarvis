@@ -1,8 +1,8 @@
 # JARVIS Phase 20 — Knowledge Manager
 
-**Status:** IN_PROGRESS (implementation branch and CI pending)  
+**Status:** CODE_COMPLETE (repository scope; deployment volume and tablet acceptance remain external)  
 **Current roadmap:** Phase 20 of the Phase 0 + Phase 1–32 plan  
-**Implementation branch:** `feat/phase-20-knowledge-manager`
+**Implementation PR:** [#65](https://github.com/18110priyanshuraj-creator/Jarvis/pull/65), merged to `main` at `11351868839059a5148bb66d5ffcf97fbc20a82e`
 
 ## Scope
 
@@ -43,6 +43,19 @@ Turn the existing text-note Library into a managed document library with explici
 
 ## Verification
 
+- GitHub Actions PR run [41598828117](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41598828117) passed on implementation head `1ad69127297c52ab0cf07e22999dccf7f10d4a53`.
+- Node test suite: 260 passed, 0 failed. Production dependency audit: 0 vulnerabilities.
+- Android Companion: unit tests, debug build, APK integrity verification and artifact upload all passed.
+- Debug APK artifact: `jarvis-companion-debug`, artifact ID `13213871772`, 23,992,550 bytes, expires 2026-11-10. This is not a signed production APK.
+- PR #65 merge commit: `11351868839059a5148bb66d5ffcf97fbc20a82e`.
+
 Automated coverage verifies file type/signature validation, UTF-8 and JSON extraction, sensitive-content rejection, duplicate SHA-256 handling, review-gated retrieval, search, and path traversal resistance. Full repository CI also runs Node tests/audit and Android build/APK checks.
 
 Physical Galaxy Tab A9 file-picker, permission, download and lifecycle acceptance remains Phase 31.
+
+
+## Closeout and deployment acceptance
+
+The code is complete and merged. Production file persistence is not considered verified merely because a path is configured: set `JARVIS_DOCUMENTS_DIR` (or `JARVIS_DATA_DIR`) to a durable mounted volume and verify that the host retains it across deploys/restarts. The status API returns `durabilityVerified: false` intentionally because application code cannot validate the hosting provider's retention policy. Neon persists metadata and extracted text, not binary file bytes.
+
+Physical Samsung Galaxy Tab A9 file-picker, upload, download and restart/lifecycle behavior remain Phase 31. PDFs and media are stored as metadata-only attachments; no OCR, PDF extraction or transcription is claimed.
