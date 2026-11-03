@@ -657,6 +657,15 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(approveDocument.status, 200);
   assert.equal((await approveDocument.json()).item.reviewStatus, "user-reviewed");
 
+  const combinedLearningPreview = await request("/api/learning/preview", {
+    method: "POST",
+    body: JSON.stringify({ query: "average speed" })
+  });
+  assert.equal(combinedLearningPreview.status, 200);
+  const combinedLearningPreviewPayload = await combinedLearningPreview.json();
+  assert.equal(combinedLearningPreviewPayload.counts.documentsIncluded, 1);
+  assert.ok(combinedLearningPreviewPayload.contextItems.some((item) => item.sourceKind === "user-document"));
+
   const documentAnswer = await request("/api/chat", {
     method: "POST",
     body: JSON.stringify({ message: "Explain average speed from my saved notes" })
