@@ -317,9 +317,15 @@ export function approveRepairProposal(stateInput, proposalId, expectedRevision, 
   const before = { ...state.config };
   state.config = { ...proposal.after };
   state.revision += 1;
-  state.proposals = state.proposals.map((item) => item.id === proposal.id
-    ? { ...item, status: "applied", approvedAt: now, appliedRevision: state.revision }
-    : item);
+  state.proposals = state.proposals.map((item) => {
+    if (item.id === proposal.id) {
+      return { ...item, status: "applied", approvedAt: now, appliedRevision: state.revision };
+    }
+    if (item.status === "tested" && item.baseRevision === expectedRevision) {
+      return { ...item, status: "rejected" };
+    }
+    return item;
+  });
   state.incidents = state.incidents.map((item) => item.id === proposal.incidentId
     ? { ...item, status: "mitigated" }
     : item);
@@ -347,9 +353,13 @@ export function rollbackRepairProposal(stateInput, proposalId, expectedRevision,
   const before = { ...state.config };
   state.config = { ...proposal.before };
   state.revision += 1;
-  state.proposals = state.proposals.map((item) => item.id === proposal.id
-    ? { ...item, status: "rolled_back", rolledBackAt: now }
-    : item);
+  state.proposals = state.proposals.map((item) => {
+    if (item.id === proposal.id) return { ...item, status: "rolled_back", rolledBackAt: now };
+    if (item.status === "tested" && item.baseRevision === expectedRevision) {
+      return { ...item, status: "rejected" };
+    }
+    return item;
+  });
   state.incidents = state.incidents.map((item) => item.id === proposal.incidentId
     ? { ...item, status: "open" }
     : item);
