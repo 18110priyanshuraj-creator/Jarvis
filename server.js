@@ -20,6 +20,7 @@ import { createSourceBasedAnswer, SOURCE_ANSWER_LIMITS } from "./services/source
 import { createChatCompletion, getAIProviderStatus } from "./services/ai-provider.js";
 import { approveMediaProject, createMediaDraft, MEDIA_FORMATS, MEDIA_LIMITS, normalizeMediaProject, updateMediaProject } from "./services/media-engine.js";
 import {
+  completeYouTubePublication,
   createYouTubePublishPreview,
   MAX_YOUTUBE_UPLOAD_BYTES,
   normalizeYouTubePublication,
@@ -2355,14 +2356,7 @@ app.post("/api/youtube/publications/:id/upload", requireAuth, youtubeUploadLimit
   try {
     const accessToken = await getGoogleDriveTokenForIntegration();
     providerResult = await uploadYouTubeVideo({ publication: uploading, accessToken, body: req });
-    const completed = normalizeYouTubePublication({
-      ...uploading,
-      status: "uploaded",
-      videoId: result.videoId,
-      uploadStatus: result.uploadStatus,
-      uploadedAt: result.uploadedAt,
-      error: ""
-    });
+    const completed = completeYouTubePublication(uploading, providerResult);
     store.youtubePublications = store.youtubePublications.map((item) => item.id === existing.id ? completed : item);
     await saveStore();
     res.status(201).json({
@@ -2552,4 +2546,8 @@ if (JSON.stringify(recoveredWorkflowRuns) !== JSON.stringify(store.workflowRuns)
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log("JARVIS listening on port " + PORT);
 });
-server.requestTimeout = 95000;
+// YouTube uploads may stream up to 256 MiB. Keep a bounded total request
+// deadline while still closing sockets that remain inactive for too long.
+server.requestTimeout = 31 * 60 * 1000;
+server.headersTimeout = 60 * 1000;
+server.setTimeout(90 * 1000, (socket) => socket.destroy());
