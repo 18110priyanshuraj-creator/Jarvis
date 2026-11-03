@@ -602,13 +602,42 @@ async function processAssistantTurn(message, conversationKey, applicationId = "w
       learning: { saved: false }
     };
   } else if (learningIntent?.matched) {
+    let learned;
     try {
-      const learned = createLearningNote(store.knowledge, learningIntent);
-      if (learned.duplicate) {
-        if (learned.merged) {
-          store.knowledge[learned.index] = learned.item;
+      learned = createLearningNote(store.knowledge, learningIntent);
+    } catch (error) {
+      if (error?.code !== "LEARNING_INVALID" && error?.code !== "LEARNING_LIMIT") {
+        console.error("Independent learning validation failed:", safeErrorMetadata(error));
+        throw error;
+      }
+      result = {
+        answer: error.message,
+        engine: "independent-learning",
+        externalAI: false,
+        learning: { saved: false }
+      };
+    }
+
+    if (learned) {
+      const previousKnowledge = store.knowledge;
+      if (learned.duplicate && learned.merged) {
+        store.knowledge = store.knowledge.map((item, index) =>
+          index === learned.index ? learned.item : item
+        );
+      } else if (!learned.duplicate) {
+        store.knowledge = [...store.knowledge, learned.item];
+      }
+
+      if (learned.merged || !learned.duplicate) {
+        try {
           await saveStore();
+        } catch (error) {
+          store.knowledge = previousKnowledge;
+          throw error;
         }
+      }
+
+      if (learned.duplicate) {
         const reviewMessage = learned.item.reviewStatus === "unreviewed"
           ? " The existing entry still needs your source review and remains excluded from assistant context."
           : learned.item.reviewStatus === "rejected"
@@ -621,8 +650,6 @@ async function processAssistantTurn(message, conversationKey, applicationId = "w
           learning: { saved: true, duplicate: true, reviewStatus: learned.item.reviewStatus }
         };
       } else {
-        store.knowledge.push(learned.item);
-        await saveStore();
         result = {
           answer: "Lesson saved to your Knowledge Library as a user-authored note. I can retrieve it for matching offline questions. This does not train model weights or independently fact-check the lesson.",
           engine: "independent-learning",
@@ -630,13 +657,6 @@ async function processAssistantTurn(message, conversationKey, applicationId = "w
           learning: { saved: true, duplicate: false, reviewStatus: learned.item.reviewStatus }
         };
       }
-    } catch (error) {
-      result = {
-        answer: error?.message || "The lesson could not be saved. Nothing was changed.",
-        engine: "independent-learning",
-        externalAI: false,
-        learning: { saved: false }
-      };
     }
   } else if (memoryIntent?.blocked) {
     result = {
