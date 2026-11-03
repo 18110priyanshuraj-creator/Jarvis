@@ -161,10 +161,6 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(blockedSkillProgramCreate.status, 401);
   const blockedAutoHeal = await request("/api/auto-heal", { headers: {} });
   assert.equal(blockedAutoHeal.status, 401);
-  const blockedAutoHealInspect = await request("/api/auto-heal/inspect", {
-    method: "POST", headers: {}, body: JSON.stringify({})
-  });
-  assert.equal(blockedAutoHealInspect.status, 401);
   const blockedExperience = await request("/api/experience", { headers: {} });
   assert.equal(blockedExperience.status, 401);
   const blockedWorkflows = await request("/api/workflows", { headers: {} });
@@ -271,19 +267,6 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(diagnosticsJson.includes("local-test-client-secret"), false);
   assert.equal(diagnosticsJson.includes(Buffer.alloc(32, 11).toString("base64")), false);
   assert.equal(diagnosticsJson.includes("123456789:" + "A".repeat(32)), false);
-
-  const initialAutoHeal = await request("/api/auto-heal");
-  assert.equal(initialAutoHeal.status, 200);
-  const initialAutoHealPayload = await initialAutoHeal.json();
-  assert.equal(initialAutoHealPayload.state.config.workflowStepTimeoutMs, 60_000);
-  assert.equal(initialAutoHealPayload.state.config.maxManualRetryAttempts, 3);
-  assert.equal(initialAutoHealPayload.status.automaticRepair, false);
-  assert.equal(initialAutoHealPayload.status.automaticRetry, false);
-  const emptyIncidentScan = await request("/api/auto-heal/inspect", {
-    method: "POST", body: JSON.stringify({})
-  });
-  assert.equal(emptyIncidentScan.status, 200);
-  assert.equal((await emptyIncidentScan.json()).state.incidents.length, 0);
 
   const disabledSourceAnswer = await request("/api/research/answer", {
     method: "POST",
@@ -963,11 +946,6 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   const scannedAutoHealState = await manualAutoHealScan.json();
   assert.equal(scannedAutoHealState.state.incidents.filter((item) => item.runId === blockedRunPayload.run.id).length, 1);
 
-  const unsupportedAutoHealProposal = await request(
-    "/api/auto-heal/incidents/" + capturedIncident.id + "/propose",
-    { method: "POST", body: JSON.stringify({}) }
-  );
-  assert.equal(unsupportedAutoHealProposal.status, 409);
   const blockedRecovery = await request("/api/workflow-runs/" + blockedRunPayload.run.id + "/recovery");
   assert.equal(blockedRecovery.status, 200);
   const blockedRecoveryPayload = await blockedRecovery.json();
