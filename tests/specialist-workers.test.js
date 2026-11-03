@@ -51,6 +51,10 @@ test("empty and sensitive goals are rejected before persistent dispatch", () => 
   assert.throws(() => createSpecialistRun(" "), /describe the goal/i);
   assert.throws(() => createSpecialistRun("Use my password: secret123 to log in and research this."), /remove passwords/i);
   assert.throws(() => createSpecialistRun("Send this to learner@example.com"), /private contact details/i);
+  assert.throws(() => createSpecialistRun("Research this task for contact 9876543210."), /private contact details/i);
+  const dated = createSpecialistRun("Research this task by 2026-11-03.");
+  assert.equal(dated.goal, "Research this task by 2026-11-03.");
+  assert.ok(Number.isFinite(Date.parse(dated.createdAt)));
 });
 
 test("security preflight blocks unsafe requests and pauses consequential actions", () => {

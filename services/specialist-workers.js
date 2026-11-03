@@ -33,11 +33,20 @@ function cleanText(value, maxLength) {
   return typeof value === "string" ? value.normalize("NFKC").trim().replace(/\s+/g, " ").slice(0, maxLength) : "";
 }
 
+function containsSensitiveInfo(value) {
+  const text = String(value || "");
+  const phoneMatch = text.match(PHONE_CONTENT);
+  const hasPhone = Boolean(phoneMatch && (phoneMatch[0].match(/\d/g) || []).length >= 10);
+  return PRIVATE_CONTENT.test(text) || EMAIL_CONTENT.test(text) || hasPhone;
+}
+
 function assertSafeGoal(value) {
+  if (typeof value !== "string" || value.normalize("NFKC").trim().length > MAX_GOAL_LENGTH) {
+    throw new TypeError("Specialist goals must be 1,200 characters or fewer.");
+  }
   const goal = cleanText(value, MAX_GOAL_LENGTH);
   if (!goal) throw new TypeError("Describe the goal before dispatching specialist workers.");
-  if (goal.length > MAX_GOAL_LENGTH) throw new TypeError("Specialist goals must be 1,200 characters or fewer.");
-  if (PRIVATE_CONTENT.test(goal) || EMAIL_CONTENT.test(goal) || PHONE_CONTENT.test(goal)) {
+  if (containsSensitiveInfo(goal)) {
     throw new TypeError("Remove passwords, private contact details and sensitive personal information before dispatching this task.");
   }
   return goal;
@@ -46,7 +55,7 @@ function assertSafeGoal(value) {
 function safeText(value, maxLength = MAX_DETAIL_TEXT) {
   const text = cleanText(value, maxLength);
   if (!text) return "";
-  if (PRIVATE_CONTENT.test(text) || EMAIL_CONTENT.test(text) || PHONE_CONTENT.test(text)) return "[redacted sensitive content]";
+  if (containsSensitiveInfo(text)) return "[redacted sensitive content]";
   return text;
 }
 
