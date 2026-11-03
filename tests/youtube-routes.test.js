@@ -180,17 +180,16 @@ test("YouTube upload routes verify approval, recover interrupted state, validate
   assert.equal(preview.status, "pending_confirmation");
   assert.equal(preview.privacyStatus, "private");
 
-  const tooShort = Buffer.from("short");
-  const wrongSize = await request("/api/youtube/publications/" + encodeURIComponent(preview.id) + "/upload", {
+  const wrongMime = await request("/api/youtube/publications/" + encodeURIComponent(preview.id) + "/upload", {
     method: "POST",
     headers: {
-      "Content-Type": "video/mp4",
-      "Content-Length": String(tooShort.length),
+      "Content-Type": "video/webm",
+      "Content-Length": String(videoBytes.length),
       "X-Jarvis-Confirmation": "PUBLISH"
     },
-    body: tooShort
+    body: videoBytes
   });
-  assert.equal(wrongSize.status, 400);
+  assert.equal(wrongMime.status, 415, "a MIME type that differs from the approved preview must be rejected");
 
   const upload = await request("/api/youtube/publications/" + encodeURIComponent(preview.id) + "/upload", {
     method: "POST",
