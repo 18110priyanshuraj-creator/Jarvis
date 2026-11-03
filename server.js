@@ -29,6 +29,7 @@ import {
 } from "./services/youtube-publisher.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, mergeDuplicateKnowledge, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { createLearningNote, parseExplicitLearningCommand, previewIndependentLearning } from "./services/learning-engine.js";
+import { buildDocumentKnowledgeContext, createKnowledgeDocument, DOCUMENT_LIMITS, findDuplicateDocument, normalizeKnowledgeDocument, resolveDocumentStoragePath, searchKnowledgeDocuments, toPublicKnowledgeDocument } from "./services/knowledge-documents.js";
 import { buildMemoryContext, findExactMemory, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, parseExplicitForgetIntent, previewMemoryContext, searchMemories } from "./services/memory.js";
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeApplicationId, normalizeSkill, pauseSkill, SKILL_APPLICATION_CATALOG, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
@@ -56,6 +57,7 @@ const PORT = Number(process.env.PORT || 3000);
 const PASSWORD = process.env.JARVIS_PASSWORD || "";
 const DATA_DIR = path.resolve(process.env.JARVIS_DATA_DIR || path.join(__dirname, "data"));
 const STORE_FILE = path.join(DATA_DIR, "state.json");
+const DOCUMENTS_DIR = path.resolve(process.env.JARVIS_DOCUMENTS_DIR || path.join(DATA_DIR, "documents"));
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 if (process.env.NODE_ENV === "production" && !PASSWORD) {
@@ -107,6 +109,13 @@ const mediaGenerationLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Media storyboard generation is temporarily rate limited. Please try again later." }
+});
+const documentUploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 12,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Document upload limit reached for this hour. Please try again later." }
 });
 const youtubeUploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -189,7 +198,7 @@ const oauthLaunchLimiter = rateLimit({
 
 app.use("/api", apiLimiter);
 
-let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], workflowStepEffects: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [], mediaProjects: [], youtubePublications: [] };
+let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], workflowStepEffects: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [], knowledgeDocuments: [], mediaProjects: [], youtubePublications: [] };
 let writeQueue = Promise.resolve();
 let neonSql;
 let databaseRevision = null;
@@ -346,6 +355,11 @@ function normalizeStore(parsed = {}) {
     knowledge: Array.isArray(parsed.knowledge)
       ? parsed.knowledge.slice(-KNOWLEDGE_LIMITS.items).flatMap((item) => {
           try { return [normalizeKnowledgeItem(item)]; } catch { return []; }
+        })
+      : [],
+    knowledgeDocuments: Array.isArray(parsed.knowledgeDocuments)
+      ? parsed.knowledgeDocuments.slice(-DOCUMENT_LIMITS.files).flatMap((item) => {
+          try { return [normalizeKnowledgeDocument(item)]; } catch { return []; }
         })
       : [],
     mediaProjects: Array.isArray(parsed.mediaProjects)
@@ -691,6 +705,13 @@ function cleanText(value, maxLength) {
   return value.trim().slice(0, maxLength);
 }
 
+function buildAssistantKnowledgeContext(message) {
+  return [
+    ...buildKnowledgeContext(store.knowledge, message, 3),
+    ...buildDocumentKnowledgeContext(store.knowledgeDocuments, message, DOCUMENT_LIMITS.contextItems)
+  ];
+}
+
 async function generateAssistantAnswer(message, history = [], memories = store.memories, applicationId = "web-dashboard") {
   const useLiveWeb = shouldUseLiveWebResearch(message);
   let webNotice = "";
@@ -720,7 +741,7 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
     tasks: store.tasks,
     skills: getActiveSkillContext(store.skills, message, 3, applicationId),
     feedback: store.feedback,
-    knowledge: buildKnowledgeContext(store.knowledge, message, 3)
+    knowledge: buildAssistantKnowledgeContext(message)
   });
   if (offlineTurn) {
     return {
@@ -732,7 +753,7 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
   const conversationAIEnabled = isConversationAIEnabled();
   if (conversationAIEnabled) {
     try {
-      const knowledgeContext = buildKnowledgeContext(store.knowledge, message, 3);
+      const knowledgeContext = buildAssistantKnowledgeContext(message);
       const approvedMemoryContext = buildMemoryContext(memories, message, 5);
       const activeSkillContext = getActiveSkillContext(store.skills, message, 3, applicationId);
       const approvedExperienceContext = getActiveExperienceContext(store.experiencePreferences, 5);
@@ -1070,6 +1091,7 @@ app.get("/api/export", requireAuth, (req, res) => {
     data: {
       memories: store.memories,
       knowledge: store.knowledge,
+      knowledgeDocuments: store.knowledgeDocuments.map(toPublicKnowledgeDocument),
       research: store.research,
       tasks: store.tasks,
       feedback: store.feedback,
@@ -1086,6 +1108,7 @@ app.get("/api/export", requireAuth, (req, res) => {
       "temporary conversation history",
       "device credentials and pairing records",
       "server environment variables and API credentials",
+      "binary knowledge document files (download each managed attachment separately)",
       "chat prompts and assistant replies are not stored as feedback records"
     ]
   };
@@ -2127,6 +2150,184 @@ app.post("/api/learning/preview", requireAuth, (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error?.message || "Learning context preview is invalid." });
   }
+});
+
+app.get("/api/knowledge/documents/status", requireAuth, (_req, res) => {
+  const persistentDirectoryConfigured = Boolean(process.env.JARVIS_DOCUMENTS_DIR);
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    enabled: true,
+    storage: "server-filesystem",
+    durableStorageConfigured: persistentDirectoryConfigured || process.env.NODE_ENV !== "production",
+    warning: process.env.NODE_ENV === "production" && !persistentDirectoryConfigured
+      ? "Set JARVIS_DOCUMENTS_DIR to a durable mounted volume before relying on uploaded files. Database metadata alone does not preserve binary files."
+      : "",
+    limits: DOCUMENT_LIMITS,
+    supportedMimeTypes: [
+      "text/plain", "text/markdown", "text/csv", "application/json", "application/pdf",
+      "image/jpeg", "image/png", "image/webp", "audio/mpeg", "audio/mp4", "audio/wav",
+      "audio/ogg", "audio/webm", "video/mp4", "video/webm"
+    ],
+    extraction: {
+      text: ["text/plain", "text/markdown", "text/csv", "application/json"],
+      metadataOnly: ["application/pdf", "image/jpeg", "image/png", "image/webp", "audio/mpeg", "audio/mp4", "audio/wav", "audio/ogg", "audio/webm", "video/mp4", "video/webm"],
+      ocr: false,
+      transcription: false,
+      pdfTextExtraction: false
+    }
+  });
+});
+
+app.get("/api/knowledge/documents", requireAuth, (req, res) => {
+  const query = cleanText(req.query.q, DOCUMENT_LIMITS.query);
+  const collection = cleanText(req.query.collection, DOCUMENT_LIMITS.collection);
+  const review = cleanText(req.query.review, 20) || "all";
+  if (!["all", "unreviewed", "user-reviewed", "rejected"].includes(review)) {
+    return res.status(400).json({ error: "Choose a valid document review filter." });
+  }
+  const requestedLimit = Number.parseInt(String(req.query.limit || "100"), 10);
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.min(DOCUMENT_LIMITS.files, Math.max(1, requestedLimit))
+    : DOCUMENT_LIMITS.files;
+  const items = searchKnowledgeDocuments(store.knowledgeDocuments, query, collection, review, limit)
+    .map(toPublicKnowledgeDocument);
+  const collections = [...new Set(store.knowledgeDocuments.map((item) => item.collection))].sort();
+  const counts = store.knowledgeDocuments.reduce((summary, item) => {
+    summary.total += 1;
+    summary[item.reviewStatus] = (summary[item.reviewStatus] || 0) + 1;
+    if (item.indexingMode === "text") summary.searchable += 1;
+    else summary.attachments += 1;
+    return summary;
+  }, { total: 0, unreviewed: 0, "user-reviewed": 0, rejected: 0, searchable: 0, attachments: 0 });
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ query, collection, review, total: counts.total, count: items.length, counts, collections, items });
+});
+
+app.post("/api/knowledge/documents", requireAuth, documentUploadLimiter,
+  express.raw({ type: "application/octet-stream", limit: DOCUMENT_LIMITS.fileBytes + "b" }),
+  async (req, res) => {
+    if (!Buffer.isBuffer(req.body)) {
+      return res.status(415).json({ error: "Upload file bytes as application/octet-stream and provide the original MIME type in X-Jarvis-Mime-Type." });
+    }
+    const decodeHeader = (name, limit) => {
+      const raw = req.get(name) || "";
+      try { return decodeURIComponent(raw).slice(0, limit); } catch { return ""; }
+    };
+    let document;
+    try {
+      document = createKnowledgeDocument({
+        fileName: decodeHeader("X-Jarvis-Filename", 300),
+        title: decodeHeader("X-Jarvis-Title", DOCUMENT_LIMITS.title),
+        mimeType: (req.get("X-Jarvis-Mime-Type") || "").toLowerCase(),
+        collection: decodeHeader("X-Jarvis-Collection", DOCUMENT_LIMITS.collection),
+        tags: decodeHeader("X-Jarvis-Tags", 500),
+        description: decodeHeader("X-Jarvis-Description", DOCUMENT_LIMITS.description)
+      }, req.body);
+    } catch (error) {
+      return res.status(400).json({ error: error.message || "The document could not be validated." });
+    }
+
+    const duplicate = findDuplicateDocument(store.knowledgeDocuments, document);
+    if (duplicate) {
+      return res.status(200).json({ item: toPublicKnowledgeDocument(duplicate), duplicate: true });
+    }
+    if (store.knowledgeDocuments.length >= DOCUMENT_LIMITS.files) {
+      return res.status(409).json({ error: "The document library is full. Delete an old document first." });
+    }
+
+    const filePath = resolveDocumentStoragePath(DOCUMENTS_DIR, document);
+    const previousDocuments = store.knowledgeDocuments;
+    try {
+      await fs.mkdir(DOCUMENTS_DIR, { recursive: true, mode: 0o700 });
+      await fs.writeFile(filePath, req.body, { flag: "wx", mode: 0o600 });
+      store.knowledgeDocuments = [...store.knowledgeDocuments, document];
+      await saveStore();
+      res.status(201).json({ item: toPublicKnowledgeDocument(document), duplicate: false });
+    } catch (error) {
+      store.knowledgeDocuments = previousDocuments;
+      try { await fs.unlink(filePath); } catch { /* no partially written record remains */ }
+      console.error("Knowledge document upload failed:", safeErrorMetadata(error));
+      if (error?.code === "EEXIST") return res.status(409).json({ error: "This document already exists in storage. Refresh the library." });
+      res.status(503).json({ error: "JARVIS could not safely store this document. No library entry was created." });
+    }
+  }
+);
+
+app.patch("/api/knowledge/documents/:id", requireAuth, async (req, res) => {
+  const existing = store.knowledgeDocuments.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Document not found." });
+  const body = req.body || {};
+  const nextReview = body.reviewStatus === undefined ? existing.reviewStatus : cleanText(body.reviewStatus, 30);
+  if (!["unreviewed", "user-reviewed", "rejected"].includes(nextReview)) {
+    return res.status(400).json({ error: "Choose reviewed, needs review, or rejected." });
+  }
+  if (body.reviewStatus === "user-reviewed" && body.confirmReview !== true) {
+    return res.status(400).json({ error: "Confirm that you have reviewed this document before approving it for assistant context." });
+  }
+  let updated;
+  try {
+    updated = normalizeKnowledgeDocument({
+      ...existing,
+      collection: body.collection === undefined ? existing.collection : body.collection,
+      tags: body.tags === undefined ? existing.tags : body.tags,
+      description: body.description === undefined ? existing.description : body.description,
+      reviewStatus: nextReview,
+      reviewNote: nextReview === "rejected" ? body.reviewNote : "",
+      reviewedAt: nextReview === "user-reviewed" ? new Date().toISOString() : null,
+      rejectedAt: nextReview === "rejected" ? new Date().toISOString() : null,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Document update is invalid." });
+  }
+  const previousDocuments = store.knowledgeDocuments;
+  store.knowledgeDocuments = store.knowledgeDocuments.map((item) => item.id === existing.id ? updated : item);
+  try {
+    await saveStore();
+  } catch (error) {
+    store.knowledgeDocuments = previousDocuments;
+    return res.status(503).json({ error: "JARVIS could not save the document changes. Nothing was changed." });
+  }
+  res.json({ item: toPublicKnowledgeDocument(updated) });
+});
+
+app.get("/api/knowledge/documents/:id/download", requireAuth, async (req, res) => {
+  const document = store.knowledgeDocuments.find((item) => item.id === req.params.id);
+  if (!document) return res.status(404).json({ error: "Document not found." });
+  let filePath;
+  try {
+    filePath = resolveDocumentStoragePath(DOCUMENTS_DIR, document);
+    const stat = await fs.stat(filePath);
+    if (!stat.isFile() || stat.size !== document.byteSize) {
+      return res.status(409).json({ error: "The stored document is missing or does not match its saved metadata." });
+    }
+  } catch {
+    return res.status(404).json({ error: "The stored document file is not available on this server instance." });
+  }
+  const downloadName = document.fileName.replace(/["\\\r\n]/g, "_");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Security-Policy", "sandbox");
+  res.setHeader("Content-Type", "application/octet-stream");
+  res.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + encodeURIComponent(downloadName));
+  res.sendFile(filePath, { dotfiles: "deny", acceptRanges: false }, (error) => {
+    if (error && !res.headersSent) res.status(500).end();
+  });
+});
+
+app.delete("/api/knowledge/documents/:id", requireAuth, async (req, res) => {
+  const existing = store.knowledgeDocuments.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Document not found." });
+  const previousDocuments = store.knowledgeDocuments;
+  store.knowledgeDocuments = store.knowledgeDocuments.filter((item) => item.id !== existing.id);
+  try {
+    await saveStore();
+  } catch {
+    store.knowledgeDocuments = previousDocuments;
+    return res.status(503).json({ error: "JARVIS could not save the document deletion. Nothing was changed." });
+  }
+  try { await fs.unlink(resolveDocumentStoragePath(DOCUMENTS_DIR, existing)); } catch { /* metadata is removed; a missing blob is already reconciled */ }
+  res.json({ ok: true });
 });
 
 app.get("/api/knowledge", requireAuth, (req, res) => {
