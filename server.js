@@ -88,7 +88,7 @@ app.use(express.json({ limit: "1mb" }));
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 180,
+  limit: process.env.NODE_ENV === "test" ? 500 : 180,
   standardHeaders: "draft-7",
   legacyHeaders: false
 });

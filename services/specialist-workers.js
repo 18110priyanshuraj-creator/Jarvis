@@ -230,10 +230,11 @@ export function normalizeSpecialistRun(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   let goal;
   try { goal = assertSafeGoal(input.goal); } catch { return null; }
-  const workerIds = Array.isArray(input.workerIds)
-    ? input.workerIds.slice(0, MAX_WORKERS_PER_RUN).filter((id, index, all) => WORKERS.some((worker) => worker.id === id) && all.indexOf(id) === index)
-    : [];
-  if (!workerIds.length || workerIds[0] !== "security" || workerIds[workerIds.length - 1] !== "verification") return null;
+  const workerIds = Array.isArray(input.workerIds) ? input.workerIds : [];
+  if (workerIds.length < 3 || workerIds.length > MAX_WORKERS_PER_RUN ||
+      workerIds.some((id, index, all) => typeof id !== "string" || !WORKERS.some((worker) => worker.id === id) || all.indexOf(id) !== index) ||
+      workerIds[0] !== "security" || workerIds[workerIds.length - 1] !== "verification" ||
+      workerIds.slice(1, -1).some((id) => !OPERATIONAL_WORKERS.has(id))) return null;
 
   const steps = Array.isArray(input.steps)
     ? input.steps.slice(0, MAX_WORKERS_PER_RUN).flatMap((step) => {
