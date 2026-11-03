@@ -35,7 +35,8 @@ function cleanText(value, maxLength) {
 
 function containsSensitiveInfo(value) {
   const text = String(value || "");
-  const phoneMatch = text.match(PHONE_CONTENT);
+  const phoneCandidate = text.replace(/\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b/gi, " ");
+  const phoneMatch = phoneCandidate.match(PHONE_CONTENT);
   const hasPhone = Boolean(phoneMatch && (phoneMatch[0].match(/\d/g) || []).length >= 10);
   return PRIVATE_CONTENT.test(text) || EMAIL_CONTENT.test(text) || hasPhone;
 }
