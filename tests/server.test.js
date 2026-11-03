@@ -153,6 +153,12 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(blockedMemories.status, 401);
   const blockedSkills = await request("/api/skills", { headers: {} });
   assert.equal(blockedSkills.status, 401);
+  const blockedSkillCrucible = await request("/api/skill-crucible", { headers: {} });
+  assert.equal(blockedSkillCrucible.status, 401);
+  const blockedSkillProgramCreate = await request("/api/skill-crucible/programs", {
+    method: "POST", headers: {}, body: JSON.stringify({})
+  });
+  assert.equal(blockedSkillProgramCreate.status, 401);
   const blockedExperience = await request("/api/experience", { headers: {} });
   assert.equal(blockedExperience.status, 401);
   const blockedWorkflows = await request("/api/workflows", { headers: {} });
@@ -1145,6 +1151,68 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   });
   assert.equal(approveUpdatedSkill.status, 200);
   assert.equal((await approveUpdatedSkill.json()).skill.activeVersion, 2);
+
+  const createCrucibleProgram = await request("/api/skill-crucible/programs", {
+    method: "POST",
+    body: JSON.stringify({
+      skillId: skillPayload.skill.id,
+      name: "Hinglish explanation formatter",
+      program: {
+        steps: [
+          { op: "normalize_input" },
+          { op: "extract_keywords", max: 5 },
+          { op: "match_any", phrases: ["explain in simple Hinglish"] },
+          { op: "format_output", template: "Matched: {matched}. Keywords: {keywords}. Request: {input}" }
+        ]
+      },
+      testCases: [
+        { input: "Please explain in simple Hinglish", expectedMatched: true },
+        { input: "Tell me the weather today", expectedMatched: false }
+      ]
+    })
+  });
+  assert.equal(createCrucibleProgram.status, 201);
+  const crucibleDraft = (await createCrucibleProgram.json()).program;
+  assert.equal(crucibleDraft.status, "draft");
+  assert.equal(crucibleDraft.activeVersion, null);
+
+  const testCrucibleProgram = await request("/api/skill-crucible/programs/" + crucibleDraft.id + "/test", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(testCrucibleProgram.status, 200);
+  assert.equal((await testCrucibleProgram.json()).validation.passed, true);
+
+  const approveCrucibleProgram = await request("/api/skill-crucible/programs/" + crucibleDraft.id + "/approve", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(approveCrucibleProgram.status, 200);
+  assert.equal((await approveCrucibleProgram.json()).program.status, "approved");
+
+  const runCrucibleProgram = await request("/api/skill-crucible/programs/" + crucibleDraft.id + "/run", {
+    method: "POST",
+    body: JSON.stringify({ input: "Please explain in simple Hinglish with examples", applicationId: "web-dashboard" })
+  });
+  assert.equal(runCrucibleProgram.status, 200);
+  const crucibleResult = (await runCrucibleProgram.json()).result;
+  assert.equal(crucibleResult.sideEffects, false);
+  assert.equal(crucibleResult.executionMode, "isolated-allow-listed-dsl");
+  assert.match(crucibleResult.output, /Matched: yes/);
+
+  const nonMatchingCrucibleRun = await request("/api/skill-crucible/programs/" + crucibleDraft.id + "/run", {
+    method: "POST",
+    body: JSON.stringify({ input: "Tell me the weather", applicationId: "web-dashboard" })
+  });
+  assert.equal(nonMatchingCrucibleRun.status, 409);
+
+  const pauseCrucibleProgram = await request("/api/skill-crucible/programs/" + crucibleDraft.id + "/pause", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(pauseCrucibleProgram.status, 200);
+  assert.equal((await pauseCrucibleProgram.json()).program.status, "paused");
+
+  const crucibleList = await request("/api/skill-crucible");
+  assert.equal(crucibleList.status, 200);
+  assert.ok((await crucibleList.json()).programs.some((item) => item.id === crucibleDraft.id));
 
   const versions = await request("/api/skills/" + skillPayload.skill.id + "/versions");
   assert.equal(versions.status, 200);
