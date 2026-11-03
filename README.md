@@ -475,7 +475,7 @@ The current `docs/JARVIS_PHASE_ROADMAP.md` supersedes historical component label
 - Store PDF, JPEG, PNG, WebP, MP3, M4A, WAV, OGG, WebM and MP4 files as managed attachments with metadata, collections and tags.
 - Search/filter by title, extracted text, description, collection, tags and review status; edit metadata, download, approve, reject, reset review or delete.
 - File content is checked against the declared MIME type and file signature. Filenames are reduced to a safe basename; server storage keys are generated IDs. Maximum 15 MiB per file, 120 records and 200 MiB aggregate.
-- All imports begin unreviewed. Only explicitly user-reviewed text or descriptions can enter assistant context. Editing metadata resets the review state.
+- All imports begin unreviewed. Only explicitly user-reviewed text or descriptions can enter assistant context. Editing metadata resets the review state. If online AI is enabled, approved context may be sent to the configured provider; disable online AI to use the built-in offline retrieval path.
 - No automatic OCR, PDF text extraction, image understanding, audio transcription or video transcription is included. These files are attachment-only in this phase; user descriptions are searchable.
 - Binary bytes are stored in a server filesystem directory; metadata is stored with the existing state/Neon data. Set `JARVIS_DOCUMENTS_DIR` (or `JARVIS_DATA_DIR`) to a durable mounted volume in production. Neon alone does not persist uploaded file bytes.
 - Binary attachments are excluded from the JSON data export; download each attachment separately.
