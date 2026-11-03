@@ -2,6 +2,7 @@ import { createVoiceController } from "./voice-controller.js";
 import { createOrbitalVisual } from "./orbital-visual.js";
 import { createMediaWorkspace } from "./media-workspace.js";
 import { createYouTubePublisher } from "./youtube-publisher.js";
+import { createKnowledgeDocuments } from "./knowledge-documents.js";
 const $ = (selector) => document.querySelector(selector);
 const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, taskPlan: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", knowledgeFilter: "all", knowledgeSummary: { total: 0, trusted: 0, unreviewed: 0, rejected: 0 }, diagnostics: null, activeView: "chat" };
 let toastTimer;
@@ -29,6 +30,7 @@ async function api(url, options = {}) {
 
 const mediaWorkspace = createMediaWorkspace({ api, toast });
 const youtubePublisher = createYouTubePublisher({ api, toast });
+const knowledgeDocuments = createKnowledgeDocuments({ api, toast });
 
 function showLogin() {
   $("#login-screen").classList.remove("hidden");
@@ -93,6 +95,7 @@ async function refreshState() {
   renderExternalActions();
   renderSavedResearch();
   await refreshKnowledge();
+  await knowledgeDocuments.refresh();
 }
 
 function setView(name) {
@@ -3329,9 +3332,9 @@ $("#learning-preview-form").addEventListener("submit", async (event) => {
     const summary = document.createElement("p");
     summary.className = "small muted";
     const counts = data.counts || {};
-    summary.textContent = (counts.included || 0) + " lesson(s) available to the offline assistant · " +
+    summary.textContent = (counts.included || 0) + " knowledge item(s) available to the offline assistant · " +
       (counts.awaitingReview || 0) + " awaiting review excluded · " +
-      (counts.rejected || 0) + " rejected excluded. Preview only; nothing was saved or sent to an AI provider.";
+      (counts.rejected || 0) + " rejected excluded · " + (counts.documentsAwaitingReview || 0) + " document(s) awaiting review excluded. Preview only; nothing was saved or sent to an AI provider.";
     target.append(summary);
 
     if (!Array.isArray(data.contextItems) || !data.contextItems.length) {

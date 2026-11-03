@@ -133,6 +133,16 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(blockedDiagnostics.status, 401);
   const blockedKnowledge = await request("/api/knowledge", { headers: {} });
   assert.equal(blockedKnowledge.status, 401);
+  const blockedDocuments = await request("/api/knowledge/documents", { headers: {} });
+  assert.equal(blockedDocuments.status, 401);
+  const blockedDocumentUpload = await request("/api/knowledge/documents", {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream" },
+    body: Buffer.from("unauthorized")
+  });
+  assert.equal(blockedDocumentUpload.status, 401);
+  const blockedDocumentDownload = await request("/api/knowledge/documents/not-an-id/download", { headers: {} });
+  assert.equal(blockedDocumentDownload.status, 401);
   const blockedLearningPreview = await request("/api/learning/preview", {
     method: "POST",
     headers: {},
@@ -589,6 +599,117 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(offlineLearnedPayload.externalAI, false);
   assert.match(offlineLearnedPayload.answer, /total displacement divided by total time/i);
   assert.match(offlineLearnedPayload.answer, /Saved Knowledge Library/i);
+
+  const documentStorageStatus = await request("/api/knowledge/documents/status");
+  assert.equal(documentStorageStatus.status, 200);
+  const documentStorageInfo = await documentStorageStatus.json();
+  assert.equal(documentStorageInfo.enabled, true);
+  assert.equal(documentStorageInfo.storagePathConfigured, true);
+  assert.equal(documentStorageInfo.durabilityVerified, false);
+  assert.equal(documentStorageInfo.extraction.pdfTextExtraction, false);
+
+  const documentBytes = Buffer.from("# Average speed\nAverage speed equals total distance divided by total time.", "utf8");
+  const documentHeaders = {
+    "content-type": "application/octet-stream",
+    "x-jarvis-filename": encodeURIComponent("average-speed.md"),
+    "x-jarvis-mime-type": "text/markdown",
+    "x-jarvis-title": encodeURIComponent("Average speed notes"),
+    "x-jarvis-collection": encodeURIComponent("JEE Physics"),
+    "x-jarvis-tags": encodeURIComponent("motion, kinematics"),
+    "x-jarvis-description": encodeURIComponent("Class notes on average speed.")
+  };
+  const documentUpload = await request("/api/knowledge/documents", {
+    method: "POST",
+    headers: documentHeaders,
+    body: documentBytes
+  });
+  assert.equal(documentUpload.status, 201);
+  const documentPayload = await documentUpload.json();
+  assert.equal(documentPayload.item.reviewStatus, "unreviewed");
+  assert.equal(documentPayload.item.indexingMode, "text");
+  assert.equal(documentPayload.item.collection, "JEE Physics");
+  assert.match(documentPayload.item.extractedText, /total distance divided by total time/i);
+  assert.equal(Object.hasOwn(documentPayload.item, "storageKey"), false);
+
+  const duplicateDocument = await request("/api/knowledge/documents", {
+    method: "POST",
+    headers: { ...documentHeaders, "x-jarvis-filename": encodeURIComponent("average-speed-copy.md") },
+    body: documentBytes
+  });
+  assert.equal(duplicateDocument.status, 200);
+  assert.equal((await duplicateDocument.json()).duplicate, true);
+
+  const documentSearch = await request("/api/knowledge/documents?q=average%20speed&collection=JEE%20Physics");
+  assert.equal(documentSearch.status, 200);
+  const documentSearchPayload = await documentSearch.json();
+  assert.equal(documentSearchPayload.count, 1);
+  assert.equal(documentSearchPayload.items[0].id, documentPayload.item.id);
+
+  const prematureDocumentApproval = await request("/api/knowledge/documents/" + documentPayload.item.id, {
+    method: "PATCH",
+    body: JSON.stringify({ reviewStatus: "user-reviewed" })
+  });
+  assert.equal(prematureDocumentApproval.status, 400);
+
+  const approveDocument = await request("/api/knowledge/documents/" + documentPayload.item.id, {
+    method: "PATCH",
+    body: JSON.stringify({ reviewStatus: "user-reviewed", confirmReview: true })
+  });
+  assert.equal(approveDocument.status, 200);
+  assert.equal((await approveDocument.json()).item.reviewStatus, "user-reviewed");
+
+  const combinedLearningPreview = await request("/api/learning/preview", {
+    method: "POST",
+    body: JSON.stringify({ query: "average speed" })
+  });
+  assert.equal(combinedLearningPreview.status, 200);
+  const combinedLearningPreviewPayload = await combinedLearningPreview.json();
+  assert.equal(combinedLearningPreviewPayload.counts.documentsIncluded, 1);
+  assert.equal(combinedLearningPreviewPayload.policy.maximumContextItems, 5);
+  assert.ok(combinedLearningPreviewPayload.contextItems.some((item) => item.sourceKind === "user-document"));
+
+  const documentAnswer = await request("/api/chat", {
+    method: "POST",
+    body: JSON.stringify({ message: "Explain average speed" })
+  });
+  assert.equal(documentAnswer.status, 200);
+  const documentAnswerPayload = await documentAnswer.json();
+  assert.equal(documentAnswerPayload.externalAI, false);
+  assert.match(documentAnswerPayload.answer, /total distance divided by total time/i);
+  assert.match(documentAnswerPayload.answer, /Average speed notes/i);
+
+  const documentDownload = await request("/api/knowledge/documents/" + documentPayload.item.id + "/download");
+  assert.equal(documentDownload.status, 200);
+  assert.match(documentDownload.headers.get("content-disposition") || "", /attachment/i);
+  assert.equal(documentDownload.headers.get("x-content-type-options"), "nosniff");
+  assert.deepEqual(Buffer.from(await documentDownload.arrayBuffer()), documentBytes);
+
+  await fs.writeFile(path.join(tempDir, "documents", documentPayload.item.id + ".md"), "tampered file bytes");
+  const tamperedDownload = await request("/api/knowledge/documents/" + documentPayload.item.id + "/download");
+  assert.equal(tamperedDownload.status, 409);
+
+  const editReviewedDocument = await request("/api/knowledge/documents/" + documentPayload.item.id, {
+    method: "PATCH",
+    body: JSON.stringify({ description: "Updated graph explanation." })
+  });
+  assert.equal(editReviewedDocument.status, 200);
+  assert.equal((await editReviewedDocument.json()).item.reviewStatus, "unreviewed");
+
+  const spoofedDocument = await request("/api/knowledge/documents", {
+    method: "POST",
+    headers: {
+      "content-type": "application/octet-stream",
+      "x-jarvis-filename": "photo.png",
+      "x-jarvis-mime-type": "image/png"
+    },
+    body: Buffer.from("not a PNG")
+  });
+  assert.equal(spoofedDocument.status, 400);
+
+  const deleteDocument = await request("/api/knowledge/documents/" + documentPayload.item.id, { method: "DELETE" });
+  assert.equal(deleteDocument.status, 200);
+  const deletedDocumentDownload = await request("/api/knowledge/documents/" + documentPayload.item.id + "/download");
+  assert.equal(deletedDocumentDownload.status, 404);
 
   const combinedSearch = await request("/api/search?q=photovoltaic");
   assert.equal(combinedSearch.status, 200);
