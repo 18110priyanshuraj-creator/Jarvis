@@ -289,13 +289,13 @@ export function createKnowledgeDocuments({ api, toast }) {
       const headers = {
         "Content-Type": "application/octet-stream",
         "X-Jarvis-Filename": encodeURIComponent(file.name),
-        "X-Jarvis-Mime-Type": file.type || ({
+        "X-Jarvis-Mime-Type": ({
           txt: "text/plain", md: "text/markdown", markdown: "text/markdown",
           csv: "text/csv", json: "application/json", pdf: "application/pdf",
           jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp",
           mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav", ogg: "audio/ogg",
           weba: "audio/webm", mp4: "video/mp4", webm: "video/webm"
-        })[file.name.split(".").pop().toLowerCase()] || "application/octet-stream",
+        })[file.name.split(".").pop().toLowerCase()] || file.type || "application/octet-stream",
         "X-Jarvis-Title": encodeURIComponent($("#knowledge-documents-title").value.trim()),
         "X-Jarvis-Collection": encodeURIComponent($("#knowledge-documents-collection").value.trim()),
         "X-Jarvis-Tags": encodeURIComponent($("#knowledge-documents-tags").value.trim()),
