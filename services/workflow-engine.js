@@ -209,8 +209,10 @@ export function sanitizeWorkflowRunRecord(runInput) {
   return run;
 }
 
-export function getWorkflowRecoverySummary(runInput) {
+export function getWorkflowRecoverySummary(runInput, options = {}) {
   const run = runInput && typeof runInput === "object" ? runInput : {};
+  const configuredLimit = Number(options?.maxAttempts);
+  const maxAttempts = Number.isInteger(configuredLimit) && configuredLimit >= 1 && configuredLimit <= 3 ? configuredLimit : 3;
   const index = Number.isInteger(run.currentStepIndex)
     ? run.currentStepIndex
     : Number.isInteger(run.nextStepIndex) ? run.nextStepIndex : -1;
@@ -223,7 +225,7 @@ export function getWorkflowRecoverySummary(runInput) {
       Object.hasOwn(WORKFLOW_FAILURES, storedFailure.code)
       ? WORKFLOW_FAILURES[storedFailure.code]
       : classifyWorkflowError(step?.result?.error || "");
-    const retryable = classified.retryable === true && attempts < 3 && step?.status === "failed";
+    const retryable = classified.retryable === true && attempts < maxAttempts && step?.status === "failed";
     return {
       runId: cleanText(run.id, 80),
       status: run.status,
@@ -236,7 +238,7 @@ export function getWorkflowRecoverySummary(runInput) {
         at: typeof storedFailure?.at === "string" ? storedFailure.at : ""
       },
       attempts,
-      maxAttempts: 3,
+      maxAttempts,
       canRetry: retryable,
       canResume: false,
       requiresManualReview: !retryable,
@@ -666,15 +668,20 @@ export function resumeWorkflowRun(runInput) {
   return run;
 }
 
-export function retryWorkflowRun(runInput) {
+export function retryWorkflowRun(runInput, options = {}) {
   const run = structuredClone(runInput);
+  const configuredLimit = Number(options?.maxAttempts);
+  const maxAttempts = Number.isInteger(configuredLimit) && configuredLimit >= 1 && configuredLimit <= 3 ? configuredLimit : 3;
   if (run.status !== "failed") throw new Error("Only a failed workflow run can be retried.");
   const index = Number.isInteger(run.currentStepIndex)
     ? run.currentStepIndex
     : Number.isInteger(run.nextStepIndex) ? run.nextStepIndex : -1;
   const step = run.steps?.[index];
   if (!step || step.status !== "failed") throw new Error("The failed step could not be identified safely.");
-  if ((Number(step.attempts) || 0) >= 3) throw new Error("This step reached the maximum of three attempts.");
+  if ((Number(step.attempts) || 0) >= maxAttempts) {
+    const limitText = maxAttempts === 3 ? "three attempts" : maxAttempts === 1 ? "one attempt" : maxAttempts + " attempts";
+    throw new Error("This step reached the maximum of " + limitText + ".");
+  }
   const storedFailure = run.failure || step.result?.failure;
   const classification = storedFailure && Object.hasOwn(WORKFLOW_FAILURES, storedFailure.code)
     ? WORKFLOW_FAILURES[storedFailure.code]
