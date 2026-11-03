@@ -32,6 +32,7 @@ import { createLearningNote, parseExplicitLearningCommand, previewIndependentLea
 import { buildDocumentKnowledgeContext, createKnowledgeDocument, DOCUMENT_LIMITS, findDuplicateDocument, normalizeKnowledgeDocument, resolveDocumentStoragePath, searchKnowledgeDocuments, toPublicKnowledgeDocument } from "./services/knowledge-documents.js";
 import { buildMemoryContext, findExactMemory, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, parseExplicitForgetIntent, previewMemoryContext, searchMemories } from "./services/memory.js";
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeApplicationId, normalizeSkill, pauseSkill, SKILL_APPLICATION_CATALOG, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
+import { approveSkillProgram, createSkillProgramCandidate, createSkillProgramVersion, getSkillCrucibleStatus, normalizeSkillProgram, pauseSkillProgram, runApprovedSkillProgram, SKILL_CRUCIBLE_LIMITS, validateSkillProgram } from "./services/skill-crucible.js";
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
 import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, classifyWorkflowError, createWorkflowDraft, createWorkflowRun, getWorkflowRecoverySummary, normalizeWorkflow, pauseWorkflow, pauseWorkflowRun, recoverInterruptedWorkflowRuns, resumeWorkflowRun, retryWorkflowRun, sanitizeWorkflowRunRecord, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
 import { createTaskPlan, TASK_PLANNER_LIMITS } from "./services/task-planner.js";
@@ -198,7 +199,7 @@ const oauthLaunchLimiter = rateLimit({
 
 app.use("/api", apiLimiter);
 
-let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], workflowStepEffects: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [], knowledgeDocuments: [], mediaProjects: [], youtubePublications: [] };
+let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], skillPrograms: [], workflows: [], workflowRuns: [], workflowStepEffects: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [], knowledgeDocuments: [], mediaProjects: [], youtubePublications: [] };
 let writeQueue = Promise.resolve();
 let neonSql;
 let databaseRevision = null;
@@ -318,6 +319,12 @@ function normalizeStore(parsed = {}) {
     skills: Array.isArray(parsed.skills)
       ? parsed.skills.slice(-SKILL_LIMITS.skills).flatMap((item) => {
           try { return [normalizeSkill(item)]; } catch { return []; }
+        })
+      : [],
+    skillPrograms: Array.isArray(parsed.skillPrograms)
+      ? parsed.skillPrograms.slice(-SKILL_CRUCIBLE_LIMITS.programs).flatMap((item) => {
+          const normalized = normalizeSkillProgram(item);
+          return normalized ? [normalized] : [];
         })
       : [],
     workflows: Array.isArray(parsed.workflows)
@@ -1384,6 +1391,112 @@ app.delete("/api/skills/:id", requireAuth, async (req, res) => {
   const before = store.skills.length;
   store.skills = store.skills.filter((skill) => skill.id !== req.params.id);
   if (before === store.skills.length) return res.status(404).json({ error: "Skill not found." });
+  await saveStore();
+  res.json({ ok: true });
+});
+
+app.get("/api/skill-crucible", requireAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    programs: store.skillPrograms.slice().reverse(),
+    status: getSkillCrucibleStatus(store.skillPrograms),
+    activeSkills: store.skills.filter((item) => item.status === "active" && !item.paused &&
+      item.activeVersion === item.currentVersion).map((item) => ({
+        id: item.id, name: item.name, activeVersion: item.activeVersion,
+        applicationIds: item.applicationIds || [], triggers: item.triggers || []
+      }))
+  });
+});
+
+app.post("/api/skill-crucible/programs", requireAuth, async (req, res) => {
+  if (store.skillPrograms.length >= SKILL_CRUCIBLE_LIMITS.programs) {
+    return res.status(409).json({ error: "Skill program limit reached. Remove an old program first." });
+  }
+  let program;
+  try {
+    program = createSkillProgramCandidate(req.body, store.skills);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Skill program draft is invalid." });
+  }
+  if (store.skillPrograms.some((item) => item.name.toLocaleLowerCase() === program.name.toLocaleLowerCase())) {
+    return res.status(409).json({ error: "A skill program with this name already exists." });
+  }
+  store.skillPrograms.push(program);
+  await saveStore();
+  res.status(201).json({ program });
+});
+
+app.patch("/api/skill-crucible/programs/:id", requireAuth, async (req, res) => {
+  const existing = store.skillPrograms.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Skill program not found." });
+  let updated;
+  try {
+    updated = createSkillProgramVersion(existing, req.body, store.skills);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "Skill program version is invalid." });
+  }
+  store.skillPrograms = store.skillPrograms.map((item) => item.id === existing.id ? updated : item);
+  await saveStore();
+  res.json({ program: updated });
+});
+
+app.post("/api/skill-crucible/programs/:id/test", requireAuth, async (req, res) => {
+  const existing = store.skillPrograms.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Skill program not found." });
+  try {
+    const result = validateSkillProgram(existing);
+    store.skillPrograms = store.skillPrograms.map((item) => item.id === existing.id ? result.program : item);
+    await saveStore();
+    res.json({ program: result.program, validation: result.validation });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Skill program tests could not run." });
+  }
+});
+
+app.post("/api/skill-crucible/programs/:id/approve", requireAuth, async (req, res) => {
+  const existing = store.skillPrograms.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Skill program not found." });
+  let approved;
+  try {
+    approved = approveSkillProgram(existing, store.skills);
+  } catch (error) {
+    return res.status(409).json({ error: error.message || "Skill program cannot be approved." });
+  }
+  store.skillPrograms = store.skillPrograms.map((item) => item.id === existing.id ? approved : item);
+  await saveStore();
+  res.json({ program: approved });
+});
+
+app.post("/api/skill-crucible/programs/:id/run", requireAuth, (req, res) => {
+  const existing = store.skillPrograms.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Skill program not found." });
+  const input = typeof req.body?.input === "string" ? req.body.input : "";
+  const applicationId = normalizeApplicationId(req.body?.applicationId || "web-dashboard");
+  if (!applicationId || applicationId === "*") {
+    return res.status(400).json({ error: "Choose a valid application scope." });
+  }
+  try {
+    const result = runApprovedSkillProgram(existing, store.skills, input, applicationId);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ result });
+  } catch (error) {
+    res.status(409).json({ error: error.message || "Skill program cannot run." });
+  }
+});
+
+app.post("/api/skill-crucible/programs/:id/pause", requireAuth, async (req, res) => {
+  const existing = store.skillPrograms.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Skill program not found." });
+  const paused = pauseSkillProgram(existing);
+  store.skillPrograms = store.skillPrograms.map((item) => item.id === existing.id ? paused : item);
+  await saveStore();
+  res.json({ program: paused });
+});
+
+app.delete("/api/skill-crucible/programs/:id", requireAuth, async (req, res) => {
+  const before = store.skillPrograms.length;
+  store.skillPrograms = store.skillPrograms.filter((item) => item.id !== req.params.id);
+  if (before === store.skillPrograms.length) return res.status(404).json({ error: "Skill program not found." });
   await saveStore();
   res.json({ ok: true });
 });
