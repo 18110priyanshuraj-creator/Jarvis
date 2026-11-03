@@ -2257,7 +2257,12 @@ app.patch("/api/knowledge/documents/:id", requireAuth, async (req, res) => {
   const existing = store.knowledgeDocuments.find((item) => item.id === req.params.id);
   if (!existing) return res.status(404).json({ error: "Document not found." });
   const body = req.body || {};
-  const nextReview = body.reviewStatus === undefined ? existing.reviewStatus : cleanText(body.reviewStatus, 30);
+  const metadataChanged = ["collection", "tags", "description"].some((key) =>
+    body[key] !== undefined && JSON.stringify(body[key]) !== JSON.stringify(existing[key])
+  );
+  const nextReview = body.reviewStatus === undefined
+    ? (metadataChanged ? "unreviewed" : existing.reviewStatus)
+    : cleanText(body.reviewStatus, 30);
   if (!["unreviewed", "user-reviewed", "rejected"].includes(nextReview)) {
     return res.status(400).json({ error: "Choose reviewed, needs review, or rejected." });
   }
