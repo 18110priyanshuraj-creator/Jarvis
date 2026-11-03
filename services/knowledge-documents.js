@@ -59,12 +59,12 @@ function safeDescription(value) {
 }
 
 export function sanitizeDocumentFileName(value) {
-  const leaf = cleanText(value, 300).replace(/\\\\/g, "/").split("/").pop() || "";
+  const leaf = cleanText(value, 300).replace(/\\/g, "/").split("/").pop() || "";
   const name = leaf
-    .replace(/[\\u0000-\\u001f\\u007f]/g, "")
-    .replace(/[^\\p{L}\\p{N}._()\\[\\] -]/gu, "_")
-    .replace(/\\.{2,}/g, ".")
-    .replace(/^\\.+/, "")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .replace(/[^\p{L}\p{N}._()\[\] -]/gu, "_")
+    .replace(/\.{2,}/g, ".")
+    .replace(/^\.+/, "")
     .trim()
     .slice(0, DOCUMENT_LIMITS.fileName);
   return name || "document";
