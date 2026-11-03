@@ -2145,8 +2145,33 @@ app.post("/api/learning/preview", requireAuth, (req, res) => {
   const query = typeof req.body?.query === "string" ? req.body.query.trim() : "";
   try {
     const preview = previewIndependentLearning(store.knowledge, query);
+    const documentContext = buildDocumentKnowledgeContext(store.knowledgeDocuments, query, DOCUMENT_LIMITS.contextItems);
+    const documentMatches = searchKnowledgeDocuments(store.knowledgeDocuments, query, "", "all", DOCUMENT_LIMITS.files);
+    const documentCounts = documentMatches.reduce((summary, item) => {
+      summary.matched += 1;
+      if (item.reviewStatus === "unreviewed") summary.awaitingReview += 1;
+      if (item.reviewStatus === "rejected") summary.rejected += 1;
+      return summary;
+    }, { matched: 0, awaitingReview: 0, rejected: 0 });
     res.setHeader("Cache-Control", "no-store");
-    res.json(preview);
+    res.json({
+      ...preview,
+      contextItems: [...preview.contextItems, ...documentContext],
+      counts: {
+        ...preview.counts,
+        matched: preview.counts.matched + documentCounts.matched,
+        included: preview.counts.included + documentContext.length,
+        documentsMatched: documentCounts.matched,
+        documentsIncluded: documentContext.length,
+        documentsAwaitingReview: documentCounts.awaitingReview,
+        documentsRejected: documentCounts.rejected
+      },
+      policy: {
+        ...preview.policy,
+        documentRetrieval: "only user-reviewed text and user descriptions; PDFs and media are metadata-only",
+        modelTraining: false
+      }
+    });
   } catch (error) {
     res.status(400).json({ error: error?.message || "Learning context preview is invalid." });
   }
