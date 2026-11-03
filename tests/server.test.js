@@ -665,6 +665,7 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(combinedLearningPreview.status, 200);
   const combinedLearningPreviewPayload = await combinedLearningPreview.json();
   assert.equal(combinedLearningPreviewPayload.counts.documentsIncluded, 1);
+  assert.equal(combinedLearningPreviewPayload.policy.maximumContextItems, 5);
   assert.ok(combinedLearningPreviewPayload.contextItems.some((item) => item.sourceKind === "user-document"));
 
   const documentAnswer = await request("/api/chat", {
