@@ -247,6 +247,17 @@
         <div id="knowledge-review-summary" class="research-hint knowledge-review-summary" aria-live="polite">
           Your notes are user-authored. Web research enters assistant context only after you mark it reviewed.
         </div>
+        <div class="research-hint learning-preview-panel">
+          <strong>Independent learning — preview what JARVIS remembers</strong>
+          <p>Teach a lesson in chat with <code>Learn: title | lesson</code>. JARVIS saves only explicit lessons. Preview the approved notes that would be retrieved for a question; this preview is read-only.</p>
+          <form id="learning-preview-form" class="search-form">
+            <input id="learning-preview-query" maxlength="300" required placeholder="Enter a question, e.g. explain average velocity">
+            <button class="primary" type="submit">Preview offline knowledge</button>
+          </form>
+          <div id="learning-preview-result" class="learning-preview-result" aria-live="polite">
+            <span class="small muted">No preview has been run. Unreviewed and rejected web research will be excluded.</span>
+          </div>
+        </div>
         <form id="knowledge-form" class="form-card">
           <h2>Add your own knowledge note</h2>
           <label for="knowledge-title">Title</label>

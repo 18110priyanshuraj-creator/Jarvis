@@ -452,3 +452,16 @@ Requirements: Node.js 22 or later.
 - `self-hosted` means the inference server is controlled/hosted by the JARVIS owner; it does not mean the base model was trained from scratch. A genuinely JARVIS-trained foundation model requires a separate dataset, training/evaluation pipeline, model-artifact storage and compute. Saved memories and feedback do not silently train model weights.
 - Vercel hosts the web application, not a large LLM's model weights. A self-hosted model endpoint must run on a separate always-on machine/server with sufficient RAM/accelerator capacity and be exposed only through authenticated HTTPS. Never put provider keys in the browser or Git.
 - `JARVIS_AI_RUNTIME` accepts `self-hosted` or defaults safely to `external`. Existing AI enable flags remain off until a real model endpoint has been connected and explicitly tested.
+
+## Current 32-phase roadmap — Phase 19: Independent Learning
+
+The older component-milestone headings in this README are retained for historical context. The current `docs/JARVIS_PHASE_ROADMAP.md` defines Phase 19 as Independent Learning.
+
+- Teach one lesson deliberately in chat: `Learn: <title> | <lesson>`, `Teach JARVIS: <title> | <lesson>`, or `Sikhao: <title> | <lesson>`.
+- Only these explicit prefixes create a saved learning entry; ordinary conversation, user questions, ratings and web results are not silently promoted to knowledge.
+- A lesson is saved in the existing Knowledge Library as a user-authored note, with the existing privacy and duplicate checks. Chat lessons are limited to 500 characters.
+- Ask a normal question later and the offline assistant can retrieve up to three relevant user-authored or user-reviewed notes. Unreviewed/rejected web research remains excluded.
+- The Knowledge page includes a read-only preview of the relevant offline context. It does not send the preview to an AI provider or store the preview prompt.
+- This is transparent retrieval learning. It does not retrain model weights, automatically fact-check lessons, or guarantee semantic reasoning. Physical Galaxy Tab A9 acceptance remains Phase 31.
+
+Full contract: `docs/JARVIS_PHASE_19_INDEPENDENT_LEARNING.md`.

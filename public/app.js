@@ -3313,6 +3313,72 @@ $("#knowledge-review-filter").addEventListener("change", async (event) => {
   }
 });
 
+$("#learning-preview-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button[type=submit]");
+  const target = $("#learning-preview-result");
+  button.disabled = true;
+  target.replaceChildren();
+  try {
+    const query = $("#learning-preview-query").value.trim();
+    const data = await api("/api/learning/preview", {
+      method: "POST",
+      body: JSON.stringify({ query })
+    });
+    const summary = document.createElement("p");
+    summary.className = "small muted";
+    const counts = data.counts || {};
+    summary.textContent = (counts.included || 0) + " lesson(s) available to the offline assistant · " +
+      (counts.awaitingReview || 0) + " awaiting review excluded · " +
+      (counts.rejected || 0) + " rejected excluded. Preview only; nothing was saved or sent to an AI provider.";
+    target.append(summary);
+
+    if (!Array.isArray(data.contextItems) || !data.contextItems.length) {
+      target.append(makeEmpty("No approved saved lesson matched this question. JARVIS will not fill the gap by inventing knowledge."));
+      return;
+    }
+
+    for (const item of data.contextItems) {
+      const card = document.createElement("article");
+      card.className = "list-item learning-preview-card";
+      const body = document.createElement("div");
+      body.className = "list-item-main";
+      const title = document.createElement("strong");
+      title.textContent = item.title || "Saved lesson";
+      const content = document.createElement("p");
+      content.textContent = item.content || "";
+      const meta = document.createElement("div");
+      meta.className = "list-item-meta";
+      meta.textContent = (item.category || "general") + " · " +
+        (item.reviewStatus === "user-reviewed" ? "Reviewed by you" : "Your note");
+      body.append(title, content, meta);
+      card.append(body);
+      if (Array.isArray(item.sources) && item.sources.length) {
+        const sourceList = document.createElement("div");
+        sourceList.className = "research-sources";
+        for (const source of item.sources.slice(0, 4)) {
+          const safe = safeResearchUrl(source.url);
+          if (!safe) continue;
+          const link = document.createElement("a");
+          link.href = safe;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = source.title || new URL(safe).hostname;
+          sourceList.append(link);
+        }
+        if (sourceList.childElementCount) card.append(sourceList);
+      }
+      target.append(card);
+    }
+  } catch (error) {
+    target.append(makeEmpty(error.message));
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
 $("#knowledge-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = event.currentTarget.querySelector("button[type=submit]");

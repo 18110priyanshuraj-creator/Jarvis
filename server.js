@@ -28,6 +28,7 @@ import {
   YOUTUBE_UPLOAD_MIME_TYPES
 } from "./services/youtube-publisher.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, mergeDuplicateKnowledge, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
+import { createLearningNote, parseExplicitLearningCommand, previewIndependentLearning } from "./services/learning-engine.js";
 import { buildMemoryContext, findExactMemory, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, parseExplicitForgetIntent, previewMemoryContext, searchMemories } from "./services/memory.js";
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeApplicationId, normalizeSkill, pauseSkill, SKILL_APPLICATION_CATALOG, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
@@ -566,6 +567,7 @@ async function processAssistantTurn(message, conversationKey, applicationId = "w
     .slice(-10)
     .map(({ role, content }) => ({ role, content }));
 
+  const learningIntent = parseExplicitLearningCommand(message);
   const memoryIntent = parseExplicitMemoryIntent(message);
   const forgetIntent = parseExplicitForgetIntent(message);
   let result;
@@ -591,6 +593,70 @@ async function processAssistantTurn(message, conversationKey, applicationId = "w
         engine: "memory",
         externalAI: false
       };
+    }
+  } else if (learningIntent?.error) {
+    result = {
+      answer: learningIntent.error,
+      engine: learningIntent.blocked ? "privacy-guard" : "independent-learning",
+      externalAI: false,
+      learning: { saved: false }
+    };
+  } else if (learningIntent?.matched) {
+    let learned;
+    try {
+      learned = createLearningNote(store.knowledge, learningIntent);
+    } catch (error) {
+      if (error?.code !== "LEARNING_INVALID" && error?.code !== "LEARNING_LIMIT") {
+        console.error("Independent learning validation failed:", safeErrorMetadata(error));
+        throw error;
+      }
+      result = {
+        answer: error.message,
+        engine: "independent-learning",
+        externalAI: false,
+        learning: { saved: false }
+      };
+    }
+
+    if (learned) {
+      const previousKnowledge = store.knowledge;
+      if (learned.duplicate && learned.merged) {
+        store.knowledge = store.knowledge.map((item, index) =>
+          index === learned.index ? learned.item : item
+        );
+      } else if (!learned.duplicate) {
+        store.knowledge = [...store.knowledge, learned.item];
+      }
+
+      if (learned.merged || !learned.duplicate) {
+        try {
+          await saveStore();
+        } catch (error) {
+          store.knowledge = previousKnowledge;
+          throw error;
+        }
+      }
+
+      if (learned.duplicate) {
+        const reviewMessage = learned.item.reviewStatus === "unreviewed"
+          ? " The existing entry still needs your source review and remains excluded from assistant context."
+          : learned.item.reviewStatus === "rejected"
+            ? " The existing entry is still rejected and remains excluded from assistant context."
+            : " The existing user-authored/reviewed entry remains available for relevant retrieval.";
+        result = {
+          answer: "That lesson already exists in your Knowledge Library; I did not create a duplicate." + reviewMessage + " No model weights were trained.",
+          engine: "independent-learning",
+          externalAI: false,
+          learning: { saved: true, duplicate: true, reviewStatus: learned.item.reviewStatus }
+        };
+      } else {
+        result = {
+          answer: "Lesson saved to your Knowledge Library as a user-authored note. I can retrieve it for matching offline questions. This does not train model weights or independently fact-check the lesson.",
+          engine: "independent-learning",
+          externalAI: false,
+          learning: { saved: true, duplicate: false, reviewStatus: learned.item.reviewStatus }
+        };
+      }
     }
   } else if (memoryIntent?.blocked) {
     result = {
@@ -2050,6 +2116,17 @@ app.get("/api/search", requireAuth, (req, res) => {
     .slice(0, 10);
 
   res.json({ query, results, source: "saved-and-embedded-knowledge", externalSearch: false });
+});
+
+app.post("/api/learning/preview", requireAuth, (req, res) => {
+  const query = typeof req.body?.query === "string" ? req.body.query.trim() : "";
+  try {
+    const preview = previewIndependentLearning(store.knowledge, query);
+    res.setHeader("Cache-Control", "no-store");
+    res.json(preview);
+  } catch (error) {
+    res.status(400).json({ error: error?.message || "Learning context preview is invalid." });
+  }
 });
 
 app.get("/api/knowledge", requireAuth, (req, res) => {
