@@ -2280,15 +2280,25 @@ app.post("/api/knowledge/documents", requireAuth, documentUploadLimiter,
     activeDocumentUploads.set(document.sha256, document.byteSize);
     const filePath = resolveDocumentStoragePath(DOCUMENTS_DIR, document);
     const previousDocuments = store.knowledgeDocuments;
+    let fileCreatedByThisRequest = false;
     try {
       await fs.mkdir(DOCUMENTS_DIR, { recursive: true, mode: 0o700 });
-      await fs.writeFile(filePath, req.body, { flag: "wx", mode: 0o600 });
+      const handle = await fs.open(filePath, "wx", 0o600);
+      fileCreatedByThisRequest = true;
+      try {
+        await handle.writeFile(req.body);
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
       store.knowledgeDocuments = [...store.knowledgeDocuments, document];
       await saveStore();
       res.status(201).json({ item: toPublicKnowledgeDocument(document), duplicate: false });
     } catch (error) {
       store.knowledgeDocuments = previousDocuments;
-      try { await fs.unlink(filePath); } catch { /* no partially written record remains */ }
+      if (fileCreatedByThisRequest) {
+        try { await fs.unlink(filePath); } catch { /* remove only the blob created by this request */ }
+      }
       console.error("Knowledge document upload failed:", safeErrorMetadata(error));
       if (error?.code === "EEXIST") return res.status(409).json({ error: "This document already exists in storage. Refresh the library." });
       res.status(503).json({ error: "JARVIS could not safely store this document. No library entry was created." });
