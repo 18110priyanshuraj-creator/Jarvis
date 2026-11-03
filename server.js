@@ -38,6 +38,7 @@ import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, classifyWorkflo
 import { approveRepairProposal, AUTO_HEAL_LIMITS, createDefaultAutoHealState, createRepairProposal, getAutoHealStatus, inspectWorkflowFailures, normalizeAutoHealState, rollbackRepairProposal } from "./services/auto-heal-engine.js";
 import { createLocalTaskPlan, createTaskPlan, TASK_PLANNER_LIMITS } from "./services/task-planner.js";
 import { createSpecialistRun, executeSpecialistRun, getSpecialistWorkerCatalog, inspectSpecialistRequest, normalizeSpecialistRun, recoverInterruptedSpecialistRuns, SPECIALIST_WORKER_LIMITS } from "./services/specialist-workers.js";
+import { advanceSchedule, createSchedule, createScheduleEvent, getPendingTaskSummary, normalizeSchedule, normalizeScheduleEvent, recoverInterruptedScheduleEvents, setScheduleStatus, SCHEDULER_LIMITS } from "./services/scheduler.js";
 import { getIntegrationCatalog, INTEGRATION_PROVIDER_IDS, probeIntegration, runIntegrationAction } from "./services/integrations.js";
 import { appendActionStatus, createPendingExternalAction, executeExternalAction, getExternalActionCapabilities, MAX_ACTION_HISTORY, MAX_PENDING_ACTIONS, normalizeExternalAction } from "./services/external-actions.js";
 import {
@@ -201,7 +202,7 @@ const oauthLaunchLimiter = rateLimit({
 
 app.use("/api", apiLimiter);
 
-let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], skillPrograms: [], autoHeal: createDefaultAutoHealState(), workflows: [], workflowRuns: [], workflowStepEffects: [], workerRuns: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [], knowledgeDocuments: [], mediaProjects: [], youtubePublications: [] };
+let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], skillPrograms: [], autoHeal: createDefaultAutoHealState(), workflows: [], workflowRuns: [], workflowStepEffects: [], workerRuns: [], schedules: [], scheduleEvents: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [], knowledgeDocuments: [], mediaProjects: [], youtubePublications: [] };
 let writeQueue = Promise.resolve();
 let neonSql;
 let databaseRevision = null;
@@ -352,6 +353,16 @@ function normalizeStore(parsed = {}) {
       ? parsed.workerRuns.slice(-SPECIALIST_WORKER_LIMITS.runs).flatMap((item) => {
           const normalized = normalizeSpecialistRun(item);
           return normalized ? [normalized] : [];
+        })
+      : [],
+    schedules: Array.isArray(parsed.schedules)
+      ? parsed.schedules.slice(-SCHEDULER_LIMITS.schedules).flatMap((item) => {
+          try { return [normalizeSchedule(item)]; } catch { return []; }
+        })
+      : [],
+    scheduleEvents: Array.isArray(parsed.scheduleEvents)
+      ? parsed.scheduleEvents.slice(-SCHEDULER_LIMITS.events).flatMap((item) => {
+          try { return [normalizeScheduleEvent(item)]; } catch { return []; }
         })
       : [],
     disabledIntegrations: Array.isArray(parsed.disabledIntegrations)
@@ -1080,6 +1091,8 @@ app.get("/api/state", requireAuth, async (req, res, next) => {
     chats: await getConversationMessages("session:" + req.sessionToken),
     memories: store.memories,
     tasks: store.tasks.slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))),
+    schedules: store.schedules.slice().reverse(),
+    scheduleEvents: store.scheduleEvents.slice().reverse().slice(0, 20),
     feedback: store.feedback.slice(-100),
     experiencePreferences: store.experiencePreferences,
     skills: store.skills,
@@ -1119,6 +1132,8 @@ app.get("/api/export", requireAuth, (req, res) => {
       workflowRuns: store.workflowRuns,
       workflowStepEffects: store.workflowStepEffects,
       workerRuns: store.workerRuns,
+      schedules: store.schedules,
+      scheduleEvents: store.scheduleEvents,
       disabledIntegrations: store.disabledIntegrations,
       externalActions: store.externalActions,
       youtubePublications: store.youtubePublications
@@ -1515,10 +1530,18 @@ app.delete("/api/skill-crucible/programs/:id", requireAuth, async (req, res) => 
 app.post("/api/tasks", requireAuth, async (req, res) => {
   const title = cleanText(req.body?.title, 180);
   const description = cleanText(req.body?.description, 1000);
-  const dueAt = cleanText(req.body?.dueAt, 80);
+  const dueInput = cleanText(req.body?.dueAt, 80);
+  const priority = req.body?.priority === undefined ? "normal" : cleanText(req.body.priority, 20);
   if (!title) return res.status(400).json({ error: "Task title cannot be empty." });
+  if (!["low", "normal", "high"].includes(priority)) return res.status(400).json({ error: "Choose low, normal or high priority." });
+  let dueAt = "";
+  if (dueInput) {
+    const parsed = new Date(dueInput);
+    if (!Number.isFinite(parsed.getTime())) return res.status(400).json({ error: "Task due date is invalid." });
+    dueAt = parsed.toISOString();
+  }
   if (store.tasks.length >= 200) return res.status(409).json({ error: "Task limit reached. Remove an old task first." });
-  const task = { id: newId(), title, description, dueAt, done: false, createdAt: new Date().toISOString() };
+  const task = { id: newId(), title, description, dueAt, priority, done: false, createdAt: new Date().toISOString() };
   store.tasks.push(task);
   await saveStore();
   res.status(201).json({ task });
@@ -1529,6 +1552,21 @@ app.patch("/api/tasks/:id", requireAuth, async (req, res) => {
   if (!task) return res.status(404).json({ error: "Task not found." });
   if (typeof req.body?.done === "boolean") task.done = req.body.done;
   if (typeof req.body?.title === "string") task.title = cleanText(req.body.title, 180) || task.title;
+  if (typeof req.body?.description === "string") task.description = cleanText(req.body.description, 1000);
+  if (req.body?.priority !== undefined) {
+    const priority = cleanText(req.body.priority, 20);
+    if (!["low", "normal", "high"].includes(priority)) return res.status(400).json({ error: "Choose low, normal or high priority." });
+    task.priority = priority;
+  }
+  if (req.body?.dueAt !== undefined) {
+    const dueInput = cleanText(req.body.dueAt, 80);
+    if (!dueInput) task.dueAt = "";
+    else {
+      const parsed = new Date(dueInput);
+      if (!Number.isFinite(parsed.getTime())) return res.status(400).json({ error: "Task due date is invalid." });
+      task.dueAt = parsed.toISOString();
+    }
+  }
   await saveStore();
   res.json({ task });
 });
@@ -2073,6 +2111,233 @@ app.post("/api/workers/dispatch", requireAuth, async (req, res) => {
   } finally {
     specialistDispatchActive = false;
   }
+});
+
+
+const activeScheduleExecutions = new Set();
+
+function updateScheduleEvent(eventId, update) {
+  store.scheduleEvents = store.scheduleEvents.map((item) => item.id === eventId
+    ? { ...item, ...update, updatedAt: new Date().toISOString() }
+    : item);
+  return store.scheduleEvents.find((item) => item.id === eventId) || null;
+}
+
+async function executeDueSchedule(scheduleInput, now = new Date()) {
+  const schedule = normalizeSchedule(scheduleInput);
+  if (schedule.status !== "active" || !schedule.nextRunAt || activeScheduleExecutions.has(schedule.id)) return;
+  activeScheduleExecutions.add(schedule.id);
+  try {
+    const occurrenceAt = schedule.nextRunAt;
+    const processedAt = now.toISOString();
+    const lateByMs = now.getTime() - Date.parse(occurrenceAt);
+    const isMissed = lateByMs > SCHEDULER_LIMITS.graceMinutes * 60_000;
+    const event = createScheduleEvent(schedule, occurrenceAt, isMissed ? "missed" : "running", isMissed
+      ? { reason: "The JARVIS server was not available within the reminder delivery window.", lateByMinutes: Math.max(0, Math.round(lateByMs / 60_000)) }
+      : { checkpoint: "Schedule accepted for processing." });
+    const advanced = advanceSchedule(schedule, occurrenceAt, processedAt);
+    advanced.lastEventId = event.id;
+    store.schedules = store.schedules.map((item) => item.id === schedule.id ? advanced : item);
+    store.scheduleEvents.push(event);
+    store.scheduleEvents = store.scheduleEvents.slice(-SCHEDULER_LIMITS.events);
+    await saveStore();
+
+    if (isMissed) {
+      updateScheduleEvent(event.id, { status: "missed" });
+      await saveStore();
+      return;
+    }
+
+    try {
+      if (schedule.kind === "reminder") {
+        updateScheduleEvent(event.id, {
+          status: "delivered",
+          details: { message: schedule.description || "Your scheduled reminder is due.", priority: schedule.priority }
+        });
+      } else if (schedule.kind === "daily_summary") {
+        const summary = getPendingTaskSummary(store.tasks, processedAt);
+        updateScheduleEvent(event.id, {
+          status: "delivered",
+          details: {
+            message: summary.pending + " pending task(s), " + summary.overdue + " overdue, " + summary.highPriority + " high priority.",
+            pending: summary.pending,
+            overdue: summary.overdue,
+            highPriority: summary.highPriority,
+            upcoming: summary.upcoming
+          }
+        });
+      } else if (schedule.kind === "research") {
+        if (!isWebResearchEnabled()) {
+          updateScheduleEvent(event.id, {
+            status: "blocked",
+            details: { reason: "public_search_not_configured", message: "Scheduled public research could not run because the existing trusted search service is disabled." }
+          });
+        } else {
+          const result = await createWebResearch(schedule.query);
+          const sources = (Array.isArray(result.sources) ? result.sources : []).slice(0, 10).flatMap((source) => {
+            try {
+              const url = new URL(source.url);
+              if (url.protocol !== "https:" || url.username || url.password) return [];
+              for (const key of [...url.searchParams.keys()]) {
+                if (/token|secret|password|auth|signature|credential|key/i.test(key)) url.searchParams.delete(key);
+              }
+              return [url.href];
+            } catch { return []; }
+          });
+          if (!sources.length) {
+            updateScheduleEvent(event.id, {
+              status: "blocked",
+              details: { reason: "no_source_evidence", message: "Research returned no verifiable HTTPS source URLs." }
+            });
+          } else {
+            updateScheduleEvent(event.id, {
+              status: "delivered",
+              details: {
+                message: "Scheduled research completed. " + sources.length + " public source(s) were returned. Open Research to review the findings.",
+                sourceCount: sources.length,
+                sources,
+                searchedAt: result.searchedAt || processedAt
+              }
+            });
+          }
+        }
+      } else if (schedule.kind === "workflow") {
+        const workflow = store.workflows.find((item) => item.id === schedule.workflowId);
+        if (!workflow || workflow.status !== "approved" || !workflow.approvedAt) {
+          updateScheduleEvent(event.id, {
+            status: "blocked",
+            details: { reason: "workflow_not_approved", message: "The linked workflow is missing or no longer approved. No workflow steps were run." }
+          });
+        } else if (store.workflowRuns.some((run) => run.workflowId === workflow.id && ["queued", "running", "waiting_review", "paused"].includes(run.status))) {
+          updateScheduleEvent(event.id, {
+            status: "blocked",
+            details: { reason: "workflow_already_active", message: "The workflow already has an active run. JARVIS did not create a duplicate." }
+          });
+        } else if (store.workflowRuns.length >= WORKFLOW_LIMITS.runs) {
+          updateScheduleEvent(event.id, {
+            status: "blocked",
+            details: { reason: "workflow_run_limit", message: "The workflow run history is full. Review old runs before scheduling another." }
+          });
+        } else {
+          const run = createWorkflowRun(workflow);
+          run.status = "queued";
+          store.workflowRuns.push(run);
+          await saveStore();
+          scheduleWorkflowExecution(run.id);
+          updateScheduleEvent(event.id, {
+            status: "triggered",
+            workflowRunId: run.id,
+            details: { message: "The approved workflow was queued. Review its run history for checkpoints and approval gates." }
+          });
+        }
+      }
+      await saveStore();
+    } catch (error) {
+      updateScheduleEvent(event.id, {
+        status: "failed",
+        details: { reason: "schedule_execution_failed", message: "The scheduled operation failed. Review the event and create a new schedule after checking the cause." }
+      });
+      console.error("Scheduled JARVIS operation failed:", safeErrorMetadata(error));
+      await saveStore().catch(() => {});
+    }
+  } finally {
+    activeScheduleExecutions.delete(schedule.id);
+  }
+}
+
+async function processDueSchedules() {
+  const now = new Date();
+  const due = store.schedules
+    .filter((item) => item.status === "active" && item.nextRunAt && Date.parse(item.nextRunAt) <= now.getTime())
+    .sort((a, b) => Date.parse(a.nextRunAt) - Date.parse(b.nextRunAt))
+    .slice(0, 5);
+  for (const schedule of due) {
+    try { await executeDueSchedule(schedule, now); }
+    catch (error) { console.error("Scheduler checkpoint failed:", safeErrorMetadata(error)); }
+  }
+}
+
+app.get("/api/scheduler/status", requireAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    executionMode: "server-process",
+    tickMilliseconds: SCHEDULER_LIMITS.tickMs,
+    graceMinutes: SCHEDULER_LIMITS.graceMinutes,
+    running: process.env.NODE_ENV !== "test",
+    guaranteesWhileServerStopped: false,
+    note: "Schedules execute only while this JARVIS server process is running. A stopped or suspended host can cause a reminder to be reported as missed; this is not Android WorkManager or an always-on push service."
+  });
+});
+
+app.get("/api/schedules", requireAuth, (_req, res) => {
+  const events = store.scheduleEvents.slice().reverse().slice(0, 50);
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    schedules: store.schedules.slice().reverse(),
+    events,
+    pendingTasks: getPendingTaskSummary(store.tasks),
+    unreadEvents: events.filter((item) => !item.readAt).length,
+    limits: SCHEDULER_LIMITS
+  });
+});
+
+app.post("/api/schedules", requireAuth, async (req, res) => {
+  if (store.schedules.length >= SCHEDULER_LIMITS.schedules) {
+    return res.status(409).json({ error: "Schedule limit reached. Pause or cancel an old schedule first." });
+  }
+  let schedule;
+  try { schedule = createSchedule(req.body); }
+  catch (error) { return res.status(400).json({ error: error.message || "Schedule is invalid." }); }
+  if (schedule.kind === "workflow") {
+    const workflow = store.workflows.find((item) => item.id === schedule.workflowId);
+    if (!workflow || workflow.status !== "approved" || !workflow.approvedAt) {
+      return res.status(409).json({ error: "Only an existing, validated and approved workflow can be scheduled." });
+    }
+  }
+  store.schedules.push(schedule);
+  try { await saveStore(); }
+  catch {
+    store.schedules = store.schedules.filter((item) => item.id !== schedule.id);
+    return res.status(503).json({ error: "JARVIS could not save this schedule." });
+  }
+  res.status(201).json({ schedule });
+});
+
+app.patch("/api/schedules/:id", requireAuth, async (req, res) => {
+  const existing = store.schedules.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Schedule not found." });
+  let updated;
+  try { updated = setScheduleStatus(existing, req.body?.status, new Date().toISOString()); }
+  catch (error) { return res.status(409).json({ error: error.message || "Schedule state change is invalid." }); }
+  store.schedules = store.schedules.map((item) => item.id === existing.id ? updated : item);
+  try { await saveStore(); }
+  catch {
+    store.schedules = store.schedules.map((item) => item.id === existing.id ? existing : item);
+    return res.status(503).json({ error: "JARVIS could not save the schedule change." });
+  }
+  res.json({ schedule: updated });
+});
+
+app.delete("/api/schedules/:id", requireAuth, async (req, res) => {
+  const existing = store.schedules.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Schedule not found." });
+  if (activeScheduleExecutions.has(existing.id)) return res.status(409).json({ error: "This schedule is being processed. Review its event before cancelling it." });
+  let cancelled;
+  try { cancelled = setScheduleStatus(existing, "cancelled", new Date().toISOString()); }
+  catch (error) { return res.status(409).json({ error: error.message || "Schedule cannot be cancelled." }); }
+  store.schedules = store.schedules.map((item) => item.id === existing.id ? cancelled : item);
+  await saveStore();
+  res.json({ schedule: cancelled });
+});
+
+app.post("/api/schedule-events/:id/read", requireAuth, async (req, res) => {
+  const event = store.scheduleEvents.find((item) => item.id === req.params.id);
+  if (!event) return res.status(404).json({ error: "Schedule notification not found." });
+  if (!event.readAt) {
+    updateScheduleEvent(event.id, { readAt: new Date().toISOString() });
+    await saveStore();
+  }
+  res.json({ event: store.scheduleEvents.find((item) => item.id === event.id) });
 });
 
 app.get("/api/workflows", requireAuth, (_req, res) => {
@@ -3261,6 +3526,13 @@ if (JSON.stringify(recoveredWorkflowRuns) !== JSON.stringify(store.workflowRuns)
   store.workflowRuns = recoveredWorkflowRuns;
   await saveStore();
 }
+const recoveredScheduleEvents = recoverInterruptedScheduleEvents(store.scheduleEvents);
+if (JSON.stringify(recoveredScheduleEvents) !== JSON.stringify(store.scheduleEvents)) {
+  store.scheduleEvents = recoveredScheduleEvents;
+  await saveStore();
+}
+setInterval(() => { void processDueSchedules(); }, SCHEDULER_LIMITS.tickMs).unref?.();
+if (process.env.NODE_ENV !== "test") void processDueSchedules();
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log("JARVIS listening on port " + PORT);
 });

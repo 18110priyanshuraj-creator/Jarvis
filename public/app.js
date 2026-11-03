@@ -6,6 +6,7 @@ import { createKnowledgeDocuments } from "./knowledge-documents.js";
 import { createAgentEvolution } from "./agent-evolution.js";
 import { createAutoHealWorkspace } from "./auto-heal.js";
 import { createSpecialistWorkersWorkspace } from "./specialist-workers.js";
+import { createScheduleWorkspace } from "./schedule-workspace.js";
 const $ = (selector) => document.querySelector(selector);
 const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, taskPlan: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", knowledgeFilter: "all", knowledgeSummary: { total: 0, trusted: 0, unreviewed: 0, rejected: 0 }, diagnostics: null, activeView: "chat" };
 let toastTimer;
@@ -40,6 +41,8 @@ const autoHealWorkspace = createAutoHealWorkspace({ api, toast });
 autoHealWorkspace.init();
 const specialistWorkersWorkspace = createSpecialistWorkersWorkspace({ api, toast });
 specialistWorkersWorkspace.init();
+const scheduleWorkspace = createScheduleWorkspace({ api, toast });
+scheduleWorkspace.init();
 
 function showLogin() {
   $("#login-screen").classList.remove("hidden");
@@ -96,6 +99,7 @@ async function refreshState() {
   await agentEvolution.load();
   await autoHealWorkspace.load();
   await specialistWorkersWorkspace.load();
+  await scheduleWorkspace.load();
   state.research = data.research || [];
   renderChats();
   renderMemories();
@@ -138,6 +142,7 @@ function setView(name) {
   $("#app-shell").classList.remove("menu-open");
   $("#menu-toggle")?.setAttribute("aria-expanded", "false");
   if (name === "devices") refreshDevices().catch((error) => toast(error.message, true));
+  if (name === "tasks") scheduleWorkspace.load().catch((error) => toast(error.message, true));
   if (name === "memory") refreshMemories().catch((error) => toast(error.message, true));
   if (name === "workflows") {
     refreshWorkflows().catch((error) => toast(error.message, true));
@@ -1938,6 +1943,12 @@ function renderTasks() {
     const title = document.createElement("strong");
     title.textContent = item.title;
     main.append(title);
+    if (item.priority) {
+      const priority = document.createElement("span");
+      priority.className = "workflow-status workflow-status-" + item.priority;
+      priority.textContent = item.priority + " priority";
+      main.append(priority);
+    }
     if (item.description) {
       const description = document.createElement("p");
       description.textContent = item.description;
@@ -2540,13 +2551,15 @@ $("#task-form").addEventListener("submit", async (event) => {
       body: JSON.stringify({
         title: $("#task-title").value,
         description: $("#task-description").value,
-        dueAt: $("#task-due").value
+        dueAt: $("#task-due").value ? new Date($("#task-due").value).toISOString() : "",
+        priority: $("#task-priority").value
       })
     });
     state.tasks.push(data.task);
     $("#task-title").value = "";
     $("#task-description").value = "";
     $("#task-due").value = "";
+    $("#task-priority").value = "normal";
     renderTasks();
     toast("Task added.");
   } catch (error) { toast(error.message, true); }
