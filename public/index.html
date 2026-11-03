@@ -170,7 +170,7 @@
         <div class="list-heading"><h2>Learning & Skills</h2><span class="muted small">Draft → Test → Approve → Activate</span></div>
         <div class="research-hint">
           <strong>Safe skill learning</strong>
-          <p>Skills are versioned instruction profiles, not executable code. Choose which JARVIS application surfaces may use each skill. Static tests check trigger matching only; they do not run device actions, scripts or application code. A skill affects online AI replies only after you approve it and a trigger matches in an allowed application.</p>
+          <p>Skills remain versioned, reviewable instruction profiles. The Skill Crucible adds a separate allow-listed data-processing program with fixed operations only. It cannot run JavaScript, shell commands, network requests, file access or Android actions. Every program version must pass tests and receive explicit approval before a manual run.</p>
         </div>
         <form id="skill-form" class="form-card">
           <h2 id="skill-form-title">Create a skill draft</h2>
@@ -194,6 +194,48 @@
           </div>
         </form>
         <div id="skill-list" class="item-list"></div>
+
+        <section class="knowledge-documents-panel skill-crucible-panel">
+          <div class="list-heading">
+            <h2>Phase 21 — Skill Crucible</h2>
+            <span class="muted small">Draft → Test → Approve → Run</span>
+          </div>
+          <div class="research-hint">
+            <strong>Constrained execution, not arbitrary code</strong>
+            <p>Programs use four fixed operations: normalize input, extract keywords, match approved phrases and format a response. The runner has no shell, file, network, module-loading, device-action or dynamic-code capability. Runs are manual and have no external side effects.</p>
+            <p id="crucible-runtime-status" class="small muted" aria-live="polite">Loading the constrained runtime status…</p>
+          </div>
+          <form id="crucible-form" class="form-card">
+            <h3>Create a skill program draft</h3>
+            <label for="crucible-skill">Link to an approved skill</label>
+            <select id="crucible-skill" required>
+              <option value="">Loading active skills…</option>
+            </select>
+            <label for="crucible-name">Program name</label>
+            <input id="crucible-name" maxlength="80" required placeholder="Example: Physics explanation helper">
+            <label for="crucible-phrases">Program match phrases <span class="muted">(comma separated, 1–8)</span></label>
+            <input id="crucible-phrases" maxlength="700" required placeholder="explain physics, physics question">
+            <div class="form-row">
+              <label class="field-label" for="crucible-keyword-limit">Maximum extracted keywords
+                <select id="crucible-keyword-limit">
+                  <option value="3">3</option><option value="5" selected>5</option><option value="8">8</option>
+                </select>
+              </label>
+            </div>
+            <label for="crucible-template">Output template <span class="muted">({input}, {keywords}, {matched} only)</span></label>
+            <textarea id="crucible-template" rows="2" maxlength="800" required placeholder="Matched: {matched}. Keywords: {keywords}. Request: {input}"></textarea>
+            <label for="crucible-positive">Test input that SHOULD match</label>
+            <input id="crucible-positive" maxlength="1200" required placeholder="Please explain physics step by step">
+            <label for="crucible-negative">Test input that should NOT match</label>
+            <input id="crucible-negative" maxlength="1200" required placeholder="What is the weather today?">
+            <div class="form-row">
+              <span class="small muted">Creating a draft never activates or executes it.</span>
+              <button class="primary" type="submit">Save program draft</button>
+            </div>
+          </form>
+          <div id="crucible-program-list" class="item-list"></div>
+          <div id="crucible-run-output" class="research-hint hidden" aria-live="polite"></div>
+        </section>
       </section>
 
       <section id="view-tasks" class="view content-view hidden">
