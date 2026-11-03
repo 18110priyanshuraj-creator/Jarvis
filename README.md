@@ -481,3 +481,8 @@ The current `docs/JARVIS_PHASE_ROADMAP.md` supersedes historical component label
 - Binary attachments are excluded from the JSON data export; download each attachment separately.
 
 Implementation contract: `docs/JARVIS_PHASE_20_KNOWLEDGE_MANAGER.md`. Physical Galaxy Tab A9 file-picker/download testing remains Phase 31.
+
+
+### Phase 20 repository closeout
+
+Phase 20 is merged to `main` (PR #65, commit `11351868839059a5148bb66d5ffcf97fbc20a82e`). CI run 41598828117 passed 260 Node tests, the production dependency audit, Android unit tests/build, APK integrity verification and artifact upload. The Knowledge Manager implementation is complete at repository scope. Production must still confirm a persistent mounted storage volume; Galaxy Tab A9 file-picker/download testing remains Phase 31. PDF extraction, OCR and audio/video transcription are not included.
