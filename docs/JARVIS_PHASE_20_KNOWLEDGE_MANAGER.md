@@ -1,8 +1,10 @@
 # JARVIS Phase 20 — Knowledge Manager
 
-**Status:** IN_PROGRESS (implementation branch and CI pending)  
+**Status:** CODE_COMPLETE (repository implementation merged; external storage/device acceptance remains)  
 **Current roadmap:** Phase 20 of the Phase 0 + Phase 1–32 plan  
-**Implementation branch:** `feat/phase-20-knowledge-manager`
+**Implementation branch:** `feat/phase-20-knowledge-manager`  
+**Merged PR:** [#65](https://github.com/18110priyanshuraj-creator/Jarvis/pull/65) — merge commit `11351868839059a5148bb66d5ffcf97fbc20a82e`  
+**CI:** [run 41598828117](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41598828117) — 260/260 Node tests, zero production vulnerabilities, Android unit/build/APK verification passed
 
 ## Scope
 
@@ -46,3 +48,12 @@ Turn the existing text-note Library into a managed document library with explici
 Automated coverage verifies file type/signature validation, UTF-8 and JSON extraction, sensitive-content rejection, duplicate SHA-256 handling, review-gated retrieval, search, and path traversal resistance. Full repository CI also runs Node tests/audit and Android build/APK checks.
 
 Physical Galaxy Tab A9 file-picker, permission, download and lifecycle acceptance remains Phase 31.
+
+
+## Closeout and remaining acceptance gates
+
+The repository implementation is merged to `main`. The final PR CI passed the Node suite (260/260), production dependency audit (0 vulnerabilities), Android unit tests, debug build, APK integrity verification and artifact upload.
+
+The service cannot determine whether the hosting platform retains a configured filesystem path across deploys. Production rollout is not complete until the operator confirms `JARVIS_DOCUMENTS_DIR` or `JARVIS_DATA_DIR` points to a durable mounted volume and tests a restart/deploy without losing files. Neon persists the document metadata and extracted text, not the binary attachments.
+
+Physical Galaxy Tab A9 file-picker, upload, download and lifecycle acceptance remains Phase 31. The phase does not include PDF text extraction, OCR, image recognition, audio transcription or video transcription.
