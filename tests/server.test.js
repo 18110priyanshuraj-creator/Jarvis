@@ -938,6 +938,21 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(capturedIncident.failureCode, "configuration_missing");
   assert.equal(autoHealCapturedState.status.automaticRepair, false);
   assert.equal(autoHealCapturedState.status.automaticRetry, false);
+  assert.equal(autoHealCapturedState.status.sourceModification, false);
+  assert.equal(autoHealCapturedState.status.externalActions, false);
+  assert.equal(autoHealCapturedState.status.config.workflowStepTimeoutMs, 60_000);
+  assert.equal(autoHealCapturedState.status.config.maxManualRetryAttempts, 3);
+  const unsupportedRepairProposal = await request("/api/auto-heal/incidents/" + capturedIncident.id + "/propose", {
+    method: "POST", body: JSON.stringify({})
+  });
+  assert.equal(unsupportedRepairProposal.status, 409);
+  assert.match((await unsupportedRepairProposal.json()).error, /no bounded repair proposal/i);
+  const unknownRepairApproval = await request("/api/auto-heal/proposals/not-a-proposal/approve", {
+    method: "POST", body: JSON.stringify({ expectedRevision: autoHealCapturedState.state.revision, confirm: true })
+  });
+  assert.equal(unknownRepairApproval.status, 409);
+  const autoHealReadAfterRejectedProposal = await request("/api/auto-heal");
+  assert.equal((await autoHealReadAfterRejectedProposal.json()).state.revision, autoHealCapturedState.state.revision);
 
   const manualAutoHealScan = await request("/api/auto-heal/inspect", {
     method: "POST", body: JSON.stringify({})
