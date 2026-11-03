@@ -258,6 +258,42 @@
             <span class="small muted">No preview has been run. Unreviewed and rejected web research will be excluded.</span>
           </div>
         </div>
+        <section class="knowledge-documents-panel">
+          <div class="list-heading"><h2>Knowledge Manager — documents & attachments</h2><span class="muted small" id="knowledge-documents-summary">Loading document library…</span></div>
+          <div id="knowledge-documents-warning" class="research-hint knowledge-storage-warning hidden" role="status"></div>
+          <p class="small muted">Add TXT, Markdown, CSV or JSON for offline text search. PDF, images, audio and video can be stored and downloaded as attachments; automatic PDF extraction, OCR and transcription are not enabled. Maximum 15 MiB per file.</p>
+          <form id="knowledge-documents-form" class="form-card knowledge-upload-form">
+            <h3>Upload a document</h3>
+            <label for="knowledge-documents-file">File</label>
+            <input id="knowledge-documents-file" type="file" accept=".txt,.md,.markdown,.csv,.json,.pdf,image/jpeg,image/png,image/webp,audio/mpeg,audio/mp4,audio/wav,audio/ogg,audio/webm,video/mp4,video/webm" required>
+            <div class="form-row">
+              <label class="field-label" for="knowledge-documents-title">Display title
+                <input id="knowledge-documents-title" maxlength="180" placeholder="Optional title">
+              </label>
+              <label class="field-label" for="knowledge-documents-collection">Collection
+                <input id="knowledge-documents-collection" maxlength="60" placeholder="e.g. JEE Physics" value="Unsorted">
+              </label>
+            </div>
+            <label for="knowledge-documents-tags">Tags <span class="muted">(comma separated)</span></label>
+            <input id="knowledge-documents-tags" maxlength="500" placeholder="physics, notes, revision">
+            <label for="knowledge-documents-description">Description / transcript note <span class="muted">(optional; text is searchable after review)</span></label>
+            <textarea id="knowledge-documents-description" rows="2" maxlength="1000" placeholder="Describe an image, PDF, recording or document for easier discovery."></textarea>
+            <div class="form-row"><span class="small muted">Uploaded documents start unreviewed and stay out of assistant context until you approve them.</span><button class="primary" type="submit">Upload to Knowledge</button></div>
+          </form>
+          <form id="knowledge-documents-search-form" class="search-form">
+            <input id="knowledge-documents-search" maxlength="300" placeholder="Search document titles, text, descriptions or tags…">
+            <select id="knowledge-documents-collection-filter" aria-label="Filter by collection"><option value="">All collections</option></select>
+            <select id="knowledge-documents-review-filter" aria-label="Filter document review status">
+              <option value="all">All review states</option>
+              <option value="unreviewed">Needs review</option>
+              <option value="user-reviewed">Reviewed</option>
+              <option value="rejected">Rejected</option>
+            </select>
+            <button class="primary" type="submit">Search documents</button>
+          </form>
+          <div id="knowledge-documents-list" class="item-list"></div>
+        </section>
+
         <form id="knowledge-form" class="form-card">
           <h2>Add your own knowledge note</h2>
           <label for="knowledge-title">Title</label>
