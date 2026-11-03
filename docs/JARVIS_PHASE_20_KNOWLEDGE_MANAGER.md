@@ -18,7 +18,7 @@ Turn the existing text-note Library into a managed document library with explici
 ### Storage and safety
 
 - File bytes are stored under a server-configured filesystem directory; only metadata and bounded extracted text are included in the existing application state/Neon persistence.
-- Configure `JARVIS_DOCUMENTS_DIR` to a durable mounted volume in hosted production. A database connection does not persist the local file bytes; a deployment without a durable volume can lose attachments when its instance is replaced.
+- Configure `JARVIS_DOCUMENTS_DIR` (or `JARVIS_DATA_DIR`) to a durable mounted volume in hosted production. The status API reports whether a path was configured but deliberately never claims that the host's retention policy was verified. Confirm the path is backed by a persistent volume; a database connection does not persist local file bytes.
 - File names are sanitized; stored object names are generated IDs, not user-controlled paths. Downloads are always sent as attachments with `nosniff`.
 - Secret-like text and sensitive personal information are rejected from indexed content, titles, tags and descriptions.
 - Imported files are initially unreviewed. Only a user-reviewed document can enter assistant context. A review is the owner's approval, not independent verification.
