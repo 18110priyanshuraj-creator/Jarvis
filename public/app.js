@@ -4,6 +4,7 @@ import { createMediaWorkspace } from "./media-workspace.js";
 import { createYouTubePublisher } from "./youtube-publisher.js";
 import { createKnowledgeDocuments } from "./knowledge-documents.js";
 import { createAgentEvolution } from "./agent-evolution.js";
+import { createAutoHealWorkspace } from "./auto-heal.js";
 const $ = (selector) => document.querySelector(selector);
 const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, taskPlan: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", knowledgeFilter: "all", knowledgeSummary: { total: 0, trusted: 0, unreviewed: 0, rejected: 0 }, diagnostics: null, activeView: "chat" };
 let toastTimer;
@@ -34,6 +35,8 @@ const youtubePublisher = createYouTubePublisher({ api, toast });
 const knowledgeDocuments = createKnowledgeDocuments({ api, toast });
 const agentEvolution = createAgentEvolution({ api, toast, getSkills: () => state.skills });
 agentEvolution.init();
+const autoHealWorkspace = createAutoHealWorkspace({ api, toast });
+autoHealWorkspace.init();
 
 function showLogin() {
   $("#login-screen").classList.remove("hidden");
@@ -88,6 +91,7 @@ async function refreshState() {
   state.workflowRuns = workflowData.runs || data.workflowRuns || [];
   state.skills = data.skills || [];
   await agentEvolution.load();
+  await autoHealWorkspace.load();
   state.research = data.research || [];
   renderChats();
   renderMemories();
