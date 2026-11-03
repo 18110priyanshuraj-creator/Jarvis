@@ -1,9 +1,9 @@
 # JARVIS Phase 18 — YouTube Publishing Automation
 
-**Status:** IN_PROGRESS (implementation and mock route coverage added; latest CI rerun, merge and real-provider acceptance remain open)  
-**Branch:** `feat/phase-18-youtube-publishing`  
-**Base:** `main` at `bf3dfb30fc4180b960f7d227b68c69be129b1afc`  
-**Pull request:** [#60](https://github.com/18110priyanshuraj-creator/Jarvis/pull/60)
+**Status:** CODE_COMPLETE (repository implementation merged; live-provider and physical-device acceptance remain open)  
+**Main merge commit:** `1e3023d801a191e30cb8e100f1350ecee6992413`  
+**Pull request:** [#60 — merged](https://github.com/18110priyanshuraj-creator/Jarvis/pull/60)  
+**Implementation branch:** `feat/phase-18-youtube-publishing` (merged; retained until branch-cleanup permission is available)
 
 ## Goal
 
@@ -59,7 +59,7 @@ GitHub Actions run [41482952684](https://github.com/18110priyanshuraj-creator/Ja
 - APK integrity check and artifact upload: passed.
 - Debug APK artifact: `jarvis-companion-debug`, artifact ID `13159414246`, SHA-256 `0f4a6a9bd8bc62120b5cfdea8f3bd1af1daaa18dab661f28ea88806d2b2a2eab`, expires 2026-11-09.
 
-PR #60 is open against `main`; no merge has occurred. The original feature CI is historical evidence only. The upload-receipt defect and route-test coverage were hardened on the same feature branch. An initial hardening run exposed that the test's fourth upload request correctly hit the production three-per-hour limiter (242 passed, 1 failed); the test was adjusted to stay within the real limit without changing production rate limiting. The corrected branch head is being rechecked by GitHub Actions before merge.
+PR #60 was squash-merged to `main` at `1e3023d801a191e30cb8e100f1350ecee6992413`. The current post-merge main CI run is [41574164866](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41574164866): its Node suite and production dependency audit passed (243/243 tests; zero production vulnerabilities); the Android Companion build/APK job was still running at the time of this update. The pre-merge current-head Node checks also passed (243/243, zero production vulnerabilities). The original feature CI run [41483967173](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41483967173) completed successfully, including Android unit/build/APK checks, but preceded the final receipt/timeout hardening. The feature branch was merged, but could not be deleted because the connected GitHub toolset does not expose a branch-deletion action; it is retained, not treated as a production branch. The upload-receipt defect and route-test coverage were hardened on the same feature branch. An initial hardening run exposed that the test's fourth upload request correctly hit the production three-per-hour limiter (242 passed, 1 failed); the test was adjusted to stay within the real limit without changing production rate limiting. The corrected branch head is being rechecked by GitHub Actions before merge.
 
 ## Completion gates
 
@@ -69,7 +69,11 @@ PR #60 is open against `main`; no merge has occurred. The original feature CI is
 - [x] Authentication and no-consent guards are covered in server route tests.
 - [x] Mock-provider route test covers exact preview-size rejection, upload receipt persistence, duplicate-use rejection and interrupted-upload recovery.
 - [x] Service tests cover approved-project review, supported MIME types, 256 MiB cap, byte-count enforcement, URL allow-listing and no automatic retry.
-- [ ] Latest full Node suite, dependency audit and Android unit/build/APK CI must pass on the corrected feature head.
+- [x] Current PR-head Node suite and production dependency audit passed (243/243; 0 production vulnerabilities).
+- [x] PR #60 merged to `main` at `1e3023d801a191e30cb8e100f1350ecee6992413`.
+- [x] Post-merge main Node suite and production dependency audit passed (243/243; 0 production vulnerabilities).
+- [ ] Post-merge Android Companion build, APK integrity verification and artifact upload must finish successfully.
 - [ ] Additional real-network timeout and MIME mismatch route tests remain a hardening gap.
-- [ ] Merge PR #60 to `main` and verify post-merge CI.
+- [ ] Real Google OAuth/YouTube channel upload acceptance remains an owner-supervised external gate; no live upload was performed.
+- [ ] Physical Samsung Galaxy Tab A9 workflow acceptance remains Phase 31.
 - [ ] Real account upload and physical tablet acceptance recorded separately; no live upload was performed as part of this implementation.
