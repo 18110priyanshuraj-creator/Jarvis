@@ -133,6 +133,12 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(blockedDiagnostics.status, 401);
   const blockedKnowledge = await request("/api/knowledge", { headers: {} });
   assert.equal(blockedKnowledge.status, 401);
+  const blockedLearningPreview = await request("/api/learning/preview", {
+    method: "POST",
+    headers: {},
+    body: JSON.stringify({ query: "average velocity" })
+  });
+  assert.equal(blockedLearningPreview.status, 401);
   const blockedMemories = await request("/api/memories", { headers: {} });
   assert.equal(blockedMemories.status, 401);
   const blockedSkills = await request("/api/skills", { headers: {} });
@@ -548,6 +554,41 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
 
   const invalidKnowledgeFilter = await request("/api/knowledge?review=unknown");
   assert.equal(invalidKnowledgeFilter.status, 400);
+
+  const explicitLesson = await request("/api/chat", {
+    method: "POST",
+    body: JSON.stringify({
+      message: "Learn: JEE average velocity | Average velocity equals total displacement divided by total time."
+    })
+  });
+  assert.equal(explicitLesson.status, 200);
+  const explicitLessonPayload = await explicitLesson.json();
+  assert.equal(explicitLessonPayload.engine, "independent-learning");
+  assert.equal(explicitLessonPayload.externalAI, false);
+  assert.equal(explicitLessonPayload.learning.saved, true);
+  assert.equal(explicitLessonPayload.learning.duplicate, false);
+
+  const learningPreview = await request("/api/learning/preview", {
+    method: "POST",
+    body: JSON.stringify({ query: "Explain average velocity" })
+  });
+  assert.equal(learningPreview.status, 200);
+  assert.match(learningPreview.headers.get("cache-control") || "", /no-store/i);
+  const learningPreviewPayload = await learningPreview.json();
+  assert.equal(learningPreviewPayload.counts.included, 1);
+  assert.equal(learningPreviewPayload.contextItems[0].title, "JEE average velocity");
+  assert.equal(learningPreviewPayload.policy.externalAIRequired, false);
+  assert.equal(learningPreviewPayload.policy.modelTraining, false);
+
+  const offlineLearnedAnswer = await request("/api/chat", {
+    method: "POST",
+    body: JSON.stringify({ message: "Explain average velocity using my saved lesson" })
+  });
+  assert.equal(offlineLearnedAnswer.status, 200);
+  const offlineLearnedPayload = await offlineLearnedAnswer.json();
+  assert.equal(offlineLearnedPayload.externalAI, false);
+  assert.match(offlineLearnedPayload.answer, /total displacement divided by total time/i);
+  assert.match(offlineLearnedPayload.answer, /Saved Knowledge Library/i);
 
   const combinedSearch = await request("/api/search?q=photovoltaic");
   assert.equal(combinedSearch.status, 200);
