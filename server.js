@@ -213,6 +213,7 @@ function getNeonSql() {
 const runtimeStore = createRuntimeStore({ getSql: getNeonSql });
 const activeWorkflowExecutions = new Set();
 const activeYouTubeUploads = new Set();
+const activeDocumentUploads = new Map();
 const pauseWorkflowRequests = new Set();
 const stopWorkflowRequests = new Set();
 const pendingWorkflowExecutionQueue = [];
@@ -2257,14 +2258,20 @@ app.post("/api/knowledge/documents", requireAuth, documentUploadLimiter,
     if (duplicate) {
       return res.status(200).json({ item: toPublicKnowledgeDocument(duplicate), duplicate: true });
     }
-    if (store.knowledgeDocuments.length >= DOCUMENT_LIMITS.files) {
+    if (activeDocumentUploads.has(document.sha256)) {
+      return res.status(409).json({ error: "An identical document upload is already being processed. Refresh the library before trying again." });
+    }
+    const pending = [...activeDocumentUploads.values()];
+    const storedBytes = store.knowledgeDocuments.reduce((sum, item) => sum + item.byteSize, 0);
+    const pendingBytes = pending.reduce((sum, value) => sum + value, 0);
+    if (store.knowledgeDocuments.length + pending.length >= DOCUMENT_LIMITS.files) {
       return res.status(409).json({ error: "The document library is full. Delete an old document first." });
     }
-    const storedBytes = store.knowledgeDocuments.reduce((sum, item) => sum + item.byteSize, 0);
-    if (storedBytes + document.byteSize > DOCUMENT_LIMITS.totalBytes) {
+    if (storedBytes + pendingBytes + document.byteSize > DOCUMENT_LIMITS.totalBytes) {
       return res.status(409).json({ error: "The document library storage limit has been reached. Delete an old attachment before uploading another." });
     }
 
+    activeDocumentUploads.set(document.sha256, document.byteSize);
     const filePath = resolveDocumentStoragePath(DOCUMENTS_DIR, document);
     const previousDocuments = store.knowledgeDocuments;
     try {
@@ -2279,6 +2286,8 @@ app.post("/api/knowledge/documents", requireAuth, documentUploadLimiter,
       console.error("Knowledge document upload failed:", safeErrorMetadata(error));
       if (error?.code === "EEXIST") return res.status(409).json({ error: "This document already exists in storage. Refresh the library." });
       res.status(503).json({ error: "JARVIS could not safely store this document. No library entry was created." });
+    } finally {
+      activeDocumentUploads.delete(document.sha256);
     }
   }
 );
