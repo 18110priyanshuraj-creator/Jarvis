@@ -1,8 +1,8 @@
 # JARVIS Phase 20 — Knowledge Manager
 
-**Status:** IN_PROGRESS (implementation branch and CI pending)  
+**Status:** CODE_COMPLETE (repository implementation and CI verified; physical device acceptance remains Phase 31)  
 **Current roadmap:** Phase 20 of the Phase 0 + Phase 1–32 plan  
-**Implementation branch:** `feat/phase-20-knowledge-manager`
+**Implementation branch:** `feat/phase-20-knowledge-manager` (merged by PR #65)
 
 ## Scope
 
@@ -46,3 +46,15 @@ Turn the existing text-note Library into a managed document library with explici
 Automated coverage verifies file type/signature validation, UTF-8 and JSON extraction, sensitive-content rejection, duplicate SHA-256 handling, review-gated retrieval, search, and path traversal resistance. Full repository CI also runs Node tests/audit and Android build/APK checks.
 
 Physical Galaxy Tab A9 file-picker, permission, download and lifecycle acceptance remains Phase 31.
+
+
+## Closeout evidence
+
+- Merged PR: [#65](https://github.com/18110priyanshuraj-creator/Jarvis/pull/65)
+- Main merge commit: `11351868839059a5148bb66d5ffcf97fbc20a82e`
+- CI run: [41598828117](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41598828117)
+- Node: 260 tests passed, 0 failed; production dependency audit reported 0 vulnerabilities.
+- Android: `testDebugUnitTest assembleDebug` succeeded; APK integrity check passed; debug artifact `jarvis-companion-debug` (ID `13213871772`) uploaded.
+- The artifact is a debug build; it is not a signed production APK and no physical-tablet installation is claimed.
+- The runtime intentionally reports `durabilityVerified: false`. Production must have a durable mounted volume configured and verified by the deployment operator.
+- Physical Samsung Galaxy Tab A9 file-picker, upload/download, WebView lifecycle and offline retrieval checks remain in Phase 31.
