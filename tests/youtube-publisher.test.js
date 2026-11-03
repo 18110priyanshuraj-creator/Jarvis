@@ -224,6 +224,60 @@ test("resumable upload accepts only Google's exact YouTube upload endpoint", asy
   }
 });
 
+test("resumable upload initialization timeout is classified before any video bytes are sent", async () => {
+  const preview = createYouTubePublishPreview(project, validInput);
+  let calls = 0;
+  await assert.rejects(async () => {
+    try {
+      await uploadYouTubeVideo({
+        publication: preview,
+        accessToken: "server-access-token",
+        body: Readable.from(Buffer.alloc(1024)),
+        fetchImpl: async () => {
+          calls += 1;
+          const error = new Error("mock initialization timeout");
+          error.name = "TimeoutError";
+          throw error;
+        }
+      });
+    } catch (error) {
+      assert.equal(error.uploadStarted, false);
+      throw error;
+    }
+  }, /could not start the upload/i);
+  assert.equal(calls, 1);
+});
+
+test("resumable upload timeout after the session begins is marked uncertain and never retried", async () => {
+  const preview = createYouTubePublishPreview(project, validInput);
+  let calls = 0;
+  await assert.rejects(async () => {
+    try {
+      await uploadYouTubeVideo({
+        publication: preview,
+        accessToken: "server-access-token",
+        body: Readable.from(Buffer.alloc(1024)),
+        fetchImpl: async () => {
+          calls += 1;
+          if (calls === 1) {
+            return new Response(null, {
+              status: 200,
+              headers: { Location: "https://www.googleapis.com/upload/youtube/v3/videos?upload_id=session" }
+            });
+          }
+          const error = new Error("mock transfer timeout");
+          error.name = "TimeoutError";
+          throw error;
+        }
+      });
+    } catch (error) {
+      assert.equal(error.uploadStarted, true);
+      throw error;
+    }
+  }, /Check YouTube Studio/i);
+  assert.equal(calls, 2);
+});
+
 test("resumable upload does not retry when video bytes may already have been sent", async () => {
   const preview = createYouTubePublishPreview(project, validInput);
   let calls = 0;
