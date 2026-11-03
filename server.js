@@ -2169,6 +2169,8 @@ app.post("/api/learning/preview", requireAuth, (req, res) => {
       },
       policy: {
         ...preview.policy,
+        maximumContextItems: preview.policy.maximumContextItems + DOCUMENT_LIMITS.contextItems,
+        documentMaximumContextItems: DOCUMENT_LIMITS.contextItems,
         documentRetrieval: "only user-reviewed text and user descriptions; PDFs and media are metadata-only",
         modelTraining: false
       }
