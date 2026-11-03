@@ -143,13 +143,17 @@ function normalizeProposal(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   const id = cleanText(input.id, 80);
   const incidentId = cleanText(input.incidentId, 80);
-  const before = normalizeConfig(input.before);
-  const after = normalizeConfig(input.after);
+  const beforeValidation = validateAutoHealConfig(input.before);
+  const afterValidation = validateAutoHealConfig(input.after);
   const baseRevision = Number(input.baseRevision);
-  if (!id || !incidentId || !Number.isInteger(baseRevision) || baseRevision < 1) return null;
-  const validation = validateAutoHealConfig(after);
-  if (!validation.passed || sameConfig(before, after) === true) return null;
-  const status = VALID_PROPOSAL_STATUSES.has(input.status) ? input.status : "tested";
+  if (!id || !incidentId || !Number.isInteger(baseRevision) || baseRevision < 1 ||
+      !beforeValidation.passed || !afterValidation.passed ||
+      !VALID_PROPOSAL_STATUSES.has(input.status)) return null;
+  const before = beforeValidation.config;
+  const after = afterValidation.config;
+  const validation = afterValidation;
+  if (sameConfig(before, after) === true) return null;
+  const status = input.status;
   return {
     id,
     incidentId,
@@ -171,6 +175,7 @@ function normalizeProposal(input) {
 }
 
 export function normalizeAutoHealState(input = {}) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) input = {};
   const revision = Number.isInteger(input.revision) && input.revision > 0 ? input.revision : 1;
   const incidents = Array.isArray(input.incidents)
     ? input.incidents.slice(-MAX_INCIDENTS).flatMap((item) => {
