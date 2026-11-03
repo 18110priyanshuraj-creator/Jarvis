@@ -93,6 +93,57 @@ export function createKnowledgeDocuments({ api, toast }) {
       if (item.indexingMode === "metadata-only" && !item.description) {
         main.append(makeMessage("File stored safely, but its contents are not indexed in this phase. Add a description to make it easier to find."));
       }
+
+      const editDetails = document.createElement("details");
+      editDetails.className = "knowledge-document-edit";
+      const editSummary = document.createElement("summary");
+      editSummary.textContent = "Edit collection, tags or description";
+      const editForm = document.createElement("form");
+      editForm.className = "knowledge-document-edit-form";
+      const collectionInput = document.createElement("input");
+      collectionInput.type = "text";
+      collectionInput.maxLength = 60;
+      collectionInput.value = item.collection || "Unsorted";
+      collectionInput.setAttribute("aria-label", "Document collection");
+      collectionInput.placeholder = "Collection";
+      const tagsInput = document.createElement("input");
+      tagsInput.type = "text";
+      tagsInput.maxLength = 500;
+      tagsInput.value = (item.tags || []).join(", ");
+      tagsInput.setAttribute("aria-label", "Document tags");
+      tagsInput.placeholder = "Comma-separated tags";
+      const descriptionInput = document.createElement("textarea");
+      descriptionInput.rows = 2;
+      descriptionInput.maxLength = 1000;
+      descriptionInput.value = item.description || "";
+      descriptionInput.setAttribute("aria-label", "Document description");
+      descriptionInput.placeholder = "Description or transcript note";
+      const saveMetadata = document.createElement("button");
+      saveMetadata.type = "submit";
+      saveMetadata.className = "item-action";
+      saveMetadata.textContent = "Save details";
+      editForm.append(collectionInput, tagsInput, descriptionInput, saveMetadata);
+      editForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        saveMetadata.disabled = true;
+        try {
+          await api("/api/knowledge/documents/" + encodeURIComponent(item.id), {
+            method: "PATCH",
+            body: JSON.stringify({
+              collection: collectionInput.value.trim(),
+              tags: tagsInput.value,
+              description: descriptionInput.value.trim()
+            })
+          });
+          await refresh();
+          toast("Document details updated.");
+        } catch (error) {
+          toast(error.message, true);
+          saveMetadata.disabled = false;
+        }
+      });
+      editDetails.append(editSummary, editForm);
+      main.append(editDetails);
       if (item.extractedText) {
         const preview = document.createElement("details");
         const summaryNode = document.createElement("summary");
