@@ -22,6 +22,7 @@ Turn the existing text-note Library into a managed document library with explici
 - File names are sanitized; stored object names are generated IDs, not user-controlled paths. Downloads are always sent as attachments with `nosniff`.
 - Secret-like text and sensitive personal information are rejected from indexed content, titles, tags and descriptions.
 - Imported files are initially unreviewed. Only a user-reviewed document can enter assistant context. A review is the owner's approval, not independent verification.
+- If online conversation AI is enabled, approved document context may be sent to the configured provider as part of an answer request. When online AI is disabled, covered requests use the built-in offline path. Review only material appropriate for that configured processing path.
 - Duplicate files use SHA-256. No duplicate blob is written.
 - Deletion removes the associated file and metadata.
 
