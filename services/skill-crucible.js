@@ -317,6 +317,9 @@ export function runApprovedSkillProgram(programInput, skills, input, application
     currentSkill.triggers.some((trigger) => normalizedInput.includes(String(trigger).normalize("NFKC").toLocaleLowerCase()));
   if (!inScope || !triggered) throw new Error("The linked skill's approved trigger or application scope does not match this request.");
   const current = program.versions.find((item) => item.version === program.activeVersion);
+  if (!current?.validation?.passed || current.validation.programHash !== digestSpec(current.program)) {
+    throw new Error("The approved program integrity check failed. Test and approve the current version again.");
+  }
   const result = executeSpec(current.program, input);
   return {
     programId: program.id,
