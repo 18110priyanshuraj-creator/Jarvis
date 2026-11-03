@@ -30,7 +30,7 @@ const MIME_EXTENSIONS = Object.freeze({
   "audio/mp4": ["m4a"],
   "audio/wav": ["wav"],
   "audio/ogg": ["ogg"],
-  "audio/webm": ["weba"],
+  "audio/webm": ["weba", "webm"],
   "video/mp4": ["mp4"],
   "video/webm": ["webm"]
 });
