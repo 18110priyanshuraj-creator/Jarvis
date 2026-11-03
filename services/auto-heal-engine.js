@@ -238,7 +238,7 @@ export function inspectWorkflowFailures(runs, stateInput, now = new Date().toISO
     const fingerprint = run.id + ":" + (at || "failed");
     if (known.has(fingerprint)) continue;
     known.add(fingerprint);
-    state.incidents.push({
+    const incident = normalizeIncident({
       id: crypto.randomUUID(),
       runId: run.id,
       fingerprint,
@@ -248,6 +248,7 @@ export function inspectWorkflowFailures(runs, stateInput, now = new Date().toISO
       status: "open",
       createdAt: now
     });
+    if (incident) state.incidents.push(incident);
   }
   state.incidents = state.incidents.slice(-MAX_INCIDENTS);
   return state;
