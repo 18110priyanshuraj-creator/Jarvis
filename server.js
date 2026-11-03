@@ -2342,12 +2342,13 @@ app.patch("/api/knowledge/documents/:id", requireAuth, async (req, res) => {
 app.get("/api/knowledge/documents/:id/download", requireAuth, async (req, res) => {
   const document = store.knowledgeDocuments.find((item) => item.id === req.params.id);
   if (!document) return res.status(404).json({ error: "Document not found." });
-  let filePath;
+  let fileBytes;
   try {
-    filePath = resolveDocumentStoragePath(DOCUMENTS_DIR, document);
-    const stat = await fs.stat(filePath);
-    if (!stat.isFile() || stat.size !== document.byteSize) {
-      return res.status(409).json({ error: "The stored document is missing or does not match its saved metadata." });
+    const filePath = resolveDocumentStoragePath(DOCUMENTS_DIR, document);
+    fileBytes = await fs.readFile(filePath);
+    const digest = crypto.createHash("sha256").update(fileBytes).digest("hex");
+    if (fileBytes.length !== document.byteSize || digest !== document.sha256) {
+      return res.status(409).json({ error: "The stored document failed its integrity check and was not downloaded." });
     }
   } catch {
     return res.status(404).json({ error: "The stored document file is not available on this server instance." });
@@ -2357,10 +2358,9 @@ app.get("/api/knowledge/documents/:id/download", requireAuth, async (req, res) =
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Content-Security-Policy", "sandbox");
   res.setHeader("Content-Type", "application/octet-stream");
+  res.setHeader("Content-Length", String(fileBytes.length));
   res.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + encodeURIComponent(downloadName));
-  res.sendFile(filePath, { dotfiles: "deny", acceptRanges: false }, (error) => {
-    if (error && !res.headersSent) res.status(500).end();
-  });
+  res.send(fileBytes);
 });
 
 app.delete("/api/knowledge/documents/:id", requireAuth, async (req, res) => {
