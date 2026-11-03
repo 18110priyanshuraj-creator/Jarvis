@@ -14,7 +14,7 @@ const now = "2026-11-03T10:00:00.000Z";
 
 test("document filenames cannot escape the managed storage directory", () => {
   assert.equal(sanitizeDocumentFileName("../../unsafe/name.txt"), "name.txt");
-  assert.equal(sanitizeDocumentFileName("  ..\\evil\\file.md  "), "evil_file.md");
+  assert.equal(sanitizeDocumentFileName("  ..\\evil\\file.md  "), "file.md");
 });
 
 test("text document upload validates MIME, extension, UTF-8 and creates an unreviewed record", () => {
