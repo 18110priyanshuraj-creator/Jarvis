@@ -156,3 +156,24 @@ PR CI #41451937432 and post-merge main CI #41452457643 both passed. The post-mer
 - Data boundary: binary attachments are stored on the configured server filesystem; Neon/application state stores metadata and bounded extracted text. Production must confirm the configured directory is on a durable mounted volume. The status API intentionally reports `durabilityVerified: false`; it cannot prove the hosting provider's retention policy.
 - Extraction boundary: TXT/Markdown/CSV/JSON only are indexed offline. PDF/image/audio/video formats are attachment-only with metadata and optional user-authored descriptions. No OCR, PDF text extraction, image understanding, audio transcription or video transcription is included.
 - Phase 31 still owns physical Samsung Galaxy Tab A9 file-picker, upload, download and lifecycle acceptance.
+
+
+## Phase 21 closeout — Self-Evolving Skill Crucible
+
+- Implementation PR: [#69 — Self-Evolving Skill Crucible](https://github.com/18110priyanshuraj-creator/Jarvis/pull/69), merged to `main` at `0c6c01b617d2f3c6e7ac24adba3813ccfad34ce3`.
+- CI: [GitHub Actions run 41601724924](https://github.com/18110priyanshuraj-creator/Jarvis/actions/runs/41601724924) completed successfully.
+- Node: 269 tests passed, zero failed; production dependency audit: 0 vulnerabilities.
+- Android Companion build, APK integrity verification and debug artifact upload passed. Artifact: `jarvis-companion-debug`, ID `13214961180`, expires 2026-11-10.
+- Runtime is a four-operation allow-listed DSL only: normalize input, extract bounded keywords, match phrases, and format output. No dynamic code, shell, filesystem, network, Android actions or integration side effects.
+- Programs are linked to an approved skill version. Positive and negative tests, hash integrity, trigger/application scope and explicit approval are checked before manual execution.
+- Physical Samsung Galaxy Tab A9 acceptance remains Phase 31.
+
+## Phase 22 — Proactive Auto-Heal implementation notes
+
+- Adds bounded incident capture from failed workflow runs, plus a manual scan of saved workflow history. Incident records contain sanitized failure categories and bounded metadata rather than raw provider exception details.
+- The repair surface is intentionally limited to workflow-step timeout (10–120 seconds) and the manual retry cap (1–3 attempts). The only generated proposal increases timeout by 15 seconds and cannot exceed 120 seconds.
+- A proposal is tested against an exact configuration schema before it can be approved. Applying requires explicit confirmation and a matching state revision; competing stale proposals are invalidated.
+- Every applied change records before/after values and a revision. Rollback requires explicit confirmation and succeeds only if the runtime configuration has not changed since that proposal was applied.
+- Runtime configuration controls the workflow runner timeout and manual retry attempt ceiling. Automatic retries, automatic repair, source-code changes, secret/storage-path changes and external actions remain disabled.
+- Authenticated dashboard workspace exposes incidents, proposal validation, apply, rollback and change history. CI/API checks verify auth, failure capture and rejection of unsupported repair proposals.
+- Repository/automated acceptance only; physical device acceptance remains Phase 31.
