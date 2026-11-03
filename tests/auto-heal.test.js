@@ -157,3 +157,21 @@ test("timeout proposals stop at the configured upper bound", () => {
   const withIncident = inspectWorkflowFailures([failedRun()], state);
   assert.throws(() => createRepairProposal(withIncident, withIncident.incidents[0].id), /upper limit/i);
 });
+
+
+test("applying one proposal invalidates competing proposals based on the previous revision", () => {
+  const initial = inspectWorkflowFailures([
+    failedRun(),
+    failedRun({
+      id: "workflow-run-2",
+      failure: { code: "timeout", at: "2026-11-03T10:05:00.000Z" },
+      finishedAt: "2026-11-03T10:05:00.000Z"
+    })
+  ], createDefaultAutoHealState());
+  const firstResult = createRepairProposal(initial, initial.incidents[0].id);
+  const secondResult = createRepairProposal(firstResult.state, firstResult.state.incidents[1].id);
+  const applied = approveRepairProposal(secondResult.state, firstResult.proposal.id, 1, true);
+  const stale = applied.proposals.find((item) => item.id === secondResult.proposal.id);
+  assert.equal(stale.status, "rejected");
+  assert.throws(() => approveRepairProposal(applied, secondResult.proposal.id, 2, true), /tested, unapplied/i);
+});
