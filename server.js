@@ -35,6 +35,7 @@ import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillC
 import { approveSkillProgram, createSkillProgramCandidate, createSkillProgramVersion, getSkillCrucibleStatus, normalizeSkillProgram, pauseSkillProgram, runApprovedSkillProgram, SKILL_CRUCIBLE_LIMITS, validateSkillProgram } from "./services/skill-crucible.js";
 import { EXPERIENCE_LIMITS, getActiveExperienceContext, normalizeExperienceFeedback, normalizeExperiencePreference, promoteFeedbackToPreference, setExperiencePreferenceActive, summarizeExperience } from "./services/experience.js";
 import { advanceWorkflowRun, approveWorkflow, cancelWorkflowRun, classifyWorkflowError, createWorkflowDraft, createWorkflowRun, getWorkflowRecoverySummary, normalizeWorkflow, pauseWorkflow, pauseWorkflowRun, recoverInterruptedWorkflowRuns, resumeWorkflowRun, retryWorkflowRun, sanitizeWorkflowRunRecord, updateWorkflowDraft, validateWorkflow, WORKFLOW_LIMITS } from "./services/workflow-engine.js";
+import { approveRepairProposal, AUTO_HEAL_LIMITS, createDefaultAutoHealState, createRepairProposal, getAutoHealStatus, inspectWorkflowFailures, normalizeAutoHealState, rollbackRepairProposal } from "./services/auto-heal-engine.js";
 import { createTaskPlan, TASK_PLANNER_LIMITS } from "./services/task-planner.js";
 import { getIntegrationCatalog, INTEGRATION_PROVIDER_IDS, probeIntegration, runIntegrationAction } from "./services/integrations.js";
 import { appendActionStatus, createPendingExternalAction, executeExternalAction, getExternalActionCapabilities, MAX_ACTION_HISTORY, MAX_PENDING_ACTIONS, normalizeExternalAction } from "./services/external-actions.js";
@@ -199,7 +200,7 @@ const oauthLaunchLimiter = rateLimit({
 
 app.use("/api", apiLimiter);
 
-let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], skillPrograms: [], workflows: [], workflowRuns: [], workflowStepEffects: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [], knowledgeDocuments: [], mediaProjects: [], youtubePublications: [] };
+let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], skillPrograms: [], autoHeal: createDefaultAutoHealState(), workflows: [], workflowRuns: [], workflowStepEffects: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [], knowledgeDocuments: [], mediaProjects: [], youtubePublications: [] };
 let writeQueue = Promise.resolve();
 let neonSql;
 let databaseRevision = null;
@@ -327,6 +328,7 @@ function normalizeStore(parsed = {}) {
           return normalized ? [normalized] : [];
         })
       : [],
+    autoHeal: normalizeAutoHealState(parsed.autoHeal),
     workflows: Array.isArray(parsed.workflows)
       ? parsed.workflows.slice(-WORKFLOW_LIMITS.workflows).flatMap((item) => {
           try { return [normalizeWorkflow(item)]; } catch { return []; }
@@ -1819,6 +1821,62 @@ app.post("/api/planner/plan", requireAuth, taskPlanningLimiter, async (req, res)
   }
 });
 
+app.get("/api/auto-heal", requireAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    state: store.autoHeal,
+    status: getAutoHealStatus(store.autoHeal),
+    limits: AUTO_HEAL_LIMITS
+  });
+});
+
+app.post("/api/auto-heal/inspect", requireAuth, async (_req, res) => {
+  store.autoHeal = inspectWorkflowFailures(store.workflowRuns, store.autoHeal);
+  await saveStore();
+  res.json({ state: store.autoHeal, status: getAutoHealStatus(store.autoHeal) });
+});
+
+app.post("/api/auto-heal/incidents/:id/propose", requireAuth, async (req, res) => {
+  try {
+    const result = createRepairProposal(store.autoHeal, req.params.id);
+    store.autoHeal = result.state;
+    await saveStore();
+    return res.status(201).json({ state: store.autoHeal, proposal: result.proposal });
+  } catch (error) {
+    return res.status(409).json({ error: error.message || "A safe repair proposal is unavailable." });
+  }
+});
+
+app.post("/api/auto-heal/proposals/:id/approve", requireAuth, async (req, res) => {
+  try {
+    store.autoHeal = approveRepairProposal(
+      store.autoHeal,
+      req.params.id,
+      req.body?.expectedRevision,
+      req.body?.confirm === true
+    );
+    await saveStore();
+    return res.json({ state: store.autoHeal, status: getAutoHealStatus(store.autoHeal) });
+  } catch (error) {
+    return res.status(409).json({ error: error.message || "Repair proposal could not be applied." });
+  }
+});
+
+app.post("/api/auto-heal/proposals/:id/rollback", requireAuth, async (req, res) => {
+  try {
+    store.autoHeal = rollbackRepairProposal(
+      store.autoHeal,
+      req.params.id,
+      req.body?.expectedRevision,
+      req.body?.confirm === true
+    );
+    await saveStore();
+    return res.json({ state: store.autoHeal, status: getAutoHealStatus(store.autoHeal) });
+  } catch (error) {
+    return res.status(409).json({ error: error.message || "Repair proposal could not be rolled back." });
+  }
+});
+
 app.get("/api/workflows", requireAuth, (_req, res) => {
   res.json({
     workflows: store.workflows.slice().reverse(),
@@ -2013,6 +2071,7 @@ async function executeWorkflowRun(runId) {
   activeWorkflowExecutions.add(runId);
   try {
     const result = await advanceWorkflowRun(initial, workflowStepHandlers(), {
+      stepTimeoutMs: store.autoHeal.config.workflowStepTimeoutMs,
       shouldPause: () => pauseWorkflowRequests.has(runId),
       shouldCancel: () => stopWorkflowRequests.has(runId),
       onCheckpoint: async (checkpoint) => {
@@ -2021,6 +2080,9 @@ async function executeWorkflowRun(runId) {
       }
     });
     store.workflowRuns = store.workflowRuns.map((item) => item.id === runId ? result : item);
+    if (result.status === "failed") {
+      store.autoHeal = inspectWorkflowFailures([result], store.autoHeal);
+    }
     await saveStore();
     return result;
   } finally {
@@ -2053,6 +2115,7 @@ async function markWorkflowExecutionFailed(runId, error) {
     }]).slice(-50)
   };
   store.workflowRuns = store.workflowRuns.map((item) => item.id === runId ? failed : item);
+  store.autoHeal = inspectWorkflowFailures([failed], store.autoHeal);
   try { await saveStore(); } catch { /* the last durable checkpoint remains available for restart recovery */ }
 }
 
@@ -2157,7 +2220,11 @@ app.get("/api/workflow-runs/:id/recovery", requireAuth, (req, res) => {
   const existing = store.workflowRuns.find((item) => item.id === req.params.id);
   if (!existing) return res.status(404).json({ error: "Workflow run not found." });
   res.setHeader("Cache-Control", "no-store");
-  res.json({ recovery: getWorkflowRecoverySummary(existing) });
+  res.json({
+    recovery: getWorkflowRecoverySummary(existing, {
+      maxAttempts: store.autoHeal.config.maxManualRetryAttempts
+    })
+  });
 });
 
 app.post("/api/workflow-runs/:id/retry", requireAuth, async (req, res) => {
@@ -2166,7 +2233,9 @@ app.post("/api/workflow-runs/:id/retry", requireAuth, async (req, res) => {
   if (activeWorkflowExecutions.has(existing.id)) return res.status(409).json({ error: "This workflow run is already executing." });
   let retried;
   try {
-    retried = retryWorkflowRun(existing);
+    retried = retryWorkflowRun(existing, {
+      maxAttempts: store.autoHeal.config.maxManualRetryAttempts
+    });
   } catch (error) {
     return res.status(409).json({ error: error.message || "Workflow run cannot be retried." });
   }
