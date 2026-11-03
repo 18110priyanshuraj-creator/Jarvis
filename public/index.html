@@ -495,6 +495,76 @@
             <p class="media-limits-note">WebM includes browser-rendered motion graphics without an audio track. It is rendered in real time, so keep this tab open until it completes.</p>
           </aside>
         </section>
+
+        <section id="youtube-publishing" class="youtube-publishing">
+          <div class="youtube-heading">
+            <div>
+              <p class="eyebrow">PHASE 18 · USER-CONTROLLED PUBLISHING</p>
+              <h2>YouTube Publishing</h2>
+              <p class="muted">Send an approved Media Studio video to your connected YouTube account after reviewing an exact upload preview.</p>
+            </div>
+            <button type="button" class="item-action" id="youtube-refresh-button">Refresh projects and status</button>
+          </div>
+          <div class="youtube-connection-card">
+            <div>
+              <strong id="youtube-connection-state">Checking YouTube permission…</strong>
+              <p id="youtube-connection-note" class="small muted"></p>
+            </div>
+            <button type="button" class="item-action" id="youtube-connect-button">Connect Google for YouTube uploads</button>
+          </div>
+          <div class="youtube-safety-note">
+            <strong>Privacy and account safety</strong>
+            <p>Every upload starts as a private preview. Public videos can become visible to anyone; unlisted videos can be shared by anyone with the link. Confirm that you own or have permission to use the video, that the details and audience declaration are accurate, and that the Google account is eligible to upload under platform rules. Follow any required parent or guardian supervision. JARVIS cannot change account eligibility.</p>
+            <p>JARVIS streams the selected file to YouTube without keeping a permanent server-side copy. An interrupted upload is not retried automatically; check your YouTube Studio before creating another preview.</p>
+          </div>
+          <form id="youtube-preview-form" class="youtube-form">
+            <h3>Prepare an upload</h3>
+            <label class="youtube-field" for="youtube-project"><span>Approved Media Studio project</span>
+              <select id="youtube-project" class="youtube-control" required><option value="">Choose an approved project</option></select>
+            </label>
+            <p id="youtube-project-hint" class="small muted"></p>
+            <label class="youtube-field" for="youtube-file"><span>Video file</span>
+              <input id="youtube-file" class="youtube-control" type="file" accept="video/mp4,video/webm,video/quicktime" required>
+            </label>
+            <p id="youtube-file-hint" class="small muted">MP4, WebM or QuickTime · maximum 256 MiB</p>
+            <label class="youtube-field" for="youtube-title"><span>YouTube title</span>
+              <input id="youtube-title" class="youtube-control" maxlength="100" required>
+            </label>
+            <label class="youtube-field" for="youtube-description"><span>Description</span>
+              <textarea id="youtube-description" class="youtube-control" rows="4" maxlength="5000"></textarea>
+            </label>
+            <div class="youtube-form-grid">
+              <label class="youtube-field" for="youtube-tags"><span>Tags · comma separated</span>
+                <input id="youtube-tags" class="youtube-control" maxlength="500" placeholder="physics, learning, JEE">
+              </label>
+              <label class="youtube-field" for="youtube-category"><span>Category ID · optional</span>
+                <input id="youtube-category" class="youtube-control" inputmode="numeric" maxlength="4" pattern="[0-9]{1,4}" placeholder="Example: 27">
+              </label>
+              <label class="youtube-field" for="youtube-privacy"><span>Visibility</span>
+                <select id="youtube-privacy" class="youtube-control">
+                  <option value="private" selected>Private · recommended</option>
+                  <option value="unlisted">Unlisted · link can be shared</option>
+                  <option value="public">Public · visible to everyone</option>
+                </select>
+              </label>
+              <label class="youtube-field" for="youtube-made-for-kids"><span>Audience declaration · required</span>
+                <select id="youtube-made-for-kids" class="youtube-control" required>
+                  <option value="" selected>Choose one</option>
+                  <option value="true">Made for kids</option>
+                  <option value="false">Not made for kids</option>
+                </select>
+              </label>
+            </div>
+            <label class="youtube-check"><input id="youtube-reviewed" type="checkbox" required><span>I reviewed the title, description, privacy, audience declaration and video content.</span></label>
+            <label class="youtube-check"><input id="youtube-rights" type="checkbox" required><span>I own this video or have the rights and permission needed to upload it.</span></label>
+            <label class="youtube-check hidden" id="youtube-public-review-wrap"><input id="youtube-public-review" type="checkbox"><span>My parent or guardian has reviewed and approved making this video public.</span></label>
+            <div class="youtube-actions"><button type="submit" class="primary" id="youtube-preview-button">Create upload preview</button></div>
+          </form>
+          <div id="youtube-preview-panel" class="youtube-preview-panel hidden"></div>
+          <p id="youtube-status" class="youtube-status" role="status" aria-live="polite">Connect Google with the YouTube upload permission to begin.</p>
+          <div class="list-heading"><h3>Upload history</h3><span class="small muted">Recent previews and provider responses</span></div>
+          <div id="youtube-history" class="youtube-history"></div>
+        </section>
       </section>
 
       <section id="view-actions" class="view content-view hidden">

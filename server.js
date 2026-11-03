@@ -19,6 +19,14 @@ import { createPageReadToken, createWebPageRead, getWebPageReadStatus, verifyPag
 import { createSourceBasedAnswer, SOURCE_ANSWER_LIMITS } from "./services/source-answer.js";
 import { createChatCompletion, getAIProviderStatus } from "./services/ai-provider.js";
 import { approveMediaProject, createMediaDraft, MEDIA_FORMATS, MEDIA_LIMITS, normalizeMediaProject, updateMediaProject } from "./services/media-engine.js";
+import {
+  completeYouTubePublication,
+  createYouTubePublishPreview,
+  MAX_YOUTUBE_UPLOAD_BYTES,
+  normalizeYouTubePublication,
+  uploadYouTubeVideo,
+  YOUTUBE_UPLOAD_MIME_TYPES
+} from "./services/youtube-publisher.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, mergeDuplicateKnowledge, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { buildMemoryContext, findExactMemory, isDuplicateMemory, isSafeMemoryContent, MEMORY_LIMITS, normalizeMemory, parseExplicitForgetIntent, previewMemoryContext, searchMemories } from "./services/memory.js";
 import { approveSkill, createSkillCandidate, createSkillVersion, getActiveSkillContext, normalizeApplicationId, normalizeSkill, pauseSkill, SKILL_APPLICATION_CATALOG, SKILL_LIMITS, validateSkill } from "./services/skill-engine.js";
@@ -37,7 +45,8 @@ import {
   getGoogleOAuthStatus,
   getIntegrationPermissionCatalog,
   normalizeGoogleOAuthConnection,
-  revokeGoogleOAuthConnection
+  revokeGoogleOAuthConnection,
+  YOUTUBE_UPLOAD_SCOPE
 } from "./services/oauth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -97,6 +106,13 @@ const mediaGenerationLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Media storyboard generation is temporarily rate limited. Please try again later." }
+});
+const youtubeUploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 3,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "YouTube upload limit reached for this hour. Review YouTube Studio before trying again." }
 });
 const pageReadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -172,7 +188,7 @@ const oauthLaunchLimiter = rateLimit({
 
 app.use("/api", apiLimiter);
 
-let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], workflowStepEffects: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [], mediaProjects: [] };
+let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], workflows: [], workflowRuns: [], workflowStepEffects: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [], mediaProjects: [], youtubePublications: [] };
 let writeQueue = Promise.resolve();
 let neonSql;
 let databaseRevision = null;
@@ -186,6 +202,7 @@ function getNeonSql() {
 
 const runtimeStore = createRuntimeStore({ getSql: getNeonSql });
 const activeWorkflowExecutions = new Set();
+const activeYouTubeUploads = new Set();
 const pauseWorkflowRequests = new Set();
 const stopWorkflowRequests = new Set();
 const pendingWorkflowExecutionQueue = [];
@@ -333,6 +350,11 @@ function normalizeStore(parsed = {}) {
     mediaProjects: Array.isArray(parsed.mediaProjects)
       ? parsed.mediaProjects.slice(-MEDIA_LIMITS.projects).flatMap((item) => {
           try { return [normalizeMediaProject(item)]; } catch { return []; }
+        })
+      : [],
+    youtubePublications: Array.isArray(parsed.youtubePublications)
+      ? parsed.youtubePublications.slice(-100).flatMap((item) => {
+          try { return [normalizeYouTubePublication(item)]; } catch { return []; }
         })
       : []
   };
@@ -991,7 +1013,8 @@ app.get("/api/export", requireAuth, (req, res) => {
       workflowRuns: store.workflowRuns,
       workflowStepEffects: store.workflowStepEffects,
       disabledIntegrations: store.disabledIntegrations,
-      externalActions: store.externalActions
+      externalActions: store.externalActions,
+      youtubePublications: store.youtubePublications
     },
     excluded: [
       "temporary conversation history",
@@ -1470,8 +1493,14 @@ app.post("/api/integrations/google_drive/oauth/start", requireAuth, oauthStartLi
     return res.status(409).json({ error: "Enable Google Drive in JARVIS before starting OAuth." });
   }
   try {
-    const capability = req.body?.capability === "create_docs" ? "create_docs" : "read";
-    const result = await beginGoogleOAuth({ sessionToken: req.sessionToken, capability, runtimeStore });
+    const requestedCapability = req.body?.capability;
+    const capability = ["create_docs", "youtube_upload"].includes(requestedCapability) ? requestedCapability : "read";
+    const result = await beginGoogleOAuth({
+      sessionToken: req.sessionToken,
+      capability,
+      existingConnection: getGoogleDriveOAuthConnection(),
+      runtimeStore
+    });
     const launchUrl = createGoogleOAuthBrowserHandoff(result);
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Referrer-Policy", "no-referrer");
@@ -1514,8 +1543,10 @@ app.get("/api/integrations/google_drive/oauth/callback", oauthCallbackLimiter, a
     await saveStore();
     clearGoogleOAuthCookie(res);
     res.setHeader("Cache-Control", "no-store");
+    const youtubeEnabled = connection.grantedScopes.includes(YOUTUBE_UPLOAD_SCOPE);
     const docsEnabled = connection.grantedScopes.includes("https://www.googleapis.com/auth/drive.file");
-    return res.redirect(303, "/?integration=google_drive_connected" + (docsEnabled ? "&capability=create_docs" : ""));
+    const capability = youtubeEnabled ? "youtube_upload" : docsEnabled ? "create_docs" : "read";
+    return res.redirect(303, "/?integration=google_drive_connected&capability=" + capability);
   } catch (error) {
     clearGoogleOAuthCookie(res);
     console.warn("Google Drive OAuth callback was not completed:", error?.message || "OAuth error");
@@ -2190,6 +2221,184 @@ app.delete("/api/media/projects/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+
+app.get("/api/youtube/status", requireAuth, async (_req, res) => {
+  let recovered = false;
+  store.youtubePublications = store.youtubePublications.map((item) => {
+    if (item.status === "uploading" && !activeYouTubeUploads.has(item.id)) {
+      recovered = true;
+      return normalizeYouTubePublication({
+        ...item,
+        status: "needs_review",
+        error: "The server restarted or lost the upload connection. Check YouTube Studio before trying again."
+      });
+    }
+    return item;
+  });
+  if (recovered) await saveStore();
+  const oauth = getGoogleOAuthStatus(getGoogleDriveOAuthConnection(), process.env);
+  const enabled = !store.disabledIntegrations.includes("google_drive");
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    connected: oauth.connected,
+    canConnect: oauth.canConnect,
+    canUpload: oauth.canUploadYouTube && enabled,
+    uploadScope: YOUTUBE_UPLOAD_SCOPE,
+    googleIntegrationEnabled: enabled,
+    maxUploadBytes: MAX_YOUTUBE_UPLOAD_BYTES,
+    allowedMimeTypes: YOUTUBE_UPLOAD_MIME_TYPES,
+    previewTtlMs: 10 * 60 * 1000,
+    publications: store.youtubePublications.slice().reverse().slice(0, 50).map((item) => ({
+      id: item.id,
+      projectId: item.projectId,
+      title: item.title,
+      privacyStatus: item.privacyStatus,
+      status: item.status,
+      videoId: item.videoId || "",
+      videoUrl: item.videoUrl || "",
+      uploadStatus: item.uploadStatus || "",
+      error: item.error || "",
+      createdAt: item.createdAt,
+      uploadedAt: item.uploadedAt || ""
+    }))
+  });
+});
+
+app.post("/api/youtube/previews", requireAuth, actionPreviewLimiter, async (req, res) => {
+  if (store.disabledIntegrations.includes("google_drive")) {
+    return res.status(409).json({ error: "Enable Google services in JARVIS before preparing a YouTube upload." });
+  }
+  const oauth = getGoogleOAuthStatus(getGoogleDriveOAuthConnection(), process.env);
+  if (!oauth.canUploadYouTube) {
+    return res.status(409).json({ error: "Connect Google with the YouTube upload permission before preparing an upload." });
+  }
+  const pending = store.youtubePublications.filter((item) =>
+    item.status === "pending_confirmation" && Date.parse(item.expiresAt) > Date.now()
+  ).length;
+  if (pending >= 5) return res.status(409).json({ error: "There are already five pending YouTube previews. Cancel or review one first." });
+  const project = store.mediaProjects.find((item) => item.id === req.body?.projectId);
+  if (!project) return res.status(404).json({ error: "Media Studio project not found." });
+  try {
+    const preview = createYouTubePublishPreview(project, req.body || {});
+    store.youtubePublications.push(preview);
+    store.youtubePublications = store.youtubePublications.slice(-100);
+    await saveStore();
+    res.status(201).json({ preview });
+  } catch (error) {
+    res.status(error instanceof TypeError ? 400 : 409).json({ error: error.message || "YouTube upload preview could not be created." });
+  }
+});
+
+app.post("/api/youtube/previews/:id/cancel", requireAuth, async (req, res) => {
+  const existing = store.youtubePublications.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "YouTube preview not found." });
+  if (existing.status !== "pending_confirmation") {
+    return res.status(409).json({ error: "Only a pending YouTube preview can be cancelled." });
+  }
+  const cancelled = normalizeYouTubePublication({
+    ...existing,
+    status: "cancelled",
+    confirmationPhrase: "",
+    error: "Cancelled by the owner. No video was uploaded."
+  });
+  store.youtubePublications = store.youtubePublications.map((item) => item.id === existing.id ? cancelled : item);
+  await saveStore();
+  res.json({ publication: cancelled });
+});
+
+app.post("/api/youtube/publications/:id/upload", requireAuth, youtubeUploadLimiter, async (req, res) => {
+  const existing = store.youtubePublications.find((item) => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "YouTube preview not found." });
+  if (existing.status !== "pending_confirmation") {
+    return res.status(409).json({ error: "This preview has already been used or is no longer pending. Create a new preview only after checking YouTube Studio." });
+  }
+  if (Date.parse(existing.expiresAt) <= Date.now()) {
+    const expired = normalizeYouTubePublication({ ...existing, status: "expired", error: "Preview expired. No video was uploaded." });
+    store.youtubePublications = store.youtubePublications.map((item) => item.id === existing.id ? expired : item);
+    await saveStore();
+    return res.status(410).json({ error: "This YouTube preview expired. Review the details and create a new one." });
+  }
+  if (req.get("x-jarvis-confirmation") !== "PUBLISH") {
+    return res.status(400).json({ error: "The explicit PUBLISH confirmation is missing. No video was uploaded." });
+  }
+  const contentLength = Number(req.headers["content-length"]);
+  const contentType = String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+  if (!Number.isSafeInteger(contentLength) || contentLength !== existing.contentLength) {
+    return res.status(400).json({ error: "The uploaded file size does not match the approved preview. No upload was started." });
+  }
+  if (contentType !== existing.contentType || !YOUTUBE_UPLOAD_MIME_TYPES.includes(contentType)) {
+    return res.status(415).json({ error: "The uploaded file type does not match the approved preview. No upload was started." });
+  }
+  if (activeYouTubeUploads.has(existing.id)) return res.status(409).json({ error: "This video is already uploading." });
+  if (store.disabledIntegrations.includes("google_drive")) {
+    return res.status(409).json({ error: "Google services are disabled in JARVIS. No upload was started." });
+  }
+  const oauth = getGoogleOAuthStatus(getGoogleDriveOAuthConnection(), process.env);
+  if (!oauth.canUploadYouTube) {
+    return res.status(409).json({ error: "The YouTube upload permission is no longer active. Reconnect Google before uploading." });
+  }
+  const project = store.mediaProjects.find((item) => item.id === existing.projectId);
+  if (!project || project.status !== "approved") {
+    return res.status(409).json({ error: "The source Media Studio project is no longer approved. No upload was started." });
+  }
+
+  activeYouTubeUploads.add(existing.id);
+  const uploading = normalizeYouTubePublication({ ...existing, status: "uploading", error: "" });
+  store.youtubePublications = store.youtubePublications.map((item) => item.id === existing.id ? uploading : item);
+  try {
+    await saveStore();
+  } catch {
+    activeYouTubeUploads.delete(existing.id);
+    store.youtubePublications = store.youtubePublications.map((item) => item.id === existing.id ? existing : item);
+    return res.status(503).json({ error: "JARVIS could not save the upload state. No video bytes were sent." });
+  }
+  let providerResult = null;
+  try {
+    const accessToken = await getGoogleDriveTokenForIntegration();
+    providerResult = await uploadYouTubeVideo({ publication: uploading, accessToken, body: req });
+    const completed = completeYouTubePublication(uploading, providerResult);
+    store.youtubePublications = store.youtubePublications.map((item) => item.id === existing.id ? completed : item);
+    await saveStore();
+    res.status(201).json({
+      publication: {
+        id: completed.id,
+        title: completed.title,
+        privacyStatus: completed.privacyStatus,
+        status: completed.status,
+        videoId: completed.videoId,
+        videoUrl: completed.videoUrl,
+        uploadStatus: completed.uploadStatus,
+        uploadedAt: completed.uploadedAt
+      },
+      message: "YouTube accepted the video upload. Video processing and visibility may take additional time."
+    });
+  } catch (error) {
+    const uncertain = error?.uploadStarted === true || providerResult !== null;
+    const failed = normalizeYouTubePublication({
+      ...uploading,
+      ...(providerResult ? {
+        videoId: providerResult.videoId,
+        uploadStatus: providerResult.uploadStatus,
+        uploadedAt: providerResult.uploadedAt
+      } : {}),
+      status: uncertain ? "needs_review" : "failed",
+      error: uncertain
+        ? "Upload outcome is uncertain or YouTube accepted the video but JARVIS could not save the final receipt. Check YouTube Studio before creating another upload."
+        : "YouTube did not start the upload. Review the connection and try again after checking YouTube Studio."
+    });
+    store.youtubePublications = store.youtubePublications.map((item) => item.id === existing.id ? failed : item);
+    await saveStore();
+    const message = providerResult
+      ? "YouTube accepted the video, but JARVIS could not save the final receipt. Check YouTube Studio before trying again; JARVIS will not retry automatically."
+      : uncertain
+        ? "The upload connection ended after video transfer may have started. Check YouTube Studio before trying again; JARVIS will not retry automatically."
+        : (error?.message || "YouTube could not start the upload. No automatic retry was attempted.");
+    return res.status(502).json({ error: message, publication: { id: failed.id, status: failed.status } });
+  } finally {
+    activeYouTubeUploads.delete(existing.id);
+  }
+});
+
 app.post("/api/research", requireAuth, webResearchLimiter, async (req, res) => {
   const query = cleanText(req.body?.query, 1200);
   if (!query) return res.status(400).json({ error: "Enter a research question first." });
@@ -2337,4 +2546,8 @@ if (JSON.stringify(recoveredWorkflowRuns) !== JSON.stringify(store.workflowRuns)
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log("JARVIS listening on port " + PORT);
 });
-server.requestTimeout = 95000;
+// YouTube uploads may stream up to 256 MiB. Keep a bounded total request
+// deadline while still closing sockets that remain inactive for too long.
+server.requestTimeout = 31 * 60 * 1000;
+server.headersTimeout = 60 * 1000;
+server.setTimeout(31 * 60 * 1000, (socket) => socket.destroy());
