@@ -607,7 +607,7 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(documentStorageInfo.durableStorageConfigured, true);
   assert.equal(documentStorageInfo.extraction.pdfTextExtraction, false);
 
-  const documentBytes = Buffer.from("# Average speed\\nAverage speed equals total distance divided by total time.", "utf8");
+  const documentBytes = Buffer.from("# Average speed\nAverage speed equals total distance divided by total time.", "utf8");
   const documentHeaders = {
     "content-type": "application/octet-stream",
     "x-jarvis-filename": encodeURIComponent("average-speed.md"),
