@@ -237,6 +237,28 @@
           <div id="crucible-program-list" class="item-list"></div>
           <div id="crucible-run-output" class="research-hint hidden" aria-live="polite"></div>
         </section>
+
+        <section class="knowledge-documents-panel auto-heal-panel">
+          <div class="list-heading">
+            <h2>Phase 22 — Proactive Auto-Heal</h2>
+            <span class="muted small">Detect → Propose → Test → Approve → Roll back</span>
+          </div>
+          <div class="research-hint">
+            <strong>Controlled repair boundary</strong>
+            <p>JARVIS records sanitized workflow failures automatically. A repair proposal can only adjust the workflow step timeout by a bounded increment; the maximum manual retry allowance is also bounded. Every change must pass checks and be explicitly approved. There are no automatic retries, source-code edits, secret changes, storage-path edits or external actions.</p>
+            <p id="autoheal-policy-status" class="small muted" aria-live="polite">Loading auto-heal policy…</p>
+          </div>
+          <div class="form-card">
+            <div class="form-row">
+              <span class="small muted">Refresh the incident list from saved workflow runs.</span>
+              <button class="primary" type="button" id="autoheal-inspect-button">Inspect workflows</button>
+            </div>
+          </div>
+          <div class="list-heading"><h3>Failure incidents</h3><span class="muted small">Sanitized evidence only</span></div>
+          <div id="autoheal-incidents-list" class="item-list"></div>
+          <div class="list-heading"><h3>Repair proposals and history</h3><span class="muted small">Manual approval and rollback</span></div>
+          <div id="autoheal-proposals-list" class="item-list"></div>
+        </section>
       </section>
 
       <section id="view-tasks" class="view content-view hidden">
