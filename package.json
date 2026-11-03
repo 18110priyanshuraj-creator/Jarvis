@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check services/auto-heal-engine.js && node --check services/skill-crucible.js && node --check public/agent-evolution.js && node --check public/auto-heal.js && node --check services/learning-engine.js && node --check services/knowledge-documents.js && node --check brain.js && node --check public/app.js && node --check public/knowledge-documents.js && node --check public/media-workspace.js && node --check public/youtube-publisher.js && node --check public/orbital-visual.js && node --test"
+    "check": "node --check server.js && node --check services/specialist-workers.js && node --check public/specialist-workers.js && node --check services/auto-heal-engine.js && node --check services/skill-crucible.js && node --check public/agent-evolution.js && node --check public/auto-heal.js && node --check services/learning-engine.js && node --check services/knowledge-documents.js && node --check brain.js && node --check public/app.js && node --check public/knowledge-documents.js && node --check public/media-workspace.js && node --check public/youtube-publisher.js && node --check public/orbital-visual.js && node --test"
   },
   "engines": {
     "node": ">=22"

@@ -5,6 +5,7 @@ import { createYouTubePublisher } from "./youtube-publisher.js";
 import { createKnowledgeDocuments } from "./knowledge-documents.js";
 import { createAgentEvolution } from "./agent-evolution.js";
 import { createAutoHealWorkspace } from "./auto-heal.js";
+import { createSpecialistWorkersWorkspace } from "./specialist-workers.js";
 const $ = (selector) => document.querySelector(selector);
 const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, taskPlan: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", knowledgeFilter: "all", knowledgeSummary: { total: 0, trusted: 0, unreviewed: 0, rejected: 0 }, diagnostics: null, activeView: "chat" };
 let toastTimer;
@@ -37,6 +38,8 @@ const agentEvolution = createAgentEvolution({ api, toast, getSkills: () => state
 agentEvolution.init();
 const autoHealWorkspace = createAutoHealWorkspace({ api, toast });
 autoHealWorkspace.init();
+const specialistWorkersWorkspace = createSpecialistWorkersWorkspace({ api, toast });
+specialistWorkersWorkspace.init();
 
 function showLogin() {
   $("#login-screen").classList.remove("hidden");
@@ -92,6 +95,7 @@ async function refreshState() {
   state.skills = data.skills || [];
   await agentEvolution.load();
   await autoHealWorkspace.load();
+  await specialistWorkersWorkspace.load();
   state.research = data.research || [];
   renderChats();
   renderMemories();
@@ -135,7 +139,10 @@ function setView(name) {
   $("#menu-toggle")?.setAttribute("aria-expanded", "false");
   if (name === "devices") refreshDevices().catch((error) => toast(error.message, true));
   if (name === "memory") refreshMemories().catch((error) => toast(error.message, true));
-  if (name === "workflows") refreshWorkflows().catch((error) => toast(error.message, true));
+  if (name === "workflows") {
+    refreshWorkflows().catch((error) => toast(error.message, true));
+    specialistWorkersWorkspace.load().catch((error) => toast(error.message, true));
+  }
   if (name === "integrations") refreshIntegrations().catch((error) => toast(error.message, true));
   if (name === "actions") refreshExternalActions().catch((error) => toast(error.message, true));
   if (name === "system") refreshSystemDiagnostics().catch((error) => toast(error.message, true));

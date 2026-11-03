@@ -161,6 +161,10 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(blockedSkillProgramCreate.status, 401);
   const blockedAutoHeal = await request("/api/auto-heal", { headers: {} });
   assert.equal(blockedAutoHeal.status, 401);
+  const blockedWorkers = await request("/api/workers", { headers: {} });
+  assert.equal(blockedWorkers.status, 401);
+  const blockedWorkerDispatch = await request("/api/workers/dispatch", { method: "POST", headers: {}, body: JSON.stringify({ goal: "Create a video storyboard." }) });
+  assert.equal(blockedWorkerDispatch.status, 401);
   const blockedExperience = await request("/api/experience", { headers: {} });
   assert.equal(blockedExperience.status, 401);
   const blockedWorkflows = await request("/api/workflows", { headers: {} });
@@ -1379,4 +1383,75 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(finalLogout.status, 200);
   cookie = "";
 
+});
+
+
+test("specialist worker runtime is authenticated, sequential, persistent and evidence-verified", async () => {
+  cookie = "";
+  const unauthenticated = await request("/api/workers", { headers: {} });
+  assert.equal(unauthenticated.status, 401);
+
+  const login = await request("/api/login", {
+    method: "POST",
+    body: JSON.stringify({ password: "test-only-password-2026" })
+  });
+  assert.equal(login.status, 200);
+  cookie = (login.headers.get("set-cookie") || "").split(";")[0];
+
+  const catalogueResponse = await request("/api/workers");
+  assert.equal(catalogueResponse.status, 200);
+  const catalogue = await catalogueResponse.json();
+  assert.equal(catalogue.workers.length, 8);
+  assert.equal(catalogue.limits.externalActionExecution, false);
+  assert.equal(catalogue.limits.generatedCodeExecution, false);
+
+  const invalid = await request("/api/workers/dispatch", {
+    method: "POST",
+    body: JSON.stringify({ goal: "Send this to learner@example.com" })
+  });
+  assert.equal(invalid.status, 400);
+
+  const approvalGate = await request("/api/workers/dispatch", {
+    method: "POST",
+    body: JSON.stringify({ goal: "Publish this video publicly on YouTube." })
+  });
+  assert.equal(approvalGate.status, 202);
+  const waitingRun = (await approvalGate.json()).run;
+  assert.equal(waitingRun.status, "waiting_for_user");
+  assert.equal(waitingRun.steps[0].result.details.decision, "approval_required");
+  assert.equal(waitingRun.steps[1].status, "skipped");
+
+  const dispatched = await request("/api/workers/dispatch", {
+    method: "POST",
+    body: JSON.stringify({ goal: "Create an educational stick-figure animation storyboard about gravity." })
+  });
+  assert.equal(dispatched.status, 200);
+  const payload = await dispatched.json();
+  assert.equal(payload.run.status, "completed");
+  assert.deepEqual(payload.run.workerIds, ["security", "media_creator", "verification"]);
+  assert.equal(payload.run.steps[1].result.artifact.type, "media_storyboard");
+  assert.equal(payload.run.steps[2].result.verification.passed, true);
+
+  const storedMediaProjects = await request("/api/media/projects");
+  assert.equal(storedMediaProjects.status, 200);
+  const media = await storedMediaProjects.json();
+  assert.ok(media.projects.some((item) => item.id === payload.run.steps[1].result.artifact.id));
+
+  const runDetail = await request("/api/workers/runs/" + payload.run.id);
+  assert.equal(runDetail.status, 200);
+  assert.equal((await runDetail.json()).run.status, "completed");
+
+  const stateFile = await fs.readFile(path.join(tempDir, "state.json"), "utf8");
+  const persisted = JSON.parse(stateFile);
+  assert.ok(persisted.workerRuns.some((item) => item.id === payload.run.id));
+  assert.ok(Array.isArray(persisted.mediaProjects));
+
+  const exportResponse = await request("/api/export");
+  assert.equal(exportResponse.status, 200);
+  const exportPayload = await exportResponse.json();
+  assert.ok(exportPayload.data.workerRuns.some((item) => item.id === payload.run.id));
+
+  const logout = await request("/api/logout", { method: "POST", body: JSON.stringify({}) });
+  assert.equal(logout.status, 200);
+  cookie = "";
 });
