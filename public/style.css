@@ -1451,3 +1451,22 @@ body::before { display: none; }
   .diagnostic-card-header { align-items: center; }
   #diagnostic-generated-at { text-align: left; }
 }
+
+
+/* Phase 20 — Knowledge Manager */
+.knowledge-documents-panel { margin: 26px 0; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: #101827b5; }
+.knowledge-documents-panel > p { line-height: 1.6; max-width: 900px; }
+.knowledge-upload-form { margin: 16px 0; }
+.knowledge-upload-form h3 { margin: 0 0 4px; font-size: 1rem; }
+.knowledge-upload-form input[type="file"] { padding: 10px; }
+.knowledge-storage-warning { color: #ffcf92; border-color: #ab7b3d66; background: #5a3b161c; margin: 10px 0; }
+.knowledge-document-item { align-items: flex-start; }
+.knowledge-document-item details { margin-top: 8px; color: var(--muted); font-size: .82rem; }
+.knowledge-document-item summary { cursor: pointer; color: #b8c9eb; }
+.knowledge-document-preview { max-width: 78ch; white-space: pre-wrap; overflow-wrap: anywhere; padding: 10px; border-radius: 9px; background: #080f1b; border: 1px solid var(--line); }
+.knowledge-upload-form .form-row { align-items: end; }
+@media (max-width: 760px) {
+  .knowledge-documents-panel { padding: 13px; }
+  .knowledge-documents-panel .search-form { display: grid; }
+  .knowledge-upload-form .form-row { display: grid; }
+}
