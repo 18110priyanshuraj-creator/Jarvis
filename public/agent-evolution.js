@@ -295,7 +295,7 @@ export function createAgentEvolution({ api, toast, getSkills }) {
     if (status && autoState && autoStatus) {
       status.textContent = "Revision " + autoStatus.revision +
         " · Step timeout " + autoStatus.config.workflowStepTimeoutMs + " ms" +
-        " · Manual retry cap " + autoStatus.config.maxManualRetryAttempts +
+        " · Step-attempt cap " + autoStatus.config.maxManualRetryAttempts +
         " · Auto-repair " + (autoStatus.automaticRepair ? "on" : "off") +
         " · Auto-retry " + (autoStatus.automaticRetry ? "on" : "off");
     }
