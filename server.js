@@ -2163,6 +2163,7 @@ app.get("/api/knowledge/documents/status", requireAuth, (_req, res) => {
       ? "Set JARVIS_DOCUMENTS_DIR to a durable mounted volume before relying on uploaded files. Database metadata alone does not preserve binary files."
       : "",
     limits: DOCUMENT_LIMITS,
+    storedBytes: store.knowledgeDocuments.reduce((sum, item) => sum + item.byteSize, 0),
     supportedMimeTypes: [
       "text/plain", "text/markdown", "text/csv", "application/json", "application/pdf",
       "image/jpeg", "image/png", "image/webp", "audio/mpeg", "audio/mp4", "audio/wav",
@@ -2233,6 +2234,10 @@ app.post("/api/knowledge/documents", requireAuth, documentUploadLimiter,
     }
     if (store.knowledgeDocuments.length >= DOCUMENT_LIMITS.files) {
       return res.status(409).json({ error: "The document library is full. Delete an old document first." });
+    }
+    const storedBytes = store.knowledgeDocuments.reduce((sum, item) => sum + item.byteSize, 0);
+    if (storedBytes + document.byteSize > DOCUMENT_LIMITS.totalBytes) {
+      return res.status(409).json({ error: "The document library storage limit has been reached. Delete an old attachment before uploading another." });
     }
 
     const filePath = resolveDocumentStoragePath(DOCUMENTS_DIR, document);
