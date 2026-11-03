@@ -157,6 +157,27 @@ async function responseJson(response) {
   try { return await response.json(); } catch { return {}; }
 }
 
+export function completeYouTubePublication(publication, providerResult) {
+  const videoId = cleanText(providerResult?.videoId, 32);
+  const uploadStatus = cleanText(providerResult?.uploadStatus, 20);
+  if (!/^[A-Za-z0-9_-]{6,32}$/.test(videoId)) {
+    throw new TypeError("YouTube did not return a valid video ID. Check YouTube Studio before trying again.");
+  }
+  if (!["uploaded", "processed"].includes(uploadStatus)) {
+    const error = new Error("YouTube returned an upload state that is not confirmed as uploaded. Check YouTube Studio before trying again.");
+    error.uploadStarted = true;
+    throw error;
+  }
+  return normalizeYouTubePublication({
+    ...publication,
+    status: "uploaded",
+    videoId,
+    uploadStatus,
+    uploadedAt: providerResult.uploadedAt,
+    error: ""
+  });
+}
+
 export async function uploadYouTubeVideo(options = {}) {
   const publication = normalizeYouTubePublication(options.publication);
   const accessToken = cleanText(options.accessToken, 4096);
