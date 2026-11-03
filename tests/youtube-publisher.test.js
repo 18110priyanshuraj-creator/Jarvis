@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Readable } from "node:stream";
 import {
+  completeYouTubePublication,
   createYouTubePublishPreview,
   MAX_YOUTUBE_UPLOAD_BYTES,
   normalizeYouTubePublication,
@@ -87,6 +88,33 @@ test("publication records normalize to safe fields and reject invalid states", (
   assert.equal(normalized.videoId, "abcdef12345");
   assert.equal(normalized.videoUrl, "https://www.youtube.com/watch?v=abcdef12345");
   assert.throws(() => normalizeYouTubePublication({ ...preview, status: "unknown" }), /invalid/i);
+});
+
+test("successful provider receipt becomes an uploaded publication using the provider result", () => {
+  const preview = createYouTubePublishPreview(project, validInput);
+  const completed = completeYouTubePublication(preview, {
+    videoId: "abcdef12345",
+    uploadStatus: "uploaded",
+    uploadedAt: "2026-11-03T03:00:00.000Z"
+  });
+  assert.equal(completed.status, "uploaded");
+  assert.equal(completed.videoId, "abcdef12345");
+  assert.equal(completed.videoUrl, "https://www.youtube.com/watch?v=abcdef12345");
+  assert.equal(completed.uploadStatus, "uploaded");
+  assert.equal(completed.uploadedAt, "2026-11-03T03:00:00.000Z");
+  assert.equal(completed.error, undefined);
+});
+
+test("provider receipts without a valid video ID or confirmed upload state are not marked complete", () => {
+  const preview = createYouTubePublishPreview(project, validInput);
+  assert.throws(() => completeYouTubePublication(preview, {
+    videoId: "",
+    uploadStatus: "uploaded"
+  }), /valid video ID/i);
+  assert.throws(() => completeYouTubePublication(preview, {
+    videoId: "abcdef12345",
+    uploadStatus: "failed"
+  }), (error) => error.uploadStarted === true && /not confirmed/i.test(error.message));
 });
 
 test("resumable upload initializes metadata then streams the exact bounded video body", async () => {
