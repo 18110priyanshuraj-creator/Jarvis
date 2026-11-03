@@ -206,7 +206,7 @@
             <p id="crucible-runtime-status" class="small muted" aria-live="polite">Loading the constrained runtime status…</p>
           </div>
           <form id="crucible-form" class="form-card">
-            <h3>Create a skill program draft</h3>
+            <h3 id="crucible-form-title">Create a skill program draft</h3>
             <label for="crucible-skill">Link to an approved skill</label>
             <select id="crucible-skill" required>
               <option value="">Loading active skills…</option>
@@ -230,7 +230,8 @@
             <input id="crucible-negative" maxlength="1200" required placeholder="What is the weather today?">
             <div class="form-row">
               <span class="small muted">Creating a draft never activates or executes it.</span>
-              <button class="primary" type="submit">Save program draft</button>
+              <button type="button" class="item-action hidden" id="crucible-cancel-edit">Cancel edit</button>
+              <button class="primary" type="submit" id="crucible-submit-button">Save program draft</button>
             </div>
           </form>
           <div id="crucible-program-list" class="item-list"></div>
