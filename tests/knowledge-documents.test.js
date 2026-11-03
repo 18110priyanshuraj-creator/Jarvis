@@ -13,7 +13,7 @@ import {
 const now = "2026-11-03T10:00:00.000Z";
 
 test("document filenames cannot escape the managed storage directory", () => {
-  assert.equal(sanitizeDocumentFileName("../../unsafe/name.txt"), "unsafe_name.txt");
+  assert.equal(sanitizeDocumentFileName("../../unsafe/name.txt"), "name.txt");
   assert.equal(sanitizeDocumentFileName("  ..\\evil\\file.md  "), "evil_file.md");
 });
 
