@@ -268,10 +268,74 @@
           <input id="task-title" maxlength="180" required placeholder="What needs to get done?">
           <label for="task-description">Details <span class="muted">(optional)</span></label>
           <textarea id="task-description" rows="2" maxlength="1000" placeholder="Notes, small steps, or context"></textarea>
-          <div class="form-row"><label class="field-label" for="task-due">Due date <span class="muted">(optional)</span><input id="task-due" type="datetime-local"></label><button class="primary" type="submit">Add task</button></div>
+          <div class="form-row">
+            <label class="field-label" for="task-due">Due date <span class="muted">(optional)</span><input id="task-due" type="datetime-local"></label>
+            <label class="field-label" for="task-priority">Priority<select id="task-priority"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></label>
+            <button class="primary" type="submit">Add task</button>
+          </div>
         </form>
         <div class="list-heading"><h2>Your task list</h2><span class="muted small">Mark complete as you go</span></div>
         <div id="task-list" class="item-list"></div>
+        <section class="scheduler-panel">
+          <div class="list-heading">
+            <div><h2>Proactive Assistant</h2><p class="small muted">Reminders, recurring schedules and approved workflows</p></div>
+            <span class="counter" id="schedule-unread-count">0 unread</span>
+          </div>
+          <p class="research-hint" id="scheduler-runtime-note">Schedules run only while the JARVIS server is available. Android background guarantees are not implied.</p>
+          <p class="small muted" id="schedule-summary">Loading pending task summary…</p>
+          <div class="form-row scheduler-actions">
+            <button type="button" class="item-action" id="enable-browser-notifications">Enable browser notifications</button>
+            <span class="small muted">Browser permission is optional; in-app event history is always retained.</span>
+          </div>
+          <form id="schedule-form" class="form-card scheduler-form">
+            <h3>Create a schedule</h3>
+            <div class="form-row">
+              <label class="field-label" for="schedule-kind">Schedule type
+                <select id="schedule-kind">
+                  <option value="reminder">Reminder</option>
+                  <option value="research">Public web research</option>
+                  <option value="daily_summary">Daily task summary</option>
+                  <option value="workflow">Approved workflow</option>
+                </select>
+              </label>
+              <label class="field-label" for="schedule-recurrence">Repeat
+                <select id="schedule-recurrence"><option value="once">Once</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select>
+              </label>
+              <label class="field-label" for="schedule-priority">Priority
+                <select id="schedule-priority"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select>
+              </label>
+            </div>
+            <label for="schedule-title">Schedule title</label>
+            <input id="schedule-title" maxlength="120" required placeholder="e.g. Evening revision reminder">
+            <div id="schedule-description-field">
+              <label for="schedule-description">Reminder details <span class="muted">(optional)</span></label>
+              <textarea id="schedule-description" rows="2" maxlength="600" placeholder="A short note to show when the reminder is due."></textarea>
+            </div>
+            <div id="schedule-query-field" class="hidden">
+              <label for="schedule-query">Research query</label>
+              <input id="schedule-query" maxlength="400" placeholder="Search public sources for a specific topic">
+            </div>
+            <div id="schedule-workflow-field" class="hidden">
+              <label for="schedule-workflow-id">Approved workflow</label>
+              <select id="schedule-workflow-id"><option value="">Choose an approved workflow</option></select>
+            </div>
+            <div class="form-row">
+              <label class="field-label" for="schedule-due-at">First run
+                <input id="schedule-due-at" type="datetime-local" required>
+              </label>
+              <label class="field-label scheduler-checkbox" for="schedule-browser-notification">
+                <span>Allow browser notification</span>
+                <input id="schedule-browser-notification" type="checkbox">
+              </label>
+            </div>
+            <p class="small muted">Creating the schedule is your approval to run this selected operation at the chosen time. Public research uses the already-configured search service. Workflow schedules require a workflow you previously validated and approved.</p>
+            <div class="form-row"><span class="small muted">Time zone: your device's current time zone</span><button class="primary" id="schedule-submit" type="submit">Save schedule</button></div>
+          </form>
+          <div class="list-heading"><h3>Schedules</h3><span class="muted small">Pause, resume or cancel at any time</span></div>
+          <div id="schedule-list" class="item-list"></div>
+          <div class="list-heading"><h3>Notifications and missed tasks</h3><span class="muted small">Persistent event history</span></div>
+          <div id="schedule-event-list" class="item-list"></div>
+        </section>
       </section>
 
       <section id="view-research" class="view content-view hidden">

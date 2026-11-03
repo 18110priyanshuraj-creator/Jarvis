@@ -1455,3 +1455,108 @@ test("specialist worker runtime is authenticated, sequential, persistent and evi
   assert.equal(logout.status, 200);
   cookie = "";
 });
+
+
+test("scheduler endpoints persist approvals, task priority and schedule state", async () => {
+  cookie = "";
+  const blocked = await request("/api/schedules", { headers: {} });
+  assert.equal(blocked.status, 401);
+
+  const login = await request("/api/login", {
+    method: "POST",
+    body: JSON.stringify({ password: "test-only-password-2026" })
+  });
+  assert.equal(login.status, 200);
+  cookie = (login.headers.get("set-cookie") || "").split(";")[0];
+
+  const dueAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const createdTask = await request("/api/tasks", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "Review scheduled study notes",
+      description: "Test priority and pending summary.",
+      dueAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      priority: "high"
+    })
+  });
+  assert.equal(createdTask.status, 201);
+  const task = (await createdTask.json()).task;
+  assert.equal(task.priority, "high");
+
+  const created = await request("/api/schedules", {
+    method: "POST",
+    body: JSON.stringify({
+      kind: "reminder",
+      title: "Evening revision",
+      description: "Review the saved study notes.",
+      dueAt,
+      recurrence: "daily",
+      timeZone: "Asia/Kolkata",
+      priority: "high",
+      browserNotificationApproved: false
+    })
+  });
+  assert.equal(created.status, 201);
+  const schedule = (await created.json()).schedule;
+  assert.equal(schedule.status, "active");
+  assert.equal(schedule.browserNotificationApproved, false);
+
+  const listResponse = await request("/api/schedules");
+  assert.equal(listResponse.status, 200);
+  const list = await listResponse.json();
+  assert.ok(list.schedules.some((item) => item.id === schedule.id));
+  assert.ok(list.pendingTasks.pending >= 1);
+  assert.ok(list.pendingTasks.overdue >= 1);
+  assert.ok(list.pendingTasks.highPriority >= 1);
+
+  const paused = await request("/api/schedules/" + schedule.id, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "paused" })
+  });
+  assert.equal(paused.status, 200);
+  assert.equal((await paused.json()).schedule.status, "paused");
+
+  const resumed = await request("/api/schedules/" + schedule.id, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "active" })
+  });
+  assert.equal(resumed.status, 200);
+  assert.equal((await resumed.json()).schedule.status, "active");
+
+  const invalidWorkflow = await request("/api/schedules", {
+    method: "POST",
+    body: JSON.stringify({
+      kind: "workflow",
+      title: "Run unapproved workflow",
+      workflowId: "11111111-1111-4111-8111-111111111111",
+      dueAt,
+      recurrence: "once",
+      timeZone: "Asia/Kolkata"
+    })
+  });
+  assert.equal(invalidWorkflow.status, 409);
+
+  const runtime = await request("/api/scheduler/status");
+  assert.equal(runtime.status, 200);
+  const runtimeData = await runtime.json();
+  assert.equal(runtimeData.executionMode, "server-process");
+  assert.equal(runtimeData.guaranteesWhileServerStopped, false);
+
+  const stateFile = await fs.readFile(path.join(tempDir, "state.json"), "utf8");
+  const persisted = JSON.parse(stateFile);
+  assert.ok(persisted.schedules.some((item) => item.id === schedule.id));
+  assert.ok(persisted.tasks.some((item) => item.id === task.id));
+
+  const exported = await request("/api/export");
+  assert.equal(exported.status, 200);
+  const payload = await exported.json();
+  assert.ok(payload.data.schedules.some((item) => item.id === schedule.id));
+
+  const cancelled = await request("/api/schedules/" + schedule.id, { method: "DELETE" });
+  assert.equal(cancelled.status, 200);
+  assert.equal((await cancelled.json()).schedule.status, "cancelled");
+
+  const logout = await request("/api/logout", { method: "POST", body: JSON.stringify({}) });
+  assert.equal(logout.status, 200);
+  cookie = "";
+});
