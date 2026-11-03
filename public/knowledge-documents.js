@@ -1,6 +1,6 @@
 export function createKnowledgeDocuments({ api, toast }) {
   const $ = (selector) => document.querySelector(selector);
-  const state = { items: [], total: 0, counts: {}, collections: [], query: "", collection: "", review: "all", warning: "" };
+  const state = { items: [], total: 0, counts: {}, collections: [], storedBytes: 0, totalBytes: 0, query: "", collection: "", review: "all", warning: "" };
 
   function formatBytes(value) {
     const bytes = Number(value) || 0;
@@ -31,6 +31,8 @@ export function createKnowledgeDocuments({ api, toast }) {
     state.counts = data.counts || {};
     state.collections = Array.isArray(data.collections) ? data.collections : [];
     state.warning = storage.warning || "";
+    state.storedBytes = Number(storage.storedBytes) || 0;
+    state.totalBytes = Number(storage.limits?.totalBytes) || 0;
     const filter = $("#knowledge-documents-collection-filter");
     if (filter) {
       const selected = state.collection;
@@ -50,7 +52,7 @@ export function createKnowledgeDocuments({ api, toast }) {
       const c = state.counts;
       summary.textContent = (c.total || 0) + " documents · " +
         (c.searchable || 0) + " text-indexed · " + (c.attachments || 0) +
-        " metadata-only attachments · " + (c.unreviewed || 0) + " awaiting review.";
+        " metadata-only attachments · " + (c.unreviewed || 0) + " awaiting review · " + formatBytes(state.storedBytes) + " / " + formatBytes(state.totalBytes) + " stored.";
     }
     const warning = $("#knowledge-documents-warning");
     if (warning) {
