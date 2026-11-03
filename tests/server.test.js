@@ -673,6 +673,13 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(documentDownload.headers.get("x-content-type-options"), "nosniff");
   assert.deepEqual(Buffer.from(await documentDownload.arrayBuffer()), documentBytes);
 
+  const editReviewedDocument = await request("/api/knowledge/documents/" + documentPayload.item.id, {
+    method: "PATCH",
+    body: JSON.stringify({ description: "Updated graph explanation." })
+  });
+  assert.equal(editReviewedDocument.status, 200);
+  assert.equal((await editReviewedDocument.json()).item.reviewStatus, "unreviewed");
+
   const spoofedDocument = await request("/api/knowledge/documents", {
     method: "POST",
     headers: {
