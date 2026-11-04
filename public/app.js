@@ -77,6 +77,10 @@ async function boot() {
       toast("Canva connected. Open Creator Studio to create a thumbnail design.");
     } else if (params.get("integration") === "canva_error") {
       toast("Canva was not connected. Check the Canva developer credentials and callback URL.", true);
+    } else if (params.get("integration") === "canva_connected") {
+      toast("Canva connected. Open Creator Studio to create a thumbnail design.");
+    } else if (params.get("integration") === "canva_error") {
+      toast("Canva was not connected. Check the Canva developer credentials and callback URL.", true);
     }
     if (params.has("integration")) window.history.replaceState({}, "", window.location.pathname);
   } catch {
