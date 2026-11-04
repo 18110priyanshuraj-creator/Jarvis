@@ -869,9 +869,6 @@ export function createCreatorStudio({ api, toast }) {
     $("creator-skill-approve").addEventListener("click", approveSkill);
     $("creator-analytics-check").addEventListener("click", setAnalyticsAdvice);
     $("creator-connect-analytics").addEventListener("click", connectYouTubeAnalytics);
-    $("creator-connect-canva").addEventListener("click", connectCanva);
-    $("creator-disconnect-canva").addEventListener("click", disconnectCanva);
-    $("creator-create-canva-thumbnail").addEventListener("click", createCanvaThumbnailDesign);
     $("creator-refresh-analytics").addEventListener("click", loadYouTubeAnalytics);
     $("creator-full-script").addEventListener("input", () => {
       fullScript = $("creator-full-script").value;
