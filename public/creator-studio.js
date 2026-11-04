@@ -333,8 +333,7 @@ export function createCreatorStudio({ api, toast }) {
       $("creator-hook-ideas").append(item);
     }
     $("creator-description").value = plan.description;
-    if (!$("creator-thumbnail-text").value) $("creator-thumbnail-text").value = plan.thumbnailText;
-    renderThumbnail();
+    renderCreatorCanvases();
     $("creator-full-script").value = fullScript;
     $("creator-output").classList.remove("hidden");
     renderFigure();
@@ -425,18 +424,6 @@ export function createCreatorStudio({ api, toast }) {
     const pose = $("creator-pose").value || "idle";
     download("jarvis-stick-figure-" + pose + ".svg", makeStickFigureSvg(pose), "image/svg+xml;charset=utf-8");
     status("Stick-figure SVG exported. Upload it to Canva and animate or duplicate it there.");
-  }
-
-  function renderThumbnail() {
-    const preview = $("creator-thumbnail-preview");
-    if (preview && plan) preview.innerHTML = makeThumbnailSvg(plan.topic, $("creator-thumbnail-text").value);
-  }
-
-  function exportThumbnail() {
-    if (!plan) return toast("Create a video outline first.", true);
-    download(safeFilename(plan.topic) + "-thumbnail-concept.svg",
-      makeThumbnailSvg(plan.topic, $("creator-thumbnail-text").value), "image/svg+xml;charset=utf-8");
-    status("Thumbnail concept exported as SVG. Adjust the words and layout in Canva before publishing.");
   }
 
   function exportPoseSheet() {
@@ -554,23 +541,28 @@ export function createCreatorStudio({ api, toast }) {
   }
 
   function setAnalyticsAdvice() {
-    const ownMedian = Number($("creator-baseline-ctr").value);
+    const baselineCtr = Number($("creator-baseline-ctr").value);
     const currentCtr = Number($("creator-current-ctr").value);
-    const intro = Number($("creator-intro-retention").value);
+    const baselineIntro = Number($("creator-intro-baseline").value);
+    const currentIntro = Number($("creator-intro-retention").value);
     const notes = [];
-    if (Number.isFinite(ownMedian) && Number.isFinite(currentCtr) && $("creator-baseline-ctr").value && $("creator-current-ctr").value) {
-      if (currentCtr < ownMedian) notes.push("CTR is below the channel baseline you entered. Try a clearer, more specific title or a simpler thumbnail; change one variable at a time.");
-      else notes.push("CTR is at or above the channel baseline you entered. Keep the packaging, then inspect retention to find the next improvement.");
+    const hasCtr = $("creator-baseline-ctr").value && $("creator-current-ctr").value;
+    const hasIntro = $("creator-intro-baseline").value && $("creator-intro-retention").value;
+    if (hasCtr && Number.isFinite(baselineCtr) && Number.isFinite(currentCtr)) {
+      notes.push(currentCtr < baselineCtr
+        ? "CTR is below your comparable-video baseline. Check whether the title and thumbnail clearly communicate the video's real benefit. Change one packaging element at a time and compare similar traffic sources."
+        : "CTR is at or above your comparable-video baseline. Check retention next to see whether the opening delivers what the title and thumbnail promise.");
     } else {
-      notes.push("Enter this video's CTR and your own comparable-video median CTR to make a useful packaging comparison.");
+      notes.push("Enter this video's CTR and the median from similar videos on your own channel. Compare similar traffic sources and time windows.");
     }
-    if (Number.isFinite(intro) && $("creator-intro-retention").value) {
-      if (intro < 50) notes.push("A large share of viewers are not reaching the end of the first 30 seconds. Review the opening promise, remove slow setup and show the payoff earlier.");
-      else notes.push("The first 30 seconds appear to be holding a reasonable share of viewers for this example. Inspect later dips and compare with similar videos.");
+    if (hasIntro && Number.isFinite(baselineIntro) && Number.isFinite(currentIntro)) {
+      notes.push(currentIntro < baselineIntro
+        ? "More viewers are leaving before 0:30 than in your comparable videos. Review the first seconds for slow setup, unclear context or a mismatch with the title/thumbnail promise."
+        : "Opening retention is at or above your comparable-video baseline. Inspect later dips and rewatch spikes to find where the explanation could be clearer.");
     } else {
-      notes.push("Add the first-30-second retention value from YouTube Studio to diagnose the opening.");
+      notes.push("Enter this video's 0:30 retention and the median from similar videos to assess the opening. There is no universal retention percentage that guarantees reach.");
     }
-    notes.push("These are diagnostic prompts, not universal benchmarks or a prediction of reach. Compare like-for-like videos and traffic sources.");
+    notes.push("These are diagnostic prompts, not a prediction of reach. Compare like-for-like videos; YouTube recommendations are personalized around viewer interest and satisfaction.");
     $("creator-analytics-advice").textContent = notes.join("\n\n");
   }
 
@@ -592,8 +584,6 @@ export function createCreatorStudio({ api, toast }) {
     ["creator-thumbnail-title", "creator-thumbnail-subtitle"].forEach((id) => {
       $(id).addEventListener("input", renderCreatorCanvases);
     });
-    $("creator-thumbnail-text").addEventListener("input", renderThumbnail);
-    $("creator-export-thumbnail").addEventListener("click", exportThumbnail);
     $("creator-skill-create").addEventListener("click", createSkill);
     $("creator-skill-approve").addEventListener("click", approveSkill);
     $("creator-analytics-check").addEventListener("click", setAnalyticsAdvice);
@@ -603,9 +593,6 @@ export function createCreatorStudio({ api, toast }) {
     });
     ["creator-topic", "creator-audience", "creator-language", "creator-duration"].forEach((id) => {
       $(id).addEventListener("change", persist);
-    });
-    $("creator-open-canva").addEventListener("click", () => {
-      window.open("https://www.canva.com/create/videos/", "_blank", "noopener,noreferrer");
     });
     renderFigure();
     renderCreatorCanvases();
