@@ -123,6 +123,11 @@ object LocalCommandProcessor {
         val appName = openPrefix.find(original)?.groupValues?.getOrNull(1)
             ?: openSuffix.find(original)?.groupValues?.getOrNull(1)
         if (!appName.isNullOrBlank()) {
+            val website = BrowserUrlPolicy.normalize(appName)
+            if (website != null) {
+                if (!allowUiActions) return "Start JARVIS hands-free control before opening a website."
+                return openWebsite(context, website)
+            }
             val composite = Regex("""\b(and|then|after|aur|phir)\b""", RegexOption.IGNORE_CASE)
             if (composite.containsMatchIn(appName)) return null
             return launchInstalledApp(context, cleanQuoted(appName))
@@ -183,6 +188,18 @@ object LocalCommandProcessor {
         return null
     }
 
+
+    private fun openWebsite(context: Context, url: String): String {
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                .addCategory(Intent.CATEGORY_BROWSABLE)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            "Opened " + url + " in your default browser. JARVIS will wait for your next instruction before interacting with the page."
+        } catch (_: Exception) {
+            "Android could not open that website. Check that a default browser is installed."
+        }
+    }
 
     data class PlannedActionResult(
         val success: Boolean,
