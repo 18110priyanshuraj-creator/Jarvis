@@ -13,14 +13,14 @@
 ## Existing Media Studio capabilities verified in source
 
 - Media Studio can create a 2–12-scene storyboard, script, captions and visual directions.
-- Export options include JSON, script, captions, PNG frames and silent WebM output.
+- Export options include JSON, script, captions, PNG frames and silent WebM output. Creator Studio also exports 1280 × 720 thumbnail PNGs, single-pose and pose-sheet SVGs, a short silent WebM stick-figure motion sample, long-form chapter CSV, Markdown script draft and YouTube description template.
 - Formats are vertical short (up to 90 seconds), landscape explainer (up to 180 seconds) and square carousel (up to 60 seconds).
 - YouTube Publisher has a saved preview and explicit confirmation step; it is not an automatic posting tool.
 - Android Companion can launch installed apps and perform bounded accessibility-label actions, scrolling, Back/Home, and focused-field text entry.
 
 ## Capabilities not present / not claimed
 
-- Direct Canva Connect API integration in the JARVIS server. The current branch only prepares SVG/script/CSV handoff assets and opens Canva; no Canva OAuth app is configured.
+- Direct Canva Connect API integration in the JARVIS server. Canva's official Connect API supports design creation, asset uploads and MP4 export, but a production integration still requires a registered Canva developer app, OAuth credentials, user-granted scopes and secure token handling. The current branch only prepares SVG/script/CSV handoff assets and opens Canva; no Canva OAuth app is configured.
 - Reliable drag-and-drop or arbitrary touch-coordinate control of Canva.
 - Full multi-track timeline editing, precise clip timing, keyframe/rig animation or automated audio mastering.
 - Native voiceover recording/generation in Media Studio.
