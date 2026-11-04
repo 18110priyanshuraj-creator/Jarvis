@@ -382,6 +382,38 @@ export async function createCanvaThumbnailDesign(options = {}) {
   };
 }
 
+export async function revokeCanvaOAuthConnection(connectionInput, options = {}) {
+  const env = options.env || process.env;
+  const config = canvaConfig(env);
+  const connection = normalizeCanvaOAuthConnection(connectionInput);
+  const refreshToken = decryptSecret(connection.encryptedRefreshToken, { env, purpose: "canva-refresh-token" });
+  const credentials = Buffer.from(config.clientId + ":" + config.clientSecret).toString("base64");
+  let response;
+  try {
+    response = await (options.fetchImpl || fetch)("https://api.canva.com/rest/v1/oauth/revoke", {
+      method: "POST",
+      headers: {
+        Authorization: "Basic " + credentials,
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json"
+      },
+      body: new URLSearchParams({ token: refreshToken }),
+      redirect: "error",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    });
+  } catch (error) {
+    if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+      throw new Error("Canva did not confirm permission revocation. The JARVIS connection was kept.");
+    }
+    throw new Error("Could not contact Canva to revoke access. The JARVIS connection was kept.");
+  }
+  if (!response.ok) {
+    throw new Error("Canva did not confirm permission revocation (HTTP " + response.status + "). The JARVIS connection was kept.");
+  }
+  clearCanvaTokenCache();
+  return { revoked: true };
+}
+
 export function clearCanvaTokenCache() {
   accessTokens.delete("canva");
 }
