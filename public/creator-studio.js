@@ -766,6 +766,11 @@ export function createCreatorStudio({ api, toast }) {
     const button = $("creator-create-canva-thumbnail");
     button.disabled = true;
     try {
+      const confirmed = window.confirm(
+        "Upload the current 1280 × 720 PNG to your connected Canva account and create a new design? " +
+        "This creates a new Canva design; it does not publish a video. The image will be a single flat object."
+      );
+      if (!confirmed) return;
       const canvas = $("creator-thumbnail-canvas");
       const png = await canvasToPng(canvas);
       const title = clean($("creator-thumbnail-title").value || plan?.topic || "JARVIS YouTube Thumbnail", 50);
