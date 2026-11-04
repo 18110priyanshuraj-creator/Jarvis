@@ -59,7 +59,7 @@ function distributeDurations(totalSeconds) {
   return raw;
 }
 
-function makePlan(input) {
+export function makeCreatorPlan(input) {
   const topic = clean(input.topic, 180);
   if (topic.length < 8) throw new TypeError("Add a specific topic or question (at least 8 characters).");
   const audience = clean(input.audience, 140) || "Curious general audience";
@@ -108,7 +108,7 @@ function escapeXml(value) {
   })[character]);
 }
 
-function makeFigureSvg(poseId, title = "JARVIS stick figure") {
+export function makeStickFigureSvg(poseId, title = "JARVIS stick figure") {
   const pose = POSES.find((item) => item.id === poseId) || POSES[0];
   const [leftArm, rightArm] = pose.arms;
   const [leftLeg, rightLeg] = pose.legs;
@@ -136,7 +136,7 @@ function makeFigureSvg(poseId, title = "JARVIS stick figure") {
 
 function makePoseSheet() {
   const poses = POSES.map((pose, index) => {
-    const svg = makeFigureSvg(pose.id, pose.label);
+    const svg = makeStickFigureSvg(pose.id, pose.label);
     const inner = svg.slice(svg.indexOf("<circle"), svg.indexOf("</svg>"));
     const x = 10 + (index % 3) * 160;
     const y = 10 + Math.floor(index / 3) * 200;
@@ -150,7 +150,7 @@ function makePoseSheet() {
     '<rect width="500" height="400" fill="#0c1820"/>' + poses + "</svg>";
 }
 
-function makeStoryboardCsv(plan) {
+export function makeCreatorStoryboardCsv(plan) {
   const rows = [["Chapter", "Start", "End", "Duration seconds", "Narration prompt", "Visual direction"]];
   for (const chapter of plan.chapters) {
     rows.push([
@@ -161,7 +161,7 @@ function makeStoryboardCsv(plan) {
   return rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
 
-function makeScriptMarkdown(plan, fullScript) {
+export function makeCreatorScriptMarkdown(plan, fullScript) {
   const lines = [
     "# " + plan.topic,
     "",
@@ -315,7 +315,7 @@ export function createCreatorStudio({ api, toast }) {
   function renderFigure() {
     const pose = $("creator-pose")?.value || "idle";
     const preview = $("creator-figure-preview");
-    if (preview) preview.innerHTML = makeFigureSvg(pose);
+    if (preview) preview.innerHTML = makeStickFigureSvg(pose);
     const description = $("creator-pose-description");
     if (description) description.textContent =
       (POSES.find((item) => item.id === pose)?.label || "Neutral") +
@@ -325,7 +325,7 @@ export function createCreatorStudio({ api, toast }) {
   async function generatePlan(event) {
     event?.preventDefault();
     try {
-      plan = makePlan({
+      plan = makeCreatorPlan({
         topic: $("creator-topic").value,
         audience: $("creator-audience").value,
         language: $("creator-language").value,
@@ -372,13 +372,13 @@ export function createCreatorStudio({ api, toast }) {
   function exportScript() {
     if (!plan) return toast("Create a video outline first.", true);
     fullScript = $("creator-full-script").value.trim();
-    download(safeFilename(plan.topic) + "-creator-script.md", makeScriptMarkdown(plan, fullScript));
+    download(safeFilename(plan.topic) + "-creator-script.md", makeCreatorScriptMarkdown(plan, fullScript));
     status("Script exported as Markdown.");
   }
 
   function exportCsv() {
     if (!plan) return toast("Create a video outline first.", true);
-    download(safeFilename(plan.topic) + "-storyboard.csv", makeStoryboardCsv(plan), "text/csv;charset=utf-8");
+    download(safeFilename(plan.topic) + "-storyboard.csv", makeCreatorStoryboardCsv(plan), "text/csv;charset=utf-8");
     status("Storyboard exported as CSV. Import the timings into your editor manually.");
   }
 
@@ -395,7 +395,7 @@ export function createCreatorStudio({ api, toast }) {
 
   function exportFigure() {
     const pose = $("creator-pose").value || "idle";
-    download("jarvis-stick-figure-" + pose + ".svg", makeFigureSvg(pose), "image/svg+xml;charset=utf-8");
+    download("jarvis-stick-figure-" + pose + ".svg", makeStickFigureSvg(pose), "image/svg+xml;charset=utf-8");
     status("Stick-figure SVG exported. Upload it to Canva and animate or duplicate it there.");
   }
 
