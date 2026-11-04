@@ -539,3 +539,43 @@ test("YouTube Analytics upgrade requests the separate read-only YouTube scope", 
   assert.equal(permission.status, "connected");
   assert.deepEqual(permission.grantedScopes, [YOUTUBE_ANALYTICS_SCOPE]);
 });
+
+test("YouTube Analytics OAuth upgrade requests only its read-only scope and reports access separately from upload", async () => {
+  const flow = beginGoogleOAuth({
+    sessionToken: "test-session-id",
+    capability: "youtube_analytics",
+    env
+  });
+  const url = new URL(flow.authorizationUrl);
+  assert.deepEqual(url.searchParams.get("scope").split(" ").sort(), [
+    GOOGLE_DRIVE_METADATA_SCOPE,
+    YOUTUBE_ANALYTICS_SCOPE
+  ].sort());
+
+  const connection = await finishGoogleOAuth({
+    state: url.searchParams.get("state"),
+    browserBinding: flow.browserBinding,
+    code: "youtube-analytics-readonly-code",
+    isSessionValid: (id) => id === "test-session-id",
+    env,
+    fetchImpl: async (_url, options) => {
+      const body = new URLSearchParams(options.body);
+      assert.equal(body.get("grant_type"), "authorization_code");
+      return response({
+        access_token: "youtube-analytics-access",
+        refresh_token: "youtube-analytics-refresh",
+        expires_in: 3600,
+        scope: [GOOGLE_DRIVE_METADATA_SCOPE, YOUTUBE_ANALYTICS_SCOPE].join(" ")
+      });
+    }
+  });
+
+  const status = getGoogleOAuthStatus(connection, env);
+  assert.equal(status.canReadYouTubeAnalytics, true);
+  assert.equal(status.canUploadYouTube, false);
+  const permission = getIntegrationPermissionCatalog(connection, env)
+    .find((item) => item.provider === "youtube_analytics");
+  assert.equal(permission.status, "connected");
+  assert.deepEqual(permission.requestedScopes, [YOUTUBE_ANALYTICS_SCOPE]);
+  assert.match(permission.accessBoundary, /read-only/i);
+});
