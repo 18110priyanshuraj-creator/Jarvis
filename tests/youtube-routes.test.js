@@ -180,6 +180,18 @@ test("YouTube upload routes verify approval, recover interrupted state, validate
   assert.equal(preview.status, "pending_confirmation");
   assert.equal(preview.privacyStatus, "private");
 
+  const tooShort = Buffer.from("short");
+  const wrongSize = await request("/api/youtube/publications/" + encodeURIComponent(preview.id) + "/upload", {
+    method: "POST",
+    headers: {
+      "Content-Type": "video/mp4",
+      "Content-Length": String(tooShort.length),
+      "X-Jarvis-Confirmation": "PUBLISH"
+    },
+    body: tooShort
+  });
+  assert.equal(wrongSize.status, 400, "a body smaller than the approved preview must be rejected");
+
   const wrongMime = await request("/api/youtube/publications/" + encodeURIComponent(preview.id) + "/upload", {
     method: "POST",
     headers: {

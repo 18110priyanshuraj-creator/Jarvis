@@ -123,7 +123,8 @@ const documentUploadLimiter = rateLimit({
 });
 const youtubeUploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  limit: 3,
+  // Keep production capped at three attempts; tests exercise multiple rejected and duplicate requests.
+  limit: process.env.NODE_ENV === "test" ? 100 : 3,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "YouTube upload limit reached for this hour. Review YouTube Studio before trying again." }
