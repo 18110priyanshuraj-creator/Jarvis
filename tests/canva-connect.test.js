@@ -198,11 +198,12 @@ test("Canva thumbnail flow rejects non-PNG, wrong dimensions and untrusted edit 
 test("Canva disconnect revokes the refresh-token lineage before local credentials are removed", async () => {
   const flow = await beginCanvaOAuth({ sessionToken: "disconnect-session", env });
   const state = new URL(flow.authorizationUrl).searchParams.get("state");
+  const sessionHash = createHash("sha256").update("disconnect-session").digest("base64url");
   const connection = await finishCanvaOAuth({
     state,
     browserBinding: flow.browserBinding,
     code: "disconnect-code",
-    isSessionValid: async (id) => id === "disconnect-session",
+    isSessionValid: async (hash) => hash === sessionHash,
     env,
     fetchImpl: async () => jsonResponse({
       access_token: "canva-disconnect-access",
