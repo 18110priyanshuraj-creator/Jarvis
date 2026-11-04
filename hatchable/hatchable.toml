@@ -1,0 +1,5 @@
+name = "JARVIS Hatchable"
+
+[ai]
+required = true
+description = "Powers the private JARVIS assistant chat. Choose an AI provider in Hatchable account settings."
