@@ -414,7 +414,13 @@ export function createCreatorStudio({ api, toast }) {
       );
       if (found) {
         skillDraft = found;
-        status("Creator Studio skill already exists. Open Memory → Learning & Skills to review it.");
+        const latest = (found.versions || []).find((item) => item.version === found.currentVersion);
+        if (latest?.validation?.passed && latest.validation.version === found.currentVersion && !found.activeVersion) {
+          $("creator-skill-approve").classList.remove("hidden");
+          status("A tested Creator Studio skill draft already exists. Review it, then activate it below.");
+        } else {
+          status(found.activeVersion ? "Creator Studio skill is already active." : "Creator Studio skill exists. Review its test status in Memory → Learning & Skills.");
+        }
         return;
       }
       const draft = await api("/api/skills", {
@@ -423,7 +429,7 @@ export function createCreatorStudio({ api, toast }) {
           name: "Creator Studio — Canva & YouTube",
           instructions: "Help plan and improve original educational or general-audience videos. Start with audience, specific viewer question, promise, platform, language and duration. Create truthful hooks, clear title and thumbnail concepts, long-form chapter outline, natural narration, shot list, on-screen text, captions and a storyboard. For stick figures, use a consistent circle head, torso and separate limb lines, with a reusable pose library. Explain how to build the design in Canva using its timeline, tracks, audio, captions, transitions and export, but do not claim to control unsupported drag-and-drop or detailed timeline controls. Use Creator Studio exports for scripts, storyboard CSV, YouTube description and SVG character assets. Suggest reviewing YouTube Analytics (impressions, CTR, first 30-second retention, average view duration and dips) against the channel's own comparable videos. Never promise viral views or 100% reach; never fabricate stats or sources. Keep the owner in control of media rights, final file selection, privacy/audience declarations and publishing. Device control is limited to the exact accessible app actions already supported by Android Companion.",
           applicationIds: ["*"],
-          triggers: ["Canva video", "stick figure animation", "YouTube long video", "video hook thumbnail", "video editing", "creator studio", "Canva edit", "YouTube reach"],
+          triggers: ["stick figure", "Canva", "long YouTube", "video editing"],
           testCases: [
             { input: "Help me make a stick figure explainer video in Canva and plan a long YouTube version.", shouldMatch: true },
             { input: "Explain how a bicycle gear works.", shouldMatch: false }
