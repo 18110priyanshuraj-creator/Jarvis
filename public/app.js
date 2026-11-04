@@ -34,6 +34,8 @@ async function api(url, options = {}) {
 }
 
 const mediaWorkspace = createMediaWorkspace({ api, toast });
+const creatorStudio = createCreatorStudio({ api, toast });
+creatorStudio.init();
 const youtubePublisher = createYouTubePublisher({ api, toast });
 const knowledgeDocuments = createKnowledgeDocuments({ api, toast });
 const agentEvolution = createAgentEvolution({ api, toast, getSkills: () => state.skills });
@@ -130,6 +132,7 @@ function setView(name) {
     research: ["WEB DISCOVERY", "Research"],
     knowledge: ["PERSONAL KNOWLEDGE LIBRARY", "Knowledge"],
     media: ["MEDIA & CONTENT CREATION", "Media Studio"],
+    creator: ["VIDEO PRODUCTION & CHANNEL IMPROVEMENT", "Creator Studio"],
     experience: ["EXPERIENCE & SELF-IMPROVEMENT", "Experience"],
     workflows: ["AUTOMATION & EXECUTION", "Workflows"],
     integrations: ["CONNECTED SERVICES", "Connections"],
@@ -156,6 +159,7 @@ function setView(name) {
     mediaWorkspace.open().catch((error) => toast(error.message, true));
     youtubePublisher.open().catch((error) => toast(error.message, true));
   }
+  if (name === "creator") creatorStudio.init();
 }
 
 function makeEmpty(message) {
