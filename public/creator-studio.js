@@ -547,6 +547,174 @@ export function createCreatorStudio({ api, toast }) {
     }
   }
 
+  function formatVideoDuration(value) {
+    const seconds = Math.max(0, Math.round(Number(value) || 0));
+    return Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
+  }
+
+  function analyticsWindowDays() {
+    return Number($("creator-analytics-days")?.value) || 28;
+  }
+
+  function setAnalyticsStatus(message, error = false) {
+    const target = $("creator-channel-analytics-status");
+    if (!target) return;
+    target.textContent = message;
+    target.classList.toggle("error-text", error);
+  }
+
+  async function loadAnalyticsStatus() {
+    try {
+      const result = await api("/api/youtube/analytics/status");
+      const connect = $("creator-connect-analytics");
+      const refresh = $("creator-refresh-analytics");
+      if (connect) {
+        connect.textContent = result.connected ? "YouTube Analytics connected · read-only" : "Connect read-only YouTube Analytics";
+        connect.disabled = !result.canConnect || result.disabled || result.connected;
+      }
+      if (refresh) refresh.disabled = !result.connected;
+      setAnalyticsStatus(result.connected
+        ? "Read-only channel analytics is connected. JARVIS can read video performance and audience-retention reports; it cannot edit or publish videos with this permission."
+        : result.disabled
+          ? "Google services are disabled in JARVIS. Enable Google services before connecting YouTube Analytics."
+          : result.canConnect
+            ? "Connect a separate read-only YouTube permission to load channel reports. This does not grant upload or editing access."
+            : "Google OAuth and the encrypted token vault must be configured on the JARVIS server before a read-only analytics connection can start.");
+      if (result.connected) {
+        $("creator-refresh-analytics").disabled = false;
+      }
+      return result;
+    } catch (error) {
+      setAnalyticsStatus(error.message || "Analytics connection status is unavailable.", true);
+      return null;
+    }
+  }
+
+  async function connectYouTubeAnalytics() {
+    const button = $("creator-connect-analytics");
+    button.disabled = true;
+    try {
+      const result = await api("/api/integrations/google_drive/oauth/start", {
+        method: "POST",
+        body: JSON.stringify({ capability: "youtube_analytics" })
+      });
+      if (!result.launchUrl) throw new Error("JARVIS did not return a Google consent link.");
+      window.location.href = result.launchUrl;
+    } catch (error) {
+      setAnalyticsStatus(error.message, true);
+      button.disabled = false;
+    }
+  }
+
+  function renderTopVideos(report) {
+    const target = $("creator-top-videos");
+    if (!target) return;
+    target.replaceChildren();
+    const summary = document.createElement("p");
+    summary.className = "small muted";
+    summary.textContent = "Complete days: " + report.range.startDate + " through " + report.range.endDate +
+      " · " + report.items.length + " videos returned";
+    target.append(summary);
+    if (!report.items.length) {
+      target.append(makeAnalyticsEmpty("No video rows were returned for this date window. Try a longer period or check whether the channel has reportable views."));
+      return;
+    }
+    for (const item of report.items) {
+      const card = document.createElement("article");
+      card.className = "creator-analytics-video";
+      const title = document.createElement("a");
+      title.href = "https://www.youtube.com/watch?v=" + encodeURIComponent(item.videoId);
+      title.target = "_blank";
+      title.rel = "noopener noreferrer";
+      title.textContent = "Open video · " + item.videoId;
+      const metrics = document.createElement("p");
+      metrics.className = "small muted";
+      metrics.textContent = [
+        Number(item.views).toLocaleString() + " views",
+        (Number(item.estimatedMinutesWatched) / 60).toFixed(1) + " watch hours",
+        formatVideoDuration(item.averageViewDurationSeconds) + " avg view duration",
+        Number(item.averageViewPercentage).toFixed(1) + "% avg viewed",
+        Number(item.likes).toLocaleString() + " likes",
+        Number(item.comments).toLocaleString() + " comments"
+      ].join(" · ");
+      const retention = document.createElement("button");
+      retention.type = "button";
+      retention.className = "item-action";
+      retention.textContent = "Inspect audience retention";
+      retention.addEventListener("click", () => loadVideoRetention(item.videoId, retention));
+      card.append(title, metrics, retention);
+      target.append(card);
+    }
+  }
+
+  function makeAnalyticsEmpty(message) {
+    const item = document.createElement("p");
+    item.className = "small muted";
+    item.textContent = message;
+    return item;
+  }
+
+  async function loadYouTubeAnalytics() {
+    const button = $("creator-refresh-analytics");
+    button.disabled = true;
+    setAnalyticsStatus("Loading read-only YouTube reports…");
+    try {
+      const report = await api("/api/youtube/analytics?days=" + encodeURIComponent(analyticsWindowDays()));
+      renderTopVideos(report);
+      $("creator-retention-details").replaceChildren(
+        makeAnalyticsEmpty("Choose a video above to inspect its audience-retention curve.")
+      );
+      setAnalyticsStatus("Loaded read-only reports for " + report.range.startDate + " through " + report.range.endDate + ". CTR is provided separately in YouTube Studio and can be entered in the comparison worksheet.");
+    } catch (error) {
+      setAnalyticsStatus(error.message || "YouTube Analytics could not load.", true);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function loadVideoRetention(videoId, button) {
+    const target = $("creator-retention-details");
+    target.replaceChildren(makeAnalyticsEmpty("Loading audience retention for " + videoId + "…"));
+    if (button) button.disabled = true;
+    try {
+      const report = await api("/api/youtube/analytics/" + encodeURIComponent(videoId) +
+        "/retention?days=" + encodeURIComponent(analyticsWindowDays()));
+      target.replaceChildren();
+      const heading = document.createElement("h3");
+      heading.textContent = "Audience retention · " + report.videoId;
+      const range = document.createElement("p");
+      range.className = "small muted";
+      range.textContent = "Complete days: " + report.range.startDate + " through " + report.range.endDate +
+        ". Relative performance compares this video with videos of similar length.";
+      target.append(heading, range);
+      if (!report.items.length) {
+        target.append(makeAnalyticsEmpty("No retention segments were returned for this video and period."));
+        return;
+      }
+      for (const segment of report.items) {
+        const row = document.createElement("div");
+        row.className = "creator-retention-row";
+        const label = document.createElement("span");
+        label.textContent = Math.round(segment.elapsedVideoTimeRatio * 100) + "% of video";
+        const bar = document.createElement("div");
+        bar.className = "creator-retention-track";
+        const fill = document.createElement("span");
+        fill.style.width = Math.max(0, Math.min(100, segment.relativeRetentionPerformance * 100)) + "%";
+        bar.append(fill);
+        const value = document.createElement("span");
+        value.className = "small muted";
+        value.textContent = "Relative retention " + Math.round(segment.relativeRetentionPerformance * 100) +
+          "% · audience-watch ratio " + segment.audienceWatchRatio.toFixed(2);
+        row.append(label, bar, value);
+        target.append(row);
+      }
+    } catch (error) {
+      target.replaceChildren(makeAnalyticsEmpty(error.message || "Retention report could not be loaded."));
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
   function setAnalyticsAdvice() {
     const baselineCtr = Number($("creator-baseline-ctr").value);
     const currentCtr = Number($("creator-current-ctr").value);
@@ -594,6 +762,8 @@ export function createCreatorStudio({ api, toast }) {
     $("creator-skill-create").addEventListener("click", createSkill);
     $("creator-skill-approve").addEventListener("click", approveSkill);
     $("creator-analytics-check").addEventListener("click", setAnalyticsAdvice);
+    $("creator-connect-analytics").addEventListener("click", connectYouTubeAnalytics);
+    $("creator-refresh-analytics").addEventListener("click", loadYouTubeAnalytics);
     $("creator-full-script").addEventListener("input", () => {
       fullScript = $("creator-full-script").value;
       persist();
@@ -606,5 +776,5 @@ export function createCreatorStudio({ api, toast }) {
     status("Creator Studio ready. Drafts stay in this browser until you export them.");
   }
 
-  return { init, renderFigure };
+  return { init, renderFigure, loadAnalyticsStatus };
 }
