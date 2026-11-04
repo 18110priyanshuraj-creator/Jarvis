@@ -273,6 +273,8 @@ export function createCreatorStudio({ api, toast }) {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         topic: $("creator-topic")?.value || "",
+        thumbnailTitle: $("creator-thumbnail-title")?.value || "",
+        thumbnailSubtitle: $("creator-thumbnail-subtitle")?.value || "",
         audience: $("creator-audience")?.value || "",
         language: $("creator-language")?.value || "hi-IN",
         duration: $("creator-duration")?.value || "8",
@@ -288,6 +290,8 @@ export function createCreatorStudio({ api, toast }) {
   function restore() {
     const saved = loadSaved();
     if (saved.topic) $("creator-topic").value = saved.topic;
+    if (saved.thumbnailTitle) $("creator-thumbnail-title").value = saved.thumbnailTitle;
+    if (saved.thumbnailSubtitle) $("creator-thumbnail-subtitle").value = saved.thumbnailSubtitle;
     if (saved.audience) $("creator-audience").value = saved.audience;
     if (saved.language) $("creator-language").value = saved.language;
     if (saved.duration) $("creator-duration").value = saved.duration;
@@ -582,7 +586,7 @@ export function createCreatorStudio({ api, toast }) {
     $("creator-export-thumbnail").addEventListener("click", exportThumbnail);
     $("creator-export-motion").addEventListener("click", exportMotionSample);
     ["creator-thumbnail-title", "creator-thumbnail-subtitle"].forEach((id) => {
-      $(id).addEventListener("input", renderCreatorCanvases);
+      $(id).addEventListener("input", () => { renderCreatorCanvases(); persist(); });
     });
     $("creator-skill-create").addEventListener("click", createSkill);
     $("creator-skill-approve").addEventListener("click", approveSkill);
