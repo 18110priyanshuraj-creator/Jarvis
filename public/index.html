@@ -876,14 +876,7 @@
               <input id="creator-thumbnail-subtitle" maxlength="60" placeholder="Optional · keep it short">
               <canvas id="creator-thumbnail-canvas" width="1280" height="720" aria-label="YouTube thumbnail preview"></canvas>
               <button type="button" class="primary" id="creator-export-thumbnail">Export thumbnail PNG</button>
-              <div class="creator-canva-actions">
-                <button type="button" class="item-action" id="creator-connect-canva">Connect Canva account</button>
-                <button type="button" class="item-action hidden" id="creator-disconnect-canva">Disconnect Canva</button>
-                <button type="button" class="primary" id="creator-create-canva-thumbnail" disabled>Create this thumbnail in Canva</button>
-                <a id="creator-canva-design-link" class="hidden" href="#" target="_blank" rel="noopener noreferrer">Open Canva design</a>
-              </div>
-              <p id="creator-canva-status" class="small muted" role="status" aria-live="polite">Canva Connect requires developer credentials configured by the account owner.</p>
-              <p class="small muted">The uploaded PNG is a single flat image in a new 16:9 Canva design. You can refine the design in Canva; JARVIS does not edit Canva's video timeline.</p>
+              <p class="small muted">No Canva developer credentials are needed for device control. Start JARVIS Companion hands-free and say “Open Canva”, then ask JARVIS to read the screen, tap a clearly labelled control, scroll, or type into a field you have focused. Keep timeline dragging, clip trimming and export review under your direct supervision.</p>
               <p class="small muted">Check that the headline remains readable at small phone size and accurately matches the video.</p>
             </div>
             <div class="creator-tool-card">
@@ -909,7 +902,7 @@
           </div>
           <a class="primary creator-canva-link" id="creator-open-canva" href="https://www.canva.com/create/videos/" target="_blank" rel="noopener noreferrer">Open Canva Video</a>
           <p class="small muted">To open Canva on your paired Android device, start JARVIS Companion hands-free and say: “Jarvis, open Canva.” JARVIS can launch the installed app and use supported visible accessibility labels, scrolling and focused text entry. It cannot reliably drag clips or edit timeline timing; those steps remain manual in Canva.</p>
-          <p class="small muted">Canva Connect now supports a separate account connection and creation of a new 16:9 design from the generated thumbnail PNG. It does not automate video-timeline drag-and-drop, editing layers or voiceover mixing. A registered Canva developer app and server-side OAuth credentials are required.</p>
+          <p class="small muted">This workflow uses your already signed-in Canva app or website through Android Accessibility. No Canva OAuth client ID or secret is required. JARVIS can open public websites, inspect accessible screen labels, tap unique visible controls, scroll and type ordinary text into a field you focus. Some Canva controls are canvas-based or drag-only and may still need your hands.</p>
         </section>
 
         <section class="creator-panel">
