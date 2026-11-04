@@ -44,5 +44,5 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.17")
     testImplementation("junit:junit:4.13.2")
     // Android local unit tests use the real JVM JSON implementation, not android.jar stubs.
-    testImplementation("org.json:json:20240303")
+    testImplementation("org.json:json:20260814")
 }
