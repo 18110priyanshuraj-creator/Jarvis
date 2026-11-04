@@ -326,7 +326,7 @@ test("YouTube OAuth upgrade adds only the upload scope and preserves existing Dr
   const permission = getIntegrationPermissionCatalog(connection, env).find((item) => item.provider === "youtube");
   assert.equal(permission.status, "connected");
   assert.deepEqual(permission.requestedScopes, [YOUTUBE_UPLOAD_SCOPE]);
-  assert.match(permission.accessBoundary, /does not request channel management/i);
+  assert.match(permission.accessBoundary, /separate from read-only analytics/i);
 });
 
 test("YouTube OAuth capability is rejected when unknown", () => {
