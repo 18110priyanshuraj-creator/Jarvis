@@ -162,15 +162,27 @@ It can draft scenes with heading, voiceover, on-screen text and visual direction
 
 The existing YouTube Publisher supports an explicit upload preview and confirmation flow for an approved project and a selected video file. It is not an automatic growth service and does not guarantee reach. Public uploads require the documented review checks; keep the owner in control of the final privacy/audience declarations and upload confirmation.
 
-## 11. Direct Canva integration boundary
+## 11. Direct Canva Connect handoff in this branch
 
-Canva Connect REST APIs can create designs, manage assets and export designs, including MP4 exports for supported video design types. Canva also documents a Design Editing API, but its current supported element model is a subset (for example, groups, shapes and text; it does not expose a general video timeline editor from the JARVIS server). A direct integration needs a registered Canva developer app and user-authorized OAuth scopes. This branch therefore prepares an asset handoff and opens Canva; it does not claim a server-side Canva timeline automation.
+The Creator Studio now includes an optional Canva Connect flow:
+
+1. Register a Canva Connect integration in the Canva Developer Portal. Use the exact callback URL `https://<your-host>/api/integrations/canva/oauth/callback`.
+2. Add `JARVIS_CANVA_OAUTH_CLIENT_ID`, `JARVIS_CANVA_OAUTH_CLIENT_SECRET`, and `JARVIS_CANVA_OAUTH_REDIRECT_URI` to the server environment. JARVIS reuses `JARVIS_TOKEN_ENCRYPTION_KEY` to encrypt the Canva refresh token. Never put the client secret in browser JavaScript or commit it to Git.
+3. In Creator Studio, connect Canva and approve the requested `asset:read`, `asset:write`, and `design:content:write` scopes.
+4. Generate a 1280 × 720 thumbnail in Creator Studio and choose **Create this thumbnail in Canva**. JARVIS uploads the PNG to the Canva asset library and creates a new 16:9 design.
+5. Open the returned Canva edit link to make refinements in Canva. You can disconnect from the same panel; JARVIS calls Canva's token-revocation endpoint before deleting the stored encrypted refresh token.
+
+**Important boundary:** this first Canva action inserts the thumbnail as a single flat PNG image. Text and shapes are not separate editable Canva layers. It does not create a complete video timeline, move clips, trim footage, record a voiceover, edit audio tracks, animate the stick figure inside Canva, or publish to YouTube. Those operations still happen in Canva and remain user-reviewed.
+
+Canva's REST APIs support OAuth, asset uploads, design creation and export. Its Design Editing API exposes only its documented element model, not a general-purpose video timeline editor for JARVIS to control. A successful OAuth connection means the user approved the app; it does not imply every Canva editor feature is automatable.
 
 References:
-- Canva REST API domains and OAuth: https://www.canva.dev/docs/apps/rest-apis/reference/
-- Canva create-design API (requires `design:content:write`): https://www.canva.dev/docs/apps/rest-apis/reference/designs/create-design/
-- Canva design exports (including MP4 where supported): https://www.canva.dev/docs/apps/rest-apis/reference/exports/
-- Canva Design Editing API supported element model: https://www.canva.dev/docs/apps/design-editing/
+- Canva REST API and OAuth: https://www.canva.dev/docs/apps/rest-apis/reference/
+- Canva authentication and PKCE: https://www.canva.dev/docs/apps/rest-apis/authentication/
+- Canva asset upload: https://www.canva.dev/docs/apps/rest-apis/reference/asset-uploads/upload-asset/
+- Canva create design: https://www.canva.dev/docs/apps/rest-apis/reference/designs/create-design/
+- Canva token revocation: https://www.canva.dev/docs/apps/rest-apis/reference/authentication/revoke-token/
+- Canva Design Editing API element model: https://www.canva.dev/docs/apps/design-editing/
 
 ## 12. Official references
 
