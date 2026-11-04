@@ -136,18 +136,43 @@ It **cannot** currently perform arbitrary coordinate taps, reliable drag-and-dro
 6. Ask the user to preview the export and confirm that the right file is selected.
 7. Keep upload/publish as a separate review step; never publish without the account owner's explicit confirmation and required review.
 
-## 9. What the existing JARVIS Media Studio already does
+## 9. What the JARVIS Creator Studio workspace now does
+
+The `Creator Studio` dashboard view added in this feature branch is separate from the existing Media Studio renderer:
+
+- Builds a time-coded, 8-chapter long-form outline for a selected 4–20 minute target duration.
+- Creates truthful title and opening-hook options, a chapter plan, a YouTube description draft, and a visual direction for each chapter.
+- Can send the outline to the existing JARVIS chat endpoint to request a full spoken narration draft. Availability and quality depend on the server's configured AI provider; every factual claim still needs review.
+- Exports the narration and plan as Markdown, the chapter/shot plan as CSV, and the description as text.
+- Generates a consistent stick-figure pose as an SVG, plus a reusable pose sheet for upload into Canva.
+- Provides a small analytics review worksheet that compares user-entered CTR and 30-second retention values with the creator's own channel baseline. It is a manual worksheet, not a YouTube Analytics API connection.
+- Adds an optional Creator Coach skill draft flow. JARVIS creates and validates the skill draft first; the user must explicitly approve it before activation.
+- Saves the current outline and narration in the current browser/device's local storage. Export a copy to move it to another device.
+
+The Creator Studio planner does **not** render a complete long-form video, generate/record a voice track, or synchronize an editable Canva timeline. The generated SVGs and CSV are handoff assets that the user uploads and arranges in Canva.
+
+## 10. Existing Media Studio and YouTube Publisher limits
 
 The repository's Media Studio supports a storyboard with 2–12 scenes and three formats:
 - Vertical short: 720 × 1280, up to 90 seconds.
 - Landscape explainer: 1280 × 720, up to 180 seconds.
 - Square carousel: 1080 × 1080, up to 60 seconds.
 
-It can draft scenes with heading, voiceover, on-screen text and visual direction; save/approve the storyboard; and export a script, captions, JSON, PNG frames and a silent WebM motion-graphic preview/video. The current renderer does not record voiceover or create a full Canva timeline edit. It is not yet a full long-form (e.g. 8–20 minute) video renderer. Use Canva or another editor for the full edit and combine it with the JARVIS script/storyboard exports.
+It can draft scenes with heading, voiceover, on-screen text and visual direction; save/approve the storyboard; and export a script, captions, JSON, PNG frames and a silent WebM motion-graphic preview/video. The current renderer does not record voiceover or create a full Canva timeline edit. It remains a short storyboard/renderer, not an 8–20 minute full video renderer.
 
 The existing YouTube Publisher supports an explicit upload preview and confirmation flow for an approved project and a selected video file. It is not an automatic growth service and does not guarantee reach. Public uploads require the documented review checks; keep the owner in control of the final privacy/audience declarations and upload confirmation.
 
-## 10. Official references
+## 11. Direct Canva integration boundary
+
+Canva Connect REST APIs can create designs, manage assets and export designs, including MP4 exports for supported video design types. Canva also documents a Design Editing API, but its current supported element model is a subset (for example, groups, shapes and text; it does not expose a general video timeline editor from the JARVIS server). A direct integration needs a registered Canva developer app and user-authorized OAuth scopes. This branch therefore prepares an asset handoff and opens Canva; it does not claim a server-side Canva timeline automation.
+
+References:
+- Canva REST API domains and OAuth: https://www.canva.dev/docs/apps/rest-apis/reference/
+- Canva create-design API (requires `design:content:write`): https://www.canva.dev/docs/apps/rest-apis/reference/designs/create-design/
+- Canva design exports (including MP4 where supported): https://www.canva.dev/docs/apps/rest-apis/reference/exports/
+- Canva Design Editing API supported element model: https://www.canva.dev/docs/apps/design-editing/
+
+## 12. Official references
 
 - Canva — [Create and edit videos](https://www.canva.com/help/creating-and-editing-videos/)
 - Canva — [Apply, change, or remove animations](https://www.canva.com/help/animate-designs/)
