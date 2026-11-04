@@ -1749,7 +1749,7 @@ app.post("/api/integrations/google_drive/oauth/start", requireAuth, oauthStartLi
   }
   try {
     const requestedCapability = req.body?.capability;
-    const capability = ["create_docs", "youtube_upload"].includes(requestedCapability) ? requestedCapability : "read";
+    const capability = ["create_docs", "youtube_upload", "youtube_analytics"].includes(requestedCapability) ? requestedCapability : "read";
     const result = await beginGoogleOAuth({
       sessionToken: req.sessionToken,
       capability,
