@@ -1,6 +1,16 @@
 # Creator Studio capability boundary and next steps
 
-## Existing capabilities verified in source
+## Implemented in this branch
+
+- Creator Studio dashboard view with a 4–20 minute, eight-chapter timed outline builder.
+- Full narration drafting through the existing JARVIS chat API when the server's AI provider is configured.
+- Title and hook ideas, visual direction per chapter, Markdown script export, storyboard CSV export and YouTube description draft export.
+- Stick-figure SVG pose generator (idle, walk, point, think, surprised and explaining) and an all-pose SVG sheet.
+- A manual CTR / first-30-second-retention worksheet that compares entered metrics with the user's own channel baseline.
+- A button to create and test an optional Creator Coach skill draft; skill activation remains a separate explicit approval step.
+- Creator Studio drafts are saved in local browser storage on the current device and can be exported to move them.
+
+## Existing Media Studio capabilities verified in source
 
 - Media Studio can create a 2–12-scene storyboard, script, captions and visual directions.
 - Export options include JSON, script, captions, PNG frames and silent WebM output.
@@ -10,21 +20,22 @@
 
 ## Capabilities not present / not claimed
 
-- Direct Canva Connect API integration in the JARVIS server.
+- Direct Canva Connect API integration in the JARVIS server. The current branch only prepares SVG/script/CSV handoff assets and opens Canva; no Canva OAuth app is configured.
 - Reliable drag-and-drop or arbitrary touch-coordinate control of Canva.
 - Full multi-track timeline editing, precise clip timing, keyframe/rig animation or automated audio mastering.
 - Native voiceover recording/generation in Media Studio.
-- A full long-form video renderer beyond the current 180-second landscape storyboard limit.
+- A full long-form video renderer beyond the current 180-second landscape Media Studio renderer limit. Creator Studio makes a 4–20 minute plan and narration draft, not a finished video file.
+- Direct YouTube Analytics API access; the current Creator Studio worksheet uses manually entered metrics, not live channel data.
 - Guaranteed YouTube impressions, reach, views, retention or subscriber growth.
 
-## Recommended staged roadmap
+## Remaining roadmap
 
-1. **Creator Studio skill:** activate the supplied optional skill after testing positive and negative triggers.
-2. **Storyboard upgrades:** add long-form chapter plans (the current renderer stays bounded) and separate reusable stick-character pose/scene references.
-3. **Editable project export:** prepare a Canva-friendly asset/script/caption bundle without claiming an editable Canva timeline unless the official integration creates one.
-4. **Canva integration research:** assess the current official Canva Connect API capabilities and OAuth scopes before implementing. Keep credentials server-side and require user approval for any external write action.
+1. **Canva Connect:** register a Canva developer app, implement user-authorized OAuth and only use official supported APIs (design creation, asset management and export). Do not claim full timeline editing unless Canva exposes and the integration has tested it.
+2. **Editable video handoff:** add a documented asset bundle with script, scene images, captions and audio notes; preserve a manual import/edit step in Canva.
+3. **Long-form render pipeline:** design a separate renderer with voiceover/audio support and explicit processing/storage limits; do not extend the current 180-second Media Studio renderer without tests.
+4. **YouTube analytics:** evaluate read-only YouTube Analytics scopes and reports for impressions, CTR, average view duration and audience retention. Keep API data separate from manually entered worksheet values.
 5. **Android validation:** test Canva on the target tablet. Record which controls are actually exposed by Accessibility; keep unsupported drag/drop steps manual.
-6. **Analytics review:** only connect channel analytics with explicit user consent and read-only scopes first. Use a video's own analytics to recommend experiments, never to promise an outcome.
+6. **Skill activation:** Creator Coach drafts must be validated and explicitly approved by the workspace owner.
 
 ## Acceptance criteria for future device-control work
 
