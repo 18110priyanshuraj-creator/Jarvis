@@ -6,7 +6,7 @@
 - Full narration drafting through the existing JARVIS chat API when the server's AI provider is configured.
 - Title and hook ideas, visual direction per chapter, Markdown script export, storyboard CSV export and YouTube description draft export.
 - Stick-figure SVG pose generator (idle, walk, point, think, surprised and explaining) and an all-pose SVG sheet.
-- A manual CTR / first-30-second-retention worksheet that compares entered metrics with the user's own channel baseline.
+- A read-only YouTube Analytics panel for top-video performance and selected-video audience retention (views, watch time, average duration, average percentage viewed, likes, comments and subscribers gained). CTR is not included in this report and remains a manual YouTube Studio comparison field.
 - A button to create and test an optional Creator Coach skill draft; skill activation remains a separate explicit approval step.
 - Optional Canva Connect OAuth flow with encrypted refresh-token storage, explicit disconnect/revocation, thumbnail PNG asset upload, and creation of a new 1280 × 720 Canva design from that flat PNG. The user can open the design in Canva and refine it there.
 - Optional read-only YouTube Analytics OAuth and reports for top videos and selected-video audience retention; thumbnail impression CTR remains a manual input.
@@ -17,7 +17,7 @@
 - Media Studio can create a 2–12-scene storyboard, script, captions and visual directions.
 - Export options include JSON, script, captions, PNG frames and silent WebM output. Creator Studio also exports 1280 × 720 thumbnail PNGs, single-pose and pose-sheet SVGs, a short silent WebM stick-figure motion sample, long-form chapter CSV, Markdown script draft and YouTube description template.
 - Formats are vertical short (up to 90 seconds), landscape explainer (up to 180 seconds) and square carousel (up to 60 seconds).
-- YouTube Publisher has a saved preview and explicit confirmation step; it is not an automatic posting tool.
+- YouTube Publisher has a saved preview and explicit confirmation step; it is not an automatic posting tool. Its upload permission is separate from the read-only YouTube Analytics permission.
 - Android Companion can launch installed apps and perform bounded accessibility-label actions, scrolling, Back/Home, and focused-field text entry.
 
 ## Capabilities not present / not claimed
