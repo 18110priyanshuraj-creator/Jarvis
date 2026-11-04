@@ -867,6 +867,25 @@
               <button type="button" class="item-action" id="creator-export-poses">Export all poses as SVG sheet</button>
             </div>
           </div>
+          <div class="creator-tool-grid">
+            <div class="creator-tool-card">
+              <h3>Thumbnail maker · 1280 × 720</h3>
+              <label for="creator-thumbnail-title">Thumbnail headline</label>
+              <input id="creator-thumbnail-title" maxlength="70" placeholder="One clear promise or question">
+              <label for="creator-thumbnail-subtitle">Small supporting line</label>
+              <input id="creator-thumbnail-subtitle" maxlength="60" placeholder="Optional · keep it short">
+              <canvas id="creator-thumbnail-canvas" width="1280" height="720" aria-label="YouTube thumbnail preview"></canvas>
+              <button type="button" class="primary" id="creator-export-thumbnail">Export thumbnail PNG</button>
+              <p class="small muted">Check that the headline remains readable at small phone size and accurately matches the video.</p>
+            </div>
+            <div class="creator-tool-card">
+              <h3>Stick-figure motion sample</h3>
+              <p class="small muted">A short silent animation cycling through six reusable poses. Add narration and refine the timing in Canva.</p>
+              <canvas id="creator-motion-canvas" width="1280" height="720" aria-label="Stick figure motion preview"></canvas>
+              <button type="button" class="primary" id="creator-export-motion">Export 12-second WebM sample</button>
+              <p class="small muted">Browser support is required for WebM recording. The sample is not a finished long-form video.</p>
+            </div>
+          </div>
         </section>
 
         <section class="creator-panel creator-canva-panel">
