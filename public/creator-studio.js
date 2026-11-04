@@ -97,7 +97,7 @@ export function makeCreatorPlan(input) {
   ];
   return {
     topic, audience, language, durationMinutes, totalSeconds, chapters, titleIdeas, hook,
-    thumbnailText: topic.split(/\\s+/).slice(0, 5).join(" ").toUpperCase(),
+    thumbnailText: topic.split(/\s+/).slice(0, 5).join(" ").toUpperCase(),
     description: "In this video, we explore " + topic + " step by step. " +
       "You will see the key idea, a worked example, and the common mistake to avoid.\n\n" +
       "Chapters:\n" + chapters.map((item) => timestamp(item.startSeconds) + " " + item.name).join("\n") +
@@ -137,9 +137,9 @@ export function makeStickFigureSvg(poseId, title = "JARVIS stick figure") {
     escapeXml(pose.label) + "</text></svg>";
 }
 
-export export function makeThumbnailSvg(topic, thumbnailText) {
+export function makeThumbnailSvg(topic, thumbnailText) {
   const title = clean(thumbnailText || topic, 54).toUpperCase();
-  const words = title.split(/\\s+/).filter(Boolean);
+  const words = title.split(/\s+/).filter(Boolean);
   const firstLine = escapeXml(words.slice(0, 3).join(" "));
   const secondLine = escapeXml(words.slice(3, 6).join(" "));
   return '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-label="YouTube thumbnail concept">' +
@@ -160,7 +160,7 @@ export export function makeThumbnailSvg(topic, thumbnailText) {
     '</svg>';
 }
 
-function makePoseSheet() {
+export function makePoseSheet() {
   const poses = POSES.map((pose, index) => {
     const svg = makeStickFigureSvg(pose.id, pose.label);
     const inner = svg.slice(svg.indexOf("<circle"), svg.indexOf("</svg>"));
