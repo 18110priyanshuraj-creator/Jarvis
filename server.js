@@ -27,6 +27,7 @@ import {
   uploadYouTubeVideo,
   YOUTUBE_UPLOAD_MIME_TYPES
 } from "./services/youtube-publisher.js";
+import { getTopVideosAnalytics, getVideoRetentionAnalytics } from "./services/youtube-analytics.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, mergeDuplicateKnowledge, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { createLearningNote, parseExplicitLearningCommand, previewIndependentLearning } from "./services/learning-engine.js";
 import { buildDocumentKnowledgeContext, createKnowledgeDocument, DOCUMENT_LIMITS, findDuplicateDocument, normalizeKnowledgeDocument, resolveDocumentStoragePath, searchKnowledgeDocuments, toPublicKnowledgeDocument } from "./services/knowledge-documents.js";
@@ -52,7 +53,8 @@ import {
   getIntegrationPermissionCatalog,
   normalizeGoogleOAuthConnection,
   revokeGoogleOAuthConnection,
-  YOUTUBE_UPLOAD_SCOPE
+  YOUTUBE_UPLOAD_SCOPE,
+  YOUTUBE_ANALYTICS_SCOPE
 } from "./services/oauth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1798,7 +1800,8 @@ app.get("/api/integrations/google_drive/oauth/callback", oauthCallbackLimiter, a
     res.setHeader("Cache-Control", "no-store");
     const youtubeEnabled = connection.grantedScopes.includes(YOUTUBE_UPLOAD_SCOPE);
     const docsEnabled = connection.grantedScopes.includes("https://www.googleapis.com/auth/drive.file");
-    const capability = youtubeEnabled ? "youtube_upload" : docsEnabled ? "create_docs" : "read";
+    const analyticsEnabled = connection.grantedScopes.includes(YOUTUBE_ANALYTICS_SCOPE);
+    const capability = youtubeEnabled ? "youtube_upload" : docsEnabled ? "create_docs" : analyticsEnabled ? "youtube_analytics" : "read";
     return res.redirect(303, "/?integration=google_drive_connected&capability=" + capability);
   } catch (error) {
     clearGoogleOAuthCookie(res);
@@ -3205,6 +3208,61 @@ app.delete("/api/media/projects/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+
+app.get("/api/youtube/analytics/status", requireAuth, (_req, res) => {
+  const oauth = getGoogleOAuthStatus(getGoogleDriveOAuthConnection(), process.env);
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    connected: oauth.canReadYouTubeAnalytics === true,
+    canConnect: oauth.canConnect === true,
+    disabled: store.disabledIntegrations.includes("google_drive"),
+    scope: YOUTUBE_ANALYTICS_SCOPE,
+    access: "read-only",
+    dateWindows: [7, 28, 90]
+  });
+});
+
+app.get("/api/youtube/analytics", requireAuth, integrationTestLimiter, async (req, res) => {
+  if (store.disabledIntegrations.includes("google_drive")) {
+    return res.status(409).json({ error: "Google services are disabled in JARVIS. Enable them before reading channel analytics." });
+  }
+  const oauth = getGoogleOAuthStatus(getGoogleDriveOAuthConnection(), process.env);
+  if (!oauth.canReadYouTubeAnalytics) {
+    return res.status(409).json({ error: "Connect the separate read-only YouTube Analytics permission before loading channel reports." });
+  }
+  try {
+    const accessToken = await getGoogleDriveTokenForIntegration();
+    const report = await getTopVideosAnalytics({ accessToken, days: req.query?.days });
+    res.setHeader("Cache-Control", "no-store");
+    res.json(report);
+  } catch (error) {
+    const status = error instanceof TypeError ? 400 : /permission|access was denied|reconnect/i.test(error?.message || "") ? 409 : 502;
+    res.status(status).json({ error: error?.message || "YouTube Analytics could not load this report." });
+  }
+});
+
+app.get("/api/youtube/analytics/:videoId/retention", requireAuth, integrationTestLimiter, async (req, res) => {
+  if (store.disabledIntegrations.includes("google_drive")) {
+    return res.status(409).json({ error: "Google services are disabled in JARVIS. Enable them before reading retention reports." });
+  }
+  const oauth = getGoogleOAuthStatus(getGoogleDriveOAuthConnection(), process.env);
+  if (!oauth.canReadYouTubeAnalytics) {
+    return res.status(409).json({ error: "Connect the separate read-only YouTube Analytics permission before loading retention data." });
+  }
+  try {
+    const accessToken = await getGoogleDriveTokenForIntegration();
+    const report = await getVideoRetentionAnalytics({
+      accessToken,
+      videoId: req.params.videoId,
+      days: req.query?.days
+    });
+    res.setHeader("Cache-Control", "no-store");
+    res.json(report);
+  } catch (error) {
+    const status = error instanceof TypeError ? 400 : /permission|access was denied|reconnect/i.test(error?.message || "") ? 409 : 502;
+    res.status(status).json({ error: error?.message || "YouTube audience retention could not load." });
+  }
+});
 
 app.get("/api/youtube/status", requireAuth, async (_req, res) => {
   let recovered = false;
