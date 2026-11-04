@@ -197,3 +197,50 @@
   .creator-character-controls button { width: 100%; }
   .creator-figure-preview { min-height: 225px; }
 }
+
+.creator-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+.creator-tool-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: rgba(5, 19, 27, .8);
+}
+.creator-tool-card h3 { margin: 0; color: #dffaff; font-size: .9rem; }
+.creator-tool-card label {
+  display: grid;
+  gap: 6px;
+  color: #c5d0e5;
+  font-size: .78rem;
+  font-weight: 650;
+}
+.creator-tool-card input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--text);
+  background: #06121b;
+}
+.creator-tool-card canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border: 1px solid rgba(57, 206, 227, .2);
+  border-radius: 9px;
+  background: #061822;
+}
+.creator-tool-card .small { line-height: 1.55; }
+@media (max-width: 650px) {
+  .creator-tool-grid { grid-template-columns: 1fr; }
+}
