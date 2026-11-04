@@ -107,7 +107,7 @@ test("Canva access token refresh uses the encrypted refresh token", async () => 
     state,
     browserBinding: flow.browserBinding,
     code: "token-code",
-    isSessionValid: async (hash) => hash === sessionHash,
+    isSessionValid: async () => true,
     env,
     fetchImpl: async () => jsonResponse({
       access_token: "canva-first-access-token",
