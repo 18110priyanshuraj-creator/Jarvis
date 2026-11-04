@@ -8,6 +8,7 @@
   <title>JARVIS</title>
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/media-workspace.css">
+  <link rel="stylesheet" href="/creator-studio.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
@@ -41,6 +42,7 @@
         <button class="nav-item" data-view="research"><span class="nav-icon">⌕</span> Research</button>
         <button class="nav-item" data-view="knowledge"><span class="nav-icon">▤</span> Knowledge</button>
         <button class="nav-item" data-view="media"><span class="nav-icon">▧</span> Media Studio</button>
+        <button class="nav-item" data-view="creator"><span class="nav-icon">✎</span> Creator Studio</button>
         <button class="nav-item" data-view="tasks"><span class="nav-icon">☷</span> Tasks <span id="task-count" class="nav-count">0</span></button>
         <button class="nav-item" data-view="memory"><span class="nav-icon">◈</span> Memory</button>
         <button class="nav-item" data-view="experience"><span class="nav-icon">✧</span> Experience</button>
@@ -760,6 +762,159 @@
           <div class="list-heading"><h3>Upload history</h3><span class="small muted">Recent previews and provider responses</span></div>
           <div id="youtube-history" class="youtube-history"></div>
         </section>
+      </section>
+
+      <section id="view-creator" class="view content-view hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">VIDEO PLANNING · CANVA HANDOFF · YOUTUBE IMPROVEMENT</p>
+            <h1>Creator Studio</h1>
+            <p class="muted">Plan a complete long-form video, write a narration draft with JARVIS, make stick-figure assets and prepare a Canva handoff kit.</p>
+          </div>
+          <span class="counter">Draft workspace</span>
+        </div>
+
+        <div class="creator-notice">
+          <strong>No guaranteed reach</strong>
+          <p>This workspace helps improve the parts you can control: topic clarity, truthful packaging, story structure, visual consistency and learning from your own analytics. Nobody can promise 100% reach or viral views.</p>
+        </div>
+
+        <form id="creator-form" class="form-card creator-brief">
+          <h2>1 · Build a long-form video plan</h2>
+          <label for="creator-topic">Specific video topic or question</label>
+          <textarea id="creator-topic" rows="2" maxlength="180" required placeholder="Example: Why does a metal spoon feel colder than a wooden spoon in the same room?"></textarea>
+          <div class="creator-form-grid">
+            <label for="creator-audience">Who is this video for?
+              <input id="creator-audience" maxlength="140" placeholder="Curious beginners, students, hobby learners…">
+            </label>
+            <label for="creator-language">Narration language
+              <select id="creator-language">
+                <option value="hi-IN" selected>Hindi / Hinglish</option>
+                <option value="en-IN">English</option>
+              </select>
+            </label>
+            <label for="creator-duration">Target length
+              <select id="creator-duration">
+                <option value="4">4 minutes</option>
+                <option value="6">6 minutes</option>
+                <option value="8" selected>8 minutes</option>
+                <option value="10">10 minutes</option>
+                <option value="12">12 minutes</option>
+                <option value="15">15 minutes</option>
+                <option value="20">20 minutes</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-row">
+            <span class="small muted">Creates a timed chapter outline locally. It does not create or publish a video.</span>
+            <button type="submit" class="primary" id="creator-generate-plan">Generate outline</button>
+          </div>
+        </form>
+
+        <section id="creator-output" class="creator-output hidden">
+          <div class="list-heading">
+            <h2>2 · Story structure</h2>
+            <span id="creator-plan-summary" class="small muted"></span>
+          </div>
+          <div id="creator-chapters" class="creator-chapters"></div>
+          <div class="creator-two-column">
+            <div class="creator-panel">
+              <h3>Title options</h3>
+              <ol id="creator-title-ideas"></ol>
+            </div>
+            <div class="creator-panel">
+              <h3>Opening hook options</h3>
+              <ol id="creator-hook-ideas"></ol>
+            </div>
+          </div>
+
+          <div class="creator-panel creator-script-panel">
+            <div class="creator-panel-heading">
+              <div><h3>3 · Full narration</h3><p class="small muted">JARVIS can expand the outline into spoken narration, shot directions and scene prompts.</p></div>
+              <button type="button" class="primary" id="creator-write-script">Write full script with JARVIS</button>
+            </div>
+            <label for="creator-full-script">Edit the narration draft</label>
+            <textarea id="creator-full-script" rows="16" maxlength="36000" placeholder="Generate a full script with JARVIS or write/edit it here. Review factual claims and source notes before recording."></textarea>
+            <label for="creator-description">YouTube description draft</label>
+            <textarea id="creator-description" rows="5" maxlength="5000"></textarea>
+            <div class="creator-export-row">
+              <button type="button" class="item-action" id="creator-export-script">Export script (Markdown)</button>
+              <button type="button" class="item-action" id="creator-export-csv">Export storyboard (CSV)</button>
+              <button type="button" class="item-action" id="creator-export-description">Export description</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="creator-panel creator-character-panel">
+          <div class="creator-panel-heading">
+            <div><p class="eyebrow">REUSABLE VECTOR CHARACTER</p><h2>4 · Stick-figure builder</h2><p class="small muted">Choose a pose and export an SVG. Upload it to Canva, duplicate it, and adjust animation/timing there.</p></div>
+          </div>
+          <div class="creator-character-layout">
+            <div id="creator-figure-preview" class="creator-figure-preview" role="img" aria-label="Stick figure pose preview"></div>
+            <div class="creator-character-controls">
+              <label for="creator-pose">Character pose
+                <select id="creator-pose">
+                  <option value="idle">Idle / neutral</option>
+                  <option value="walk">Walking</option>
+                  <option value="point">Pointing</option>
+                  <option value="think">Thinking</option>
+                  <option value="surprised">Surprised</option>
+                  <option value="explaining">Explaining</option>
+                </select>
+              </label>
+              <p id="creator-pose-description" class="small muted"></p>
+              <button type="button" class="primary" id="creator-export-figure">Export current pose SVG</button>
+              <button type="button" class="item-action" id="creator-export-poses">Export all poses as SVG sheet</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="creator-panel creator-canva-panel">
+          <p class="eyebrow">CANVA HANDOFF</p>
+          <h2>5 · Finish the edit in Canva</h2>
+          <p>Upload the SVG character, scene images and voiceover. Use a 16:9 video design for regular YouTube, place video on the main track, text/graphics on upper tracks and voice/music on audio tracks. Check captions, timing, sound levels and the exported file on your phone.</p>
+          <div class="creator-handoff-steps">
+            <span>1. Export script + storyboard CSV + SVG poses</span>
+            <span>2. Open Canva Video and upload your assets</span>
+            <span>3. Build the timeline and record/add the voiceover</span>
+            <span>4. Preview every scene and export MP4</span>
+            <span>5. Review the file and metadata before upload</span>
+          </div>
+          <a class="primary creator-canva-link" id="creator-open-canva" href="https://www.canva.com/create/videos/" target="_blank" rel="noopener noreferrer">Open Canva Video</a>
+          <p class="small muted">JARVIS does not yet have direct Canva timeline editing. This handoff creates reusable assets; drag/drop, detailed animation, precise cuts and audio mixing remain manual in Canva.</p>
+        </section>
+
+        <section class="creator-panel">
+          <p class="eyebrow">LEARN FROM YOUR OWN CHANNEL</p>
+          <h2>6 · YouTube analytics review</h2>
+          <p class="small muted">Enter values from YouTube Studio and compare this upload with your own similar videos. These are diagnostic prompts, not universal targets.</p>
+          <div class="creator-form-grid creator-analytics-grid">
+            <label for="creator-baseline-ctr">Your comparable-video median CTR (%)
+              <input id="creator-baseline-ctr" inputmode="decimal" type="number" min="0" max="100" step="0.1" placeholder="e.g. 4.8">
+            </label>
+            <label for="creator-current-ctr">This video's CTR (%)
+              <input id="creator-current-ctr" inputmode="decimal" type="number" min="0" max="100" step="0.1" placeholder="e.g. 3.9">
+            </label>
+            <label for="creator-intro-retention">Viewers still watching at 0:30 (%)
+              <input id="creator-intro-retention" inputmode="decimal" type="number" min="0" max="100" step="0.1" placeholder="e.g. 58">
+            </label>
+          </div>
+          <button type="button" class="primary" id="creator-analytics-check">Review these results</button>
+          <p id="creator-analytics-advice" class="creator-analytics-advice" aria-live="polite">Your channel's own comparable videos are a more useful baseline than a universal CTR or retention target.</p>
+        </section>
+
+        <section class="creator-panel creator-skill-panel">
+          <p class="eyebrow">OPTIONAL JARVIS SKILL</p>
+          <h2>7 · Add Creator Coach to JARVIS</h2>
+          <p>Create a versioned Creator Studio skill, run its trigger tests, then review and explicitly activate it. This gives JARVIS extra coaching guidance; it does not grant new Canva permissions or Android actions.</p>
+          <div class="creator-export-row">
+            <button type="button" class="primary" id="creator-skill-create">Create and test Creator Coach skill</button>
+            <button type="button" class="item-action hidden" id="creator-skill-approve">Approve & activate skill</button>
+          </div>
+        </section>
+
+        <p id="creator-status" class="creator-status" role="status" aria-live="polite">Creator Studio ready.</p>
+        <p class="small muted creator-storage-note">Draft outline and script are saved in this browser on this device only. Export them to back them up or move them to another device.</p>
       </section>
 
       <section id="view-actions" class="view content-view hidden">
