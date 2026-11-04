@@ -261,6 +261,7 @@ export function createCreatorStudio({ api, toast }) {
   let plan = null;
   let fullScript = "";
   let skillDraft = null;
+  let canvaStatus = null;
 
   function status(message, error = false) {
     const target = $("creator-status");
@@ -716,6 +717,80 @@ export function createCreatorStudio({ api, toast }) {
     }
   }
 
+  function setCanvaStatus(message, error = false) {
+    const target = $("creator-canva-status");
+    if (!target) return;
+    target.textContent = message;
+    target.classList.toggle("error-text", error);
+  }
+
+  async function loadCanvaStatus() {
+    try {
+      canvaStatus = await api("/api/canva/status");
+      const connect = $("creator-connect-canva");
+      const create = $("creator-create-canva-thumbnail");
+      if (connect) {
+        connect.textContent = canvaStatus.connected ? "Canva connected" : "Connect Canva account";
+        connect.disabled = !canvaStatus.canConnect || canvaStatus.connected;
+      }
+      if (create) create.disabled = !canvaStatus.connected;
+      setCanvaStatus(canvaStatus.connected
+        ? "Canva is connected. JARVIS can upload your approved thumbnail PNG and create a new 16:9 design."
+        : canvaStatus.canConnect
+          ? "Canva credentials are configured. Connect your Canva account to create the thumbnail design."
+          : "Canva Connect needs a registered developer integration, client ID, client secret, callback URL and the JARVIS encrypted-token key on the server.");
+      return canvaStatus;
+    } catch (error) {
+      setCanvaStatus(error.message || "Canva connection status is unavailable.", true);
+      return null;
+    }
+  }
+
+  async function connectCanva() {
+    const button = $("creator-connect-canva");
+    button.disabled = true;
+    try {
+      const result = await api("/api/integrations/canva/oauth/start", {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      if (!result.authorizationUrl) throw new Error("JARVIS did not return a Canva consent URL.");
+      window.location.href = result.authorizationUrl;
+    } catch (error) {
+      setCanvaStatus(error.message || "Canva connection could not start.", true);
+      button.disabled = false;
+    }
+  }
+
+  async function createCanvaThumbnailDesign() {
+    const button = $("creator-create-canva-thumbnail");
+    button.disabled = true;
+    try {
+      const canvas = $("creator-thumbnail-canvas");
+      const png = await canvasToPng(canvas);
+      const title = clean($("creator-thumbnail-title").value || plan?.topic || "JARVIS YouTube Thumbnail", 50);
+      const response = await api("/api/canva/thumbnail-design", {
+        method: "POST",
+        headers: {
+          "Content-Type": "image/png",
+          "X-Jarvis-Asset-Name": encodeURIComponent(title)
+        },
+        body: png
+      });
+      const design = response.design;
+      const link = $("creator-canva-design-link");
+      link.href = design.editUrl;
+      link.textContent = "Open Canva design · " + (design.title || title);
+      link.classList.remove("hidden");
+      setCanvaStatus("Created a 16:9 Canva design. The uploaded thumbnail is one flat image, not separate editable text and shape layers. Canva's edit link is temporary; open it and make your changes there.");
+      toast("Canva thumbnail design created.");
+    } catch (error) {
+      setCanvaStatus(error.message || "Canva could not create this design.", true);
+    } finally {
+      button.disabled = !canvaStatus?.connected;
+    }
+  }
+
   function setAnalyticsAdvice() {
     const baselineCtr = Number($("creator-baseline-ctr").value);
     const currentCtr = Number($("creator-current-ctr").value);
@@ -764,6 +839,8 @@ export function createCreatorStudio({ api, toast }) {
     $("creator-skill-approve").addEventListener("click", approveSkill);
     $("creator-analytics-check").addEventListener("click", setAnalyticsAdvice);
     $("creator-connect-analytics").addEventListener("click", connectYouTubeAnalytics);
+    $("creator-connect-canva").addEventListener("click", connectCanva);
+    $("creator-create-canva-thumbnail").addEventListener("click", createCanvaThumbnailDesign);
     $("creator-refresh-analytics").addEventListener("click", loadYouTubeAnalytics);
     $("creator-full-script").addEventListener("input", () => {
       fullScript = $("creator-full-script").value;
@@ -777,5 +854,5 @@ export function createCreatorStudio({ api, toast }) {
     status("Creator Studio ready. Drafts stay in this browser until you export them.");
   }
 
-  return { init, renderFigure, loadAnalyticsStatus };
+  return { init, renderFigure, loadAnalyticsStatus, loadCanvaStatus };
 }
