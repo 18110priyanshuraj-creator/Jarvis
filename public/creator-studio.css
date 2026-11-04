@@ -347,7 +347,7 @@
   font-weight: 700;
   overflow-wrap: anywhere;
 }
-#creator-canva-create-thumbnail:disabled,
+#creator-create-canva-thumbnail:disabled,
 #creator-create-canva-thumbnail:disabled {
   opacity: .55;
   cursor: not-allowed;
