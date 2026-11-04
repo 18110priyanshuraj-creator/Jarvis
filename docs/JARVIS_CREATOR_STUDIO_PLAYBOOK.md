@@ -145,11 +145,11 @@ The `Creator Studio` dashboard view added in this feature branch is separate fro
 - Can send the outline to the existing JARVIS chat endpoint to request a full spoken narration draft. Availability and quality depend on the server's configured AI provider; every factual claim still needs review.
 - Exports the narration and plan as Markdown, the chapter/shot plan as CSV, and the description as text.
 - Generates a consistent stick-figure pose as an SVG, plus a reusable pose sheet for upload into Canva.
-- Provides a small analytics review worksheet that compares user-entered CTR and 30-second retention values with the creator's own channel baseline. It is a manual worksheet, not a YouTube Analytics API connection.
+- Includes a read-only YouTube Analytics panel for top-video performance and selected-video audience-retention reports (views, watch hours, average view duration, average view percentage, likes, comments and subscribers gained). Thumbnail impression CTR is not included in this report; the manual YouTube Studio comparison fields remain for CTR and manually entered 0:30 retention.
 - Adds an optional Creator Coach skill draft flow. JARVIS creates and validates the skill draft first; the user must explicitly approve it before activation.
 - Saves the current outline and narration in the current browser/device's local storage. Export a copy to move it to another device.
 
-The Creator Studio planner does **not** render a complete long-form video, generate/record a voice track, or synchronize an editable Canva timeline. The generated SVGs and CSV are handoff assets that the user uploads and arranges in Canva.
+The Creator Studio planner does **not** render a complete long-form video, generate/record a voice track, or synchronize an editable Canva timeline. It can create a new Canva 16:9 thumbnail design from the generated PNG after the user registers a Canva Connect app, configures server credentials and grants the requested scopes. The image is one flat design element, not separate editable text/shape layers.
 
 ## 10. Existing Media Studio and YouTube Publisher limits
 
