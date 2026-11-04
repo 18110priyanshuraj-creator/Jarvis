@@ -95,6 +95,7 @@ export function makeCreatorPlan(input) {
   ];
   return {
     topic, audience, language, durationMinutes, totalSeconds, chapters, titleIdeas, hook,
+    thumbnailText: topic.split(/\\s+/).slice(0, 5).join(" ").toUpperCase(),
     description: "In this video, we explore " + topic + " step by step. " +
       "You will see the key idea, a worked example, and the common mistake to avoid.\n\n" +
       "Chapters:\n" + chapters.map((item) => timestamp(item.startSeconds) + " " + item.name).join("\n") +
@@ -134,7 +135,30 @@ export function makeStickFigureSvg(poseId, title = "JARVIS stick figure") {
     escapeXml(pose.label) + "</text></svg>";
 }
 
-export function makePoseSheet() {
+export export function makeThumbnailSvg(topic, thumbnailText) {
+  const title = clean(thumbnailText || topic, 54).toUpperCase();
+  const words = title.split(/\\s+/).filter(Boolean);
+  const firstLine = escapeXml(words.slice(0, 3).join(" "));
+  const secondLine = escapeXml(words.slice(3, 6).join(" "));
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-label="YouTube thumbnail concept">' +
+    '<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#071a24"/><stop offset="1" stop-color="#07566a"/></linearGradient></defs>' +
+    '<rect width="1280" height="720" fill="url(#bg)"/>' +
+    '<circle cx="1040" cy="340" r="245" fill="#1cc4cb" opacity=".16"/>' +
+    '<path d="M0 630L1280 500V720H0Z" fill="#031017" opacity=".45"/>' +
+    '<text x="88" y="170" fill="#63edf0" font-family="Arial,sans-serif" font-size="28" font-weight="700" letter-spacing="8">JARVIS EXPLAINER</text>' +
+    '<text x="88" y="320" fill="#f4fdff" font-family="Arial,sans-serif" font-size="86" font-weight="900">' + firstLine + '</text>' +
+    (secondLine ? '<text x="88" y="430" fill="#8df6ee" font-family="Arial,sans-serif" font-size="86" font-weight="900">' + secondLine + '</text>' : '') +
+    '<g transform="translate(880 170)" fill="none" stroke="#f1ffff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">' +
+    '<circle cx="125" cy="82" r="68" fill="#f1ffff" stroke="none"/>' +
+    '<circle cx="103" cy="72" r="7" fill="#07566a" stroke="none"/><circle cx="148" cy="72" r="7" fill="#07566a" stroke="none"/>' +
+    '<path d="M105 104Q125 121 145 104" stroke="#07566a" stroke-width="7"/>' +
+    '<path d="M125 155V360M125 208L18 292M125 208L245 150M125 360L48 510M125 360L210 505"/>' +
+    '</g>' +
+    '<text x="88" y="630" fill="#c9e7ed" font-family="Arial,sans-serif" font-size="25" letter-spacing="3">CLEAR IDEA · ONE VISUAL · HONEST PROMISE</text>' +
+    '</svg>';
+}
+
+function makePoseSheet() {
   const poses = POSES.map((pose, index) => {
     const svg = makeStickFigureSvg(pose.id, pose.label);
     const inner = svg.slice(svg.indexOf("<circle"), svg.indexOf("</svg>"));
@@ -307,6 +331,8 @@ export function createCreatorStudio({ api, toast }) {
       $("creator-hook-ideas").append(item);
     }
     $("creator-description").value = plan.description;
+    if (!$("creator-thumbnail-text").value) $("creator-thumbnail-text").value = plan.thumbnailText;
+    renderThumbnail();
     $("creator-full-script").value = fullScript;
     $("creator-output").classList.remove("hidden");
     renderFigure();
@@ -397,6 +423,18 @@ export function createCreatorStudio({ api, toast }) {
     const pose = $("creator-pose").value || "idle";
     download("jarvis-stick-figure-" + pose + ".svg", makeStickFigureSvg(pose), "image/svg+xml;charset=utf-8");
     status("Stick-figure SVG exported. Upload it to Canva and animate or duplicate it there.");
+  }
+
+  function renderThumbnail() {
+    const preview = $("creator-thumbnail-preview");
+    if (preview && plan) preview.innerHTML = makeThumbnailSvg(plan.topic, $("creator-thumbnail-text").value);
+  }
+
+  function exportThumbnail() {
+    if (!plan) return toast("Create a video outline first.", true);
+    download(safeFilename(plan.topic) + "-thumbnail-concept.svg",
+      makeThumbnailSvg(plan.topic, $("creator-thumbnail-text").value), "image/svg+xml;charset=utf-8");
+    status("Thumbnail concept exported as SVG. Adjust the words and layout in Canva before publishing.");
   }
 
   function exportPoseSheet() {
@@ -505,6 +543,8 @@ export function createCreatorStudio({ api, toast }) {
     $("creator-pose").addEventListener("change", renderFigure);
     $("creator-export-figure").addEventListener("click", exportFigure);
     $("creator-export-poses").addEventListener("click", exportPoseSheet);
+    $("creator-thumbnail-text").addEventListener("input", renderThumbnail);
+    $("creator-export-thumbnail").addEventListener("click", exportThumbnail);
     $("creator-skill-create").addEventListener("click", createSkill);
     $("creator-skill-approve").addEventListener("click", approveSkill);
     $("creator-analytics-check").addEventListener("click", setAnalyticsAdvice);
