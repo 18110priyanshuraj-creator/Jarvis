@@ -1,3 +1,5 @@
+import { drawThumbnailCanvas, drawStickFigureFrame, canvasToPng, recordStickFigurePreview } from "./creator-renderer.js";
+
 const STORAGE_KEY = "jarvis.creator-studio.v1";
 const POSES = [
   { id: "idle", label: "Idle / neutral", arms: [[50, 76, 27, 104], [50, 76, 73, 104]], legs: [[50, 119, 34, 158], [50, 119, 66, 158]] },
@@ -442,6 +444,48 @@ export function createCreatorStudio({ api, toast }) {
     status("Pose sheet exported as SVG.");
   }
 
+  function renderCreatorCanvases() {
+    const options = {
+      title: $("creator-thumbnail-title")?.value || plan?.topic || "A BIG QUESTION",
+      subtitle: $("creator-thumbnail-subtitle")?.value || "",
+      pose: $("creator-pose")?.value || "point"
+    };
+    if ($("creator-thumbnail-canvas")) drawThumbnailCanvas($("creator-thumbnail-canvas"), options);
+    if ($("creator-motion-canvas")) drawStickFigureFrame($("creator-motion-canvas"), options, 4);
+  }
+
+  async function exportThumbnail() {
+    const button = $("creator-export-thumbnail");
+    button.disabled = true;
+    try {
+      renderCreatorCanvases();
+      const blob = await canvasToPng($("creator-thumbnail-canvas"));
+      download(safeFilename(plan?.topic || "jarvis") + "-youtube-thumbnail.png", blob, "image/png");
+      status("1280 × 720 thumbnail exported. Check mobile readability before using it.");
+    } catch (error) {
+      status(error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function exportMotionSample() {
+    const button = $("creator-export-motion");
+    button.disabled = true;
+    try {
+      const blob = await recordStickFigurePreview($("creator-motion-canvas"), {
+        title: $("creator-thumbnail-title")?.value || plan?.topic || "Explaining an idea",
+        subtitle: $("creator-thumbnail-subtitle")?.value || ""
+      });
+      download(safeFilename(plan?.topic || "jarvis") + "-stick-figure-motion.webm", blob, "video/webm");
+      status("Silent stick-figure WebM sample exported. Add voiceover and adjust scene timing in Canva.");
+    } catch (error) {
+      status(error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   async function createSkill() {
     const button = $("creator-skill-create");
     button.disabled = true;
@@ -540,9 +584,14 @@ export function createCreatorStudio({ api, toast }) {
     $("creator-export-script").addEventListener("click", exportScript);
     $("creator-export-csv").addEventListener("click", exportCsv);
     $("creator-export-description").addEventListener("click", exportDescription);
-    $("creator-pose").addEventListener("change", renderFigure);
+    $("creator-pose").addEventListener("change", () => { renderFigure(); renderCreatorCanvases(); });
     $("creator-export-figure").addEventListener("click", exportFigure);
     $("creator-export-poses").addEventListener("click", exportPoseSheet);
+    $("creator-export-thumbnail").addEventListener("click", exportThumbnail);
+    $("creator-export-motion").addEventListener("click", exportMotionSample);
+    ["creator-thumbnail-title", "creator-thumbnail-subtitle"].forEach((id) => {
+      $(id).addEventListener("input", renderCreatorCanvases);
+    });
     $("creator-thumbnail-text").addEventListener("input", renderThumbnail);
     $("creator-export-thumbnail").addEventListener("click", exportThumbnail);
     $("creator-skill-create").addEventListener("click", createSkill);
@@ -559,6 +608,7 @@ export function createCreatorStudio({ api, toast }) {
       window.open("https://www.canva.com/create/videos/", "_blank", "noopener,noreferrer");
     });
     renderFigure();
+    renderCreatorCanvases();
     status("Creator Studio ready. Drafts stay in this browser until you export them.");
   }
 
