@@ -194,7 +194,9 @@ export function beginGoogleOAuth({ sessionToken, capability = "read", existingCo
     ? [GOOGLE_DRIVE_METADATA_SCOPE, GOOGLE_DRIVE_FILE_SCOPE]
     : capability === "youtube_upload"
       ? [GOOGLE_DRIVE_METADATA_SCOPE, YOUTUBE_UPLOAD_SCOPE]
-      : [GOOGLE_DRIVE_METADATA_SCOPE];
+      : capability === "youtube_analytics"
+        ? [GOOGLE_DRIVE_METADATA_SCOPE, YOUTUBE_ANALYTICS_SCOPE]
+        : [GOOGLE_DRIVE_METADATA_SCOPE];
   const previousScopes = existingConnection ? normalizeGoogleOAuthConnection(existingConnection).grantedScopes : [];
   const requestedScopes = [...new Set([...previousScopes, ...capabilityScopes])].sort();
 
