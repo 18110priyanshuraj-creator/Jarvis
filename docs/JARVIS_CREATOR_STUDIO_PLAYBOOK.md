@@ -158,7 +158,7 @@ The repository's Media Studio supports a storyboard with 2–12 scenes and three
 - Landscape explainer: 1280 × 720, up to 180 seconds.
 - Square carousel: 1080 × 1080, up to 60 seconds.
 
-It can draft scenes with heading, voiceover, on-screen text and visual direction; save/approve the storyboard; and export a script, captions, JSON, PNG frames and a silent WebM motion-graphic preview/video. The current renderer does not record voiceover or create a full Canva timeline edit. It remains a short storyboard/renderer, not an 8–20 minute full video renderer.
+It can draft scenes with heading, voiceover, on-screen text and visual direction; save/approve the storyboard; and export a script, captions, JSON, PNG frames and a silent WebM motion-graphic preview/video. Creator Studio additionally makes a 1280 × 720 PNG thumbnail from editable text, exports a reusable SVG character/pose sheet, and can record a short silent WebM stick-figure sample in browsers that support canvas recording. The current renderers do not record voiceover or create a full Canva timeline edit. It remains a short storyboard/renderer, not an 8–20 minute full video renderer.
 
 The existing YouTube Publisher supports an explicit upload preview and confirmation flow for an approved project and a selected video file. It is not an automatic growth service and does not guarantee reach. Public uploads require the documented review checks; keep the owner in control of the final privacy/audience declarations and upload confirmation.
 
