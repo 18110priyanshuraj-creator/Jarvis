@@ -168,7 +168,6 @@ function setView(name) {
   if (name === "creator") {
     creatorStudio.init();
     creatorStudio.loadAnalyticsStatus().catch((error) => toast(error.message, true));
-    creatorStudio.loadCanvaStatus().catch((error) => toast(error.message, true));
   }
 }
 
