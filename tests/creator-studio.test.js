@@ -31,7 +31,7 @@ test("plan rejects a vague or too-short topic", () => {
 
 test("stick-figure SVG uses a supported pose and escapes label text", () => {
   const svg = makeStickFigureSvg("point", "<script>alert(1)</script>");
-  assert.match(svg, /<svg xmlns="http://www\.w3\.org\/2000\/svg"/);
+  assert.ok(svg.includes('<svg xmlns="http://www.w3.org/2000/svg"'));
   assert.match(svg, /Pointing/);
   assert.match(svg, /&lt;script&gt;/);
   assert.doesNotMatch(svg, /<script>/);
