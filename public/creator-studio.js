@@ -635,7 +635,8 @@ export function createCreatorStudio({ api, toast }) {
         formatVideoDuration(item.averageViewDurationSeconds) + " avg view duration",
         Number(item.averageViewPercentage).toFixed(1) + "% avg viewed",
         Number(item.likes).toLocaleString() + " likes",
-        Number(item.comments).toLocaleString() + " comments"
+        Number(item.comments).toLocaleString() + " comments",
+        Number(item.subscribersGained).toLocaleString() + " subscribers gained"
       ].join(" · ");
       const retention = document.createElement("button");
       retention.type = "button";
@@ -703,8 +704,8 @@ export function createCreatorStudio({ api, toast }) {
         bar.append(fill);
         const value = document.createElement("span");
         value.className = "small muted";
-        value.textContent = "Relative retention " + Math.round(segment.relativeRetentionPerformance * 100) +
-          "% · audience-watch ratio " + segment.audienceWatchRatio.toFixed(2);
+        value.textContent = "Relative retention score " + segment.relativeRetentionPerformance.toFixed(2) +
+          " (0.50 median) · audience-watch ratio " + segment.audienceWatchRatio.toFixed(2);
         row.append(label, bar, value);
         target.append(row);
       }
