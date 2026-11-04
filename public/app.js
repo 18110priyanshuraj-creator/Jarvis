@@ -1,6 +1,7 @@
 import { createVoiceController } from "./voice-controller.js";
 import { createOrbitalVisual } from "./orbital-visual.js";
 import { createMediaWorkspace } from "./media-workspace.js";
+import { createCreatorStudio } from "./creator-studio.js";
 import { createYouTubePublisher } from "./youtube-publisher.js";
 import { createKnowledgeDocuments } from "./knowledge-documents.js";
 import { createAgentEvolution } from "./agent-evolution.js";
