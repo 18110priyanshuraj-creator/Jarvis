@@ -907,7 +907,22 @@
         <section class="creator-panel">
           <p class="eyebrow">LEARN FROM YOUR OWN CHANNEL</p>
           <h2>6 · YouTube analytics review</h2>
-          <p class="small muted">Enter values from YouTube Studio and compare this upload with your own similar videos. These are diagnostic prompts, not universal targets.</p>
+          <p class="small muted">Connect a separate read-only Google permission to inspect channel performance and audience retention. This does not grant upload, edit, delete or channel-management access.</p>
+          <div class="creator-export-row creator-analytics-connect-row">
+            <button type="button" class="primary" id="creator-connect-analytics">Connect read-only YouTube Analytics</button>
+            <label class="creator-analytics-period" for="creator-analytics-days">Report period
+              <select id="creator-analytics-days">
+                <option value="7">Last 7 complete days</option>
+                <option value="28" selected>Last 28 complete days</option>
+                <option value="90">Last 90 complete days</option>
+              </select>
+            </label>
+            <button type="button" class="item-action" id="creator-refresh-analytics" disabled>Load channel reports</button>
+          </div>
+          <p id="creator-channel-analytics-status" class="creator-status" role="status" aria-live="polite">Checking the read-only analytics connection when this workspace opens…</p>
+          <div id="creator-top-videos" class="creator-top-videos"></div>
+          <div id="creator-retention-details" class="creator-retention-details"></div>
+          <p class="small muted">API reports include views, watch time, average view duration and retention segments. Thumbnail impression CTR is not included in this report flow; use the manual comparison fields below for CTR and first-30-second values. The report ends on the latest complete day available from YouTube.</p>
           <div class="creator-form-grid creator-analytics-grid">
             <label for="creator-baseline-ctr">Your comparable-video median CTR (%)
               <input id="creator-baseline-ctr" inputmode="decimal" type="number" min="0" max="100" step="0.1" placeholder="e.g. 4.8">
