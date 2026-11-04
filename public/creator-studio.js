@@ -728,11 +728,13 @@ export function createCreatorStudio({ api, toast }) {
     try {
       canvaStatus = await api("/api/canva/status");
       const connect = $("creator-connect-canva");
+      const disconnect = $("creator-disconnect-canva");
       const create = $("creator-create-canva-thumbnail");
       if (connect) {
         connect.textContent = canvaStatus.connected ? "Canva connected" : "Connect Canva account";
         connect.disabled = !canvaStatus.canConnect || canvaStatus.connected;
       }
+      if (disconnect) disconnect.classList.toggle("hidden", !canvaStatus.connected);
       if (create) create.disabled = !canvaStatus.connected;
       setCanvaStatus(canvaStatus.connected
         ? "Canva is connected. JARVIS can upload your approved thumbnail PNG and create a new 16:9 design."
@@ -743,6 +745,29 @@ export function createCreatorStudio({ api, toast }) {
     } catch (error) {
       setCanvaStatus(error.message || "Canva connection status is unavailable.", true);
       return null;
+    }
+  }
+
+  async function disconnectCanva() {
+    const button = $("creator-disconnect-canva");
+    const confirmed = window.confirm(
+      "Disconnect Canva from JARVIS? This will revoke the Canva refresh-token lineage and remove the stored connection. Existing Canva designs in your account will not be deleted."
+    );
+    if (!confirmed) return;
+    button.disabled = true;
+    try {
+      await api("/api/integrations/canva/oauth/revoke", {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      $("creator-canva-design-link").classList.add("hidden");
+      $("creator-canva-design-link").removeAttribute("href");
+      await loadCanvaStatus();
+      setCanvaStatus("Canva was disconnected and its stored token was revoked. Existing Canva designs were not deleted.");
+      toast("Canva disconnected.");
+    } catch (error) {
+      setCanvaStatus(error.message || "Canva could not be disconnected.", true);
+      button.disabled = false;
     }
   }
 
@@ -845,6 +870,7 @@ export function createCreatorStudio({ api, toast }) {
     $("creator-analytics-check").addEventListener("click", setAnalyticsAdvice);
     $("creator-connect-analytics").addEventListener("click", connectYouTubeAnalytics);
     $("creator-connect-canva").addEventListener("click", connectCanva);
+    $("creator-disconnect-canva").addEventListener("click", disconnectCanva);
     $("creator-create-canva-thumbnail").addEventListener("click", createCanvaThumbnailDesign);
     $("creator-refresh-analytics").addEventListener("click", loadYouTubeAnalytics);
     $("creator-full-script").addEventListener("input", () => {
