@@ -134,7 +134,7 @@ export function makeStickFigureSvg(poseId, title = "JARVIS stick figure") {
     escapeXml(pose.label) + "</text></svg>";
 }
 
-function makePoseSheet() {
+export function makePoseSheet() {
   const poses = POSES.map((pose, index) => {
     const svg = makeStickFigureSvg(pose.id, pose.label);
     const inner = svg.slice(svg.indexOf("<circle"), svg.indexOf("</svg>"));
@@ -431,7 +431,7 @@ export function createCreatorStudio({ api, toast }) {
           applicationIds: ["*"],
           triggers: ["stick figure", "Canva", "long YouTube", "video editing"],
           testCases: [
-            { input: "Help me make a stick figure explainer video in Canva and plan a long YouTube version.", shouldMatch: true },
+            { input: "Help me create a Canva video with stick figure animation and plan a long YouTube version.", shouldMatch: true },
             { input: "Explain how a bicycle gear works.", shouldMatch: false }
           ]
         })
