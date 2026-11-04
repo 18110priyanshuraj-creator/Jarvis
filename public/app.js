@@ -73,6 +73,10 @@ async function boot() {
       toast("Google Drive connected with read-only metadata access.");
     } else if (params.get("integration") === "google_drive_error") {
       toast("Google Drive was not connected. Check the OAuth setup and try again.", true);
+    } else if (params.get("integration") === "canva_connected") {
+      toast("Canva connected. Open Creator Studio to create a thumbnail design.");
+    } else if (params.get("integration") === "canva_error") {
+      toast("Canva was not connected. Check the Canva developer credentials and callback URL.", true);
     }
     if (params.has("integration")) window.history.replaceState({}, "", window.location.pathname);
   } catch {
@@ -164,6 +168,7 @@ function setView(name) {
   if (name === "creator") {
     creatorStudio.init();
     creatorStudio.loadAnalyticsStatus().catch((error) => toast(error.message, true));
+    creatorStudio.loadCanvaStatus().catch((error) => toast(error.message, true));
   }
 }
 
