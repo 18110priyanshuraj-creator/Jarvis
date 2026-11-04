@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   beginCanvaOAuth,
   CANVA_SCOPES,
@@ -101,11 +102,12 @@ test("Canva OAuth callback is single-use, browser-bound and saves encrypted refr
 test("Canva access token refresh uses the encrypted refresh token", async () => {
   const flow = await beginCanvaOAuth({ sessionToken: "test-session", env });
   const state = new URL(flow.authorizationUrl).searchParams.get("state");
+  const sessionHash = createHash("sha256").update("test-session").digest("base64url");
   const connection = await finishCanvaOAuth({
     state,
     browserBinding: flow.browserBinding,
     code: "token-code",
-    isSessionValid: async (id) => id === "test-session",
+    isSessionValid: async (hash) => hash === sessionHash,
     env,
     fetchImpl: async () => jsonResponse({
       access_token: "canva-first-access-token",
