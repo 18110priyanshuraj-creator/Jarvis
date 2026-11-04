@@ -28,7 +28,7 @@ import {
   YOUTUBE_UPLOAD_MIME_TYPES
 } from "./services/youtube-publisher.js";
 import { getTopVideosAnalytics, getVideoRetentionAnalytics } from "./services/youtube-analytics.js";
-import { beginCanvaOAuth, clearCanvaTokenCache, createCanvaThumbnailDesign, finishCanvaOAuth, getCanvaAccessToken, getCanvaOAuthStatus, normalizeCanvaOAuthConnection } from "./services/canva-connect.js";
+import { beginCanvaOAuth, clearCanvaTokenCache, createCanvaThumbnailDesign, finishCanvaOAuth, getCanvaAccessToken, getCanvaOAuthStatus, normalizeCanvaOAuthConnection, revokeCanvaOAuthConnection } from "./services/canva-connect.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, mergeDuplicateKnowledge, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { createLearningNote, parseExplicitLearningCommand, previewIndependentLearning } from "./services/learning-engine.js";
 import { buildDocumentKnowledgeContext, createKnowledgeDocument, DOCUMENT_LIMITS, findDuplicateDocument, normalizeKnowledgeDocument, resolveDocumentStoragePath, searchKnowledgeDocuments, toPublicKnowledgeDocument } from "./services/knowledge-documents.js";
@@ -3288,6 +3288,21 @@ app.get("/api/integrations/canva/oauth/callback", oauthCallbackLimiter, async (r
     console.warn("Canva OAuth callback was not completed:", error?.message || "OAuth error");
     res.setHeader("Cache-Control", "no-store");
     return res.redirect(303, "/?integration=canva_error");
+  }
+});
+
+app.post("/api/integrations/canva/oauth/revoke", requireAuth, integrationTestLimiter, async (_req, res) => {
+  const connection = getCanvaOAuthConnection();
+  if (!connection) return res.status(404).json({ error: "No Canva connection is stored in JARVIS." });
+  try {
+    await revokeCanvaOAuthConnection(connection);
+    store.oauthConnections = store.oauthConnections.filter((item) => item.provider !== "canva");
+    await saveStore();
+    clearCanvaTokenCache();
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ ok: true, message: "Canva consent was revoked and its encrypted refresh token was removed from JARVIS." });
+  } catch (error) {
+    return res.status(502).json({ error: error?.message || "Canva permission could not be revoked. The connection was kept." });
   }
 });
 
