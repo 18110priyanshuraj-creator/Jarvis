@@ -28,6 +28,7 @@ import {
   YOUTUBE_UPLOAD_MIME_TYPES
 } from "./services/youtube-publisher.js";
 import { getTopVideosAnalytics, getVideoRetentionAnalytics } from "./services/youtube-analytics.js";
+import { beginCanvaOAuth, clearCanvaTokenCache, createCanvaThumbnailDesign, finishCanvaOAuth, getCanvaAccessToken, getCanvaOAuthStatus, normalizeCanvaOAuthConnection } from "./services/canva-connect.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, mergeDuplicateKnowledge, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { createLearningNote, parseExplicitLearningCommand, previewIndependentLearning } from "./services/learning-engine.js";
 import { buildDocumentKnowledgeContext, createKnowledgeDocument, DOCUMENT_LIMITS, findDuplicateDocument, normalizeKnowledgeDocument, resolveDocumentStoragePath, searchKnowledgeDocuments, toPublicKnowledgeDocument } from "./services/knowledge-documents.js";
@@ -373,7 +374,9 @@ function normalizeStore(parsed = {}) {
       : [],
     oauthConnections: Array.isArray(parsed.oauthConnections)
       ? parsed.oauthConnections.slice(0, 4).flatMap((item) => {
-          try { return [normalizeGoogleOAuthConnection(item)]; } catch { return []; }
+          try {
+            return [item?.provider === "canva" ? normalizeCanvaOAuthConnection(item) : normalizeGoogleOAuthConnection(item)];
+          } catch { return []; }
         })
       : [],
     externalActions: Array.isArray(parsed.externalActions)
@@ -451,6 +454,17 @@ function setGoogleOAuthCookie(res, value) {
 function clearGoogleOAuthCookie(res) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   res.append("Set-Cookie", "jarvis_google_oauth=; HttpOnly; SameSite=Lax; Path=/api/integrations/google_drive/oauth/callback; Max-Age=0" + secure);
+}
+
+function setCanvaOAuthCookie(res, value) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  res.append("Set-Cookie", "jarvis_canva_oauth=" + encodeURIComponent(value) +
+    "; HttpOnly; SameSite=Lax; Path=/api/integrations/canva/oauth/callback; Max-Age=600" + secure);
+}
+
+function clearCanvaOAuthCookie(res) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  res.append("Set-Cookie", "jarvis_canva_oauth=; HttpOnly; SameSite=Lax; Path=/api/integrations/canva/oauth/callback; Max-Age=0" + secure);
 }
 
 async function requireAuth(req, res, next) {
@@ -1584,6 +1598,23 @@ app.delete("/api/tasks/:id", requireAuth, async (req, res) => {
 
 function getGoogleDriveOAuthConnection() {
   return store.oauthConnections.find((item) => item.provider === "google_drive") || null;
+}
+
+function getCanvaOAuthConnection() {
+  return store.oauthConnections.find((item) => item.provider === "canva") || null;
+}
+
+async function getCanvaAccessTokenForIntegration() {
+  const connection = getCanvaOAuthConnection();
+  if (!connection) return "";
+  return getCanvaAccessToken(connection, {
+    onRefresh: async (updatedConnection) => {
+      store.oauthConnections = store.oauthConnections.map((item) =>
+        item.provider === "canva" ? updatedConnection : item
+      );
+      await saveStore();
+    }
+  });
 }
 
 function integrationCatalogResponse() {
@@ -3208,6 +3239,79 @@ app.delete("/api/media/projects/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+
+app.get("/api/canva/status", requireAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json(getCanvaOAuthStatus(getCanvaOAuthConnection(), process.env));
+});
+
+app.post("/api/integrations/canva/oauth/start", requireAuth, oauthStartLimiter, async (req, res) => {
+  try {
+    const result = await beginCanvaOAuth({
+      sessionToken: req.sessionToken,
+      existingConnection: getCanvaOAuthConnection(),
+      runtimeStore
+    });
+    setCanvaOAuthCookie(res, result.browserBinding);
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.json({ authorizationUrl: result.authorizationUrl });
+  } catch (error) {
+    res.status(503).json({ error: error.message || "Canva OAuth could not start." });
+  }
+});
+
+app.get("/api/integrations/canva/oauth/callback", oauthCallbackLimiter, async (req, res) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const browserBinding = cookies.jarvis_canva_oauth || "";
+  const state = cleanText(req.query?.state, 200);
+  const code = cleanText(req.query?.code, 4000);
+  const oauthError = cleanText(req.query?.error, 100);
+  try {
+    const connection = await finishCanvaOAuth({
+      state,
+      code,
+      oauthError,
+      browserBinding,
+      existingConnection: getCanvaOAuthConnection(),
+      runtimeStore,
+      isSessionValid: (sessionHash) => runtimeStore.refreshSessionByHash(sessionHash, SESSION_TTL_MS)
+    });
+    store.oauthConnections = store.oauthConnections.filter((item) => item.provider !== "canva");
+    store.oauthConnections.push(connection);
+    await saveStore();
+    clearCanvaOAuthCookie(res);
+    res.setHeader("Cache-Control", "no-store");
+    return res.redirect(303, "/?integration=canva_connected");
+  } catch (error) {
+    clearCanvaOAuthCookie(res);
+    console.warn("Canva OAuth callback was not completed:", error?.message || "OAuth error");
+    res.setHeader("Cache-Control", "no-store");
+    return res.redirect(303, "/?integration=canva_error");
+  }
+});
+
+app.post("/api/canva/thumbnail-design", requireAuth, integrationTestLimiter,
+  express.raw({ type: "image/png", limit: "4mb" }),
+  async (req, res) => {
+    const status = getCanvaOAuthStatus(getCanvaOAuthConnection(), process.env);
+    if (!status.connected) {
+      return res.status(409).json({ error: "Connect Canva first using the registered Canva Connect integration." });
+    }
+    try {
+      const design = await createCanvaThumbnailDesign({
+        accessToken: await getCanvaAccessTokenForIntegration(),
+        bytes: req.body,
+        name: cleanText(decodeURIComponent(req.get("X-Jarvis-Asset-Name") || "JARVIS YouTube Thumbnail"), 50)
+      });
+      res.setHeader("Cache-Control", "no-store");
+      res.status(201).json({ design });
+    } catch (error) {
+      const code = error instanceof TypeError ? 400 : /authorization|permission|Canva denied/i.test(error?.message || "") ? 409 : 502;
+      res.status(code).json({ error: error?.message || "Canva thumbnail design could not be created." });
+    }
+  }
+);
 
 app.get("/api/youtube/analytics/status", requireAuth, (_req, res) => {
   const oauth = getGoogleOAuthStatus(getGoogleDriveOAuthConnection(), process.env);
