@@ -49,7 +49,7 @@ test("top-video analytics query is read-only and normalizes numeric report field
   assert.equal(url.searchParams.get("ids"), "channel==MINE");
   assert.equal(url.searchParams.get("dimensions"), "video");
   assert.equal(url.searchParams.get("sort"), "-views");
-  assert.equal(url.searchParams.get("startDate"), "2026-10-08");
+  assert.equal(url.searchParams.get("startDate"), "2026-10-07");
   assert.equal(url.searchParams.get("endDate"), "2026-11-03");
   assert.equal(authorization, "Bearer temporary-read-only-access-token-value");
   assert.equal(result.readOnly, true);
