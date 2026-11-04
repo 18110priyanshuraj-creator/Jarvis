@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080d10">
+  <meta name="description" content="JARVIS — a private personal assistant workspace.">
+  <title>JARVIS — Personal System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="JARVIS home">
+        <span class="brand-mark">J</span>
+        <span class="brand-copy"><strong>JARVIS</strong><small>PERSONAL SYSTEM</small></span>
+      </a>
+      <div class="nav-caption">WORKSPACE</div>
+      <nav class="nav-list" aria-label="Workspace">
+        <button class="nav-item active" data-view="chat"><span class="nav-symbol">✳</span><span>Assistant</span></button>
+        <button class="nav-item" data-view="tasks"><span class="nav-symbol">▤</span><span>Tasks</span><span id="task-count" class="nav-count">0</span></button>
+        <button class="nav-item" data-view="memory"><span class="nav-symbol">◈</span><span>Memory</span></button>
+        <button class="nav-item" data-view="system"><span class="nav-symbol">◎</span><span>System status</span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="privacy-note"><span class="privacy-dot"></span><div><strong>Private workspace</strong><small>Owner access only</small></div></div>
+        <p class="sidebar-version">HATCHABLE EDITION <span>01</span></p>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div class="topbar-title">
+          <span class="eyebrow" id="page-kicker">PERSONAL ASSISTANT</span>
+          <h1 id="page-title">Good to have you back.</h1>
+        </div>
+        <div class="topbar-right"><span class="status-pill"><i></i> SYSTEM READY</span></div>
+      </header>
+
+      <section class="view active" id="view-chat">
+        <div class="assistant-layout">
+          <div class="assistant-center">
+            <div class="orbital-wrap" aria-hidden="true">
+              <div class="orbital-grid"></div><div class="orbital-ring ring-one"></div><div class="orbital-ring ring-two"></div>
+              <div class="orbital-core"><span>J</span></div><div class="orbital-spark spark-one"></div><div class="orbital-spark spark-two"></div>
+            </div>
+            <div class="assistant-state"><span class="live-dot"></span><span id="assistant-status">READY WHEN YOU ARE</span></div>
+            <p class="assistant-subtitle">Your workspace is ready. Ask a question or plan your next step.</p>
+          </div>
+          <div class="chat-panel">
+            <div class="chat-heading"><div><span class="eyebrow">CONVERSATION</span><h2>Talk to JARVIS</h2></div><button id="clear-chat" class="quiet-button" type="button">Clear chat</button></div>
+            <div id="chat-messages" class="chat-messages" aria-live="polite">
+              <div class="message assistant-message"><div class="message-avatar">J</div><div class="message-body"><span class="message-name">JARVIS</span><p>Online. I can help you think through ideas, explain topics, and organize your work. What would you like to do?</p></div></div>
+            </div>
+            <form id="chat-form" class="composer">
+              <textarea id="chat-input" rows="1" maxlength="4000" placeholder="Message JARVIS…" aria-label="Message JARVIS"></textarea>
+              <button id="send-button" class="send-button" type="submit" aria-label="Send message">↑</button>
+            </form>
+            <p class="composer-hint">Enter to send · Shift + Enter for a new line · Chat is kept only in this tab</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-tasks">
+        <div class="section-intro"><span class="eyebrow">PERSONAL ORGANIZER</span><h2>Tasks & priorities</h2><p>Keep your next steps clear and manageable.</p></div>
+        <div class="workspace-grid">
+          <form id="task-form" class="surface form-surface">
+            <div class="surface-heading"><span class="eyebrow">NEW ITEM</span><h3>Add a task</h3></div>
+            <label for="task-title">Task title</label><input id="task-title" name="title" maxlength="120" required placeholder="What needs to get done?">
+            <label for="task-description">Details <span class="optional">OPTIONAL</span></label><textarea id="task-description" name="description" rows="3" maxlength="500" placeholder="Add a useful detail…"></textarea>
+            <label for="task-priority">Priority</label><select id="task-priority" name="priority"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select>
+            <button class="primary-button" type="submit">Add to tasks <span>↗</span></button>
+          </form>
+          <div class="surface list-surface"><div class="surface-heading row-heading"><div><span class="eyebrow">YOUR LIST</span><h3>Open tasks</h3></div><span id="open-task-count" class="count-label">0 OPEN</span></div><div id="task-list" class="item-list"><p class="empty-state">Loading tasks…</p></div></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-memory">
+        <div class="section-intro"><span class="eyebrow">SELECTIVE MEMORY</span><h2>Saved notes</h2><p>Only save information you deliberately choose to keep.</p></div>
+        <div class="workspace-grid">
+          <form id="memory-form" class="surface form-surface">
+            <div class="surface-heading"><span class="eyebrow">EXPLICIT SAVE</span><h3>Save a note</h3></div>
+            <label for="memory-title">Title</label><input id="memory-title" maxlength="100" required placeholder="A useful label">
+            <label for="memory-content">Note</label><textarea id="memory-content" rows="5" maxlength="1600" required placeholder="Write a non-sensitive note…"></textarea>
+            <label for="memory-category">Category</label><select id="memory-category"><option value="note">Note</option><option value="preference">Preference</option><option value="goal">Goal</option><option value="fact">Fact</option></select>
+            <button class="primary-button" type="submit">Save note <span>↗</span></button>
+            <p class="form-footnote">Do not save passwords, API keys, contact details, or sensitive personal information.</p>
+          </form>
+          <div class="surface list-surface"><div class="surface-heading row-heading"><div><span class="eyebrow">SAVED BY YOU</span><h3>Memory library</h3></div><span id="memory-count" class="count-label">0 NOTES</span></div><div id="memory-list" class="item-list"><p class="empty-state">Loading notes…</p></div></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-system">
+        <div class="section-intro"><span class="eyebrow">DIAGNOSTICS</span><h2>System status</h2><p>A clear view of the services included in this Hatchable edition.</p></div>
+        <div class="surface system-surface"><div id="system-status" class="system-grid"><p class="empty-state">Checking the system…</p></div><button id="refresh-status" class="secondary-button" type="button">Refresh status ↻</button></div>
+        <div class="migration-note"><strong>Migration scope</strong><p>This is the first Hatchable-native release. Chat, tasks, saved notes, and owner access are included. Native Android control, the original Node server, external OAuth connections, media publishing, and autonomous background workers remain in the original repository and are not enabled here.</p></div>
+      </section>
+
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+      <footer class="footer"><span>JARVIS · HATCHABLE EDITION</span><span>PRIVATE BY DESIGN</span></footer>
+    </main>
+  </div>
+</body>
+</html>
