@@ -94,7 +94,7 @@ test("YouTube Analytics service handles permission and rate-limit errors safely"
   await assert.rejects(() => getTopVideosAnalytics({
     accessToken: "temporary-read-only-access-token-value",
     fetchImpl: async () => new Response("{}", { status: 403 })
-  }), /permission was denied/i);
+  }), /access was denied/i);
   await assert.rejects(() => getTopVideosAnalytics({
     accessToken: "temporary-read-only-access-token-value",
     fetchImpl: async () => new Response("{}", { status: 429 })
