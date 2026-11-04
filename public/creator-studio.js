@@ -273,8 +273,6 @@ export function createCreatorStudio({ api, toast }) {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         topic: $("creator-topic")?.value || "",
-        thumbnailTitle: $("creator-thumbnail-title")?.value || "",
-        thumbnailSubtitle: $("creator-thumbnail-subtitle")?.value || "",
         audience: $("creator-audience")?.value || "",
         language: $("creator-language")?.value || "hi-IN",
         duration: $("creator-duration")?.value || "8",
@@ -292,14 +290,12 @@ export function createCreatorStudio({ api, toast }) {
   function restore() {
     const saved = loadSaved();
     if (saved.topic) $("creator-topic").value = saved.topic;
-    if (saved.thumbnailTitle) $("creator-thumbnail-title").value = saved.thumbnailTitle;
-    if (saved.thumbnailSubtitle) $("creator-thumbnail-subtitle").value = saved.thumbnailSubtitle;
     if (saved.audience) $("creator-audience").value = saved.audience;
     if (saved.language) $("creator-language").value = saved.language;
     if (saved.duration) $("creator-duration").value = saved.duration;
-    fullScript = typeof saved.fullScript === "string" ? saved.fullScript : "";
     if (typeof saved.thumbnailTitle === "string") $("creator-thumbnail-title").value = saved.thumbnailTitle;
     if (typeof saved.thumbnailSubtitle === "string") $("creator-thumbnail-subtitle").value = saved.thumbnailSubtitle;
+    fullScript = typeof saved.fullScript === "string" ? saved.fullScript : "";
     if (saved.plan && Array.isArray(saved.plan.chapters)) {
       plan = saved.plan;
       renderPlan();
