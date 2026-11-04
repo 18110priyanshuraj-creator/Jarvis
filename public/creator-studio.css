@@ -332,3 +332,24 @@
     grid-column: 1 / -1;
   }
 }
+
+
+.creator-canva-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.creator-canva-actions button,
+.creator-canva-actions a { width: 100%; }
+.creator-canva-actions a {
+  color: #8df6ee;
+  font-size: .8rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+#creator-canva-create-thumbnail:disabled,
+#creator-create-canva-thumbnail:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+#creator-canva-status { line-height: 1.55; }
