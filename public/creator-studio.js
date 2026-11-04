@@ -278,6 +278,8 @@ export function createCreatorStudio({ api, toast }) {
         audience: $("creator-audience")?.value || "",
         language: $("creator-language")?.value || "hi-IN",
         duration: $("creator-duration")?.value || "8",
+        thumbnailTitle: $("creator-thumbnail-title")?.value || "",
+        thumbnailSubtitle: $("creator-thumbnail-subtitle")?.value || "",
         fullScript,
         plan
       }));
@@ -296,6 +298,8 @@ export function createCreatorStudio({ api, toast }) {
     if (saved.language) $("creator-language").value = saved.language;
     if (saved.duration) $("creator-duration").value = saved.duration;
     fullScript = typeof saved.fullScript === "string" ? saved.fullScript : "";
+    if (typeof saved.thumbnailTitle === "string") $("creator-thumbnail-title").value = saved.thumbnailTitle;
+    if (typeof saved.thumbnailSubtitle === "string") $("creator-thumbnail-subtitle").value = saved.thumbnailSubtitle;
     if (saved.plan && Array.isArray(saved.plan.chapters)) {
       plan = saved.plan;
       renderPlan();
@@ -362,6 +366,9 @@ export function createCreatorStudio({ api, toast }) {
         language: $("creator-language").value,
         duration: $("creator-duration").value
       });
+      if (!$("creator-thumbnail-title").value.trim()) {
+        $("creator-thumbnail-title").value = plan.thumbnailText;
+      }
       fullScript = "";
       renderPlan();
       persist();
