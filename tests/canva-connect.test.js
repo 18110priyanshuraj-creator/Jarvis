@@ -8,7 +8,8 @@ import {
   finishCanvaOAuth,
   getCanvaAccessToken,
   getCanvaOAuthStatus,
-  normalizeCanvaOAuthConnection
+  normalizeCanvaOAuthConnection,
+  revokeCanvaOAuthConnection
 } from "../services/canva-connect.js";
 import { createRuntimeStore } from "../services/runtime-store.js";
 
@@ -190,4 +191,38 @@ test("Canva thumbnail flow rejects non-PNG, wrong dimensions and untrusted edit 
       ? jsonResponse({ job: { id: "job", status: "success", asset: { id: "asset-1" } } })
       : jsonResponse({ design: { id: "design", urls: { edit_url: "https://evil.example/design" } } })
   }), /unexpected design URL/i);
+});
+
+test("Canva disconnect revokes the refresh-token lineage before local credentials are removed", async () => {
+  const flow = await beginCanvaOAuth({ sessionToken: "disconnect-session", env });
+  const state = new URL(flow.authorizationUrl).searchParams.get("state");
+  const connection = await finishCanvaOAuth({
+    state,
+    browserBinding: flow.browserBinding,
+    code: "disconnect-code",
+    isSessionValid: async (id) => id === "disconnect-session",
+    env,
+    fetchImpl: async () => jsonResponse({
+      access_token: "canva-disconnect-access",
+      refresh_token: "canva-disconnect-refresh",
+      expires_in: 3600,
+      scope: CANVA_SCOPES.join(" ")
+    })
+  });
+  let revokedToken = "";
+  const result = await revokeCanvaOAuthConnection(connection, {
+    env,
+    fetchImpl: async (url, options) => {
+      assert.equal(url, "https://api.canva.com/rest/v1/oauth/revoke");
+      assert.match(options.headers.Authorization, /^Basic /);
+      revokedToken = options.body.get("token");
+      return new Response("", { status: 200 });
+    }
+  });
+  assert.equal(revokedToken, "canva-disconnect-refresh");
+  assert.deepEqual(result, { revoked: true });
+  await assert.rejects(() => revokeCanvaOAuthConnection(connection, {
+    env,
+    fetchImpl: async () => new Response("", { status: 503 })
+  }), /connection was kept/i);
 });
