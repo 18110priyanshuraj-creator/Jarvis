@@ -11,6 +11,7 @@ object BrowserUrlPolicy {
     fun normalize(raw: String): String? {
         val input = raw.trim().trim('"', '\'')
         if (input.isBlank() || input.length > 2048 || input.any { it.isISOControl() }) return null
+        if (!input.contains("://") && Regex("""^[a-zA-Z][a-zA-Z0-9+.-]*:""").containsMatchIn(input)) return null
         val candidate = if (input.contains("://")) input else "https://$input"
         val uri = runCatching { URI(candidate).normalize() }.getOrNull() ?: return null
         val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return null
