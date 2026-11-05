@@ -121,6 +121,25 @@ export function createCreatorCampaignStudio({ api, toast }) {
     return section;
   }
 
+  function editorField(parent, labelText, value, field, index, rows = 2, maxLength = 1600) {
+    const wrapper = add(parent, "label", "creator-campaign-editor-field");
+    add(wrapper, "span", "small muted", labelText);
+    const textarea = add(wrapper, "textarea", "");
+    textarea.value = String(value ?? "");
+    textarea.rows = rows;
+    textarea.maxLength = maxLength;
+    textarea.dataset.campaignField = field;
+    if (index !== undefined) textarea.dataset.index = String(index);
+    return textarea;
+  }
+
+  function fieldValue(field, index) {
+    const controls = Array.from($("creator-campaign-results").querySelectorAll("[data-campaign-field]"));
+    const match = controls.find(control => control.dataset.campaignField === field &&
+      (index === undefined ? control.dataset.index === undefined : control.dataset.index === String(index)));
+    return match ? match.value : "";
+  }
+
   function renderHistory(items) {
     const target = $("creator-campaign-history");
     if (!target) return;
@@ -155,8 +174,14 @@ export function createCreatorCampaignStudio({ api, toast }) {
     actions.classList.remove("hidden");
     $("creator-campaign-results-wrap").classList.remove("hidden");
 
-    const heading = card(target, pack.title, "Draft pack · " + pack.engine + " · " + pack.language);
+    const heading = card(target, pack.title, "Draft pack · revision " + (pack.revision || 1) + " · " + pack.engine + " · " + pack.language);
     add(heading, "p", "small muted", "Topic: " + pack.topic + " · Audience: " + pack.audience);
+    editorField(heading, "Campaign title", pack.title, "title", undefined, 1, 90);
+    const brand = pack.brandKit || {};
+    $("creator-campaign-brand-name").value = brand.brandName || "";
+    $("creator-campaign-accent").value = brand.accentColor || "#1fc7d4";
+    $("creator-campaign-background").value = brand.backgroundColor || "#071a24";
+    $("creator-campaign-text").value = brand.textColor || "#f2fbff";
 
     const checks = readinessChecks(pack);
     const readyCount = checks.filter(item => item.ready).length;
@@ -188,29 +213,35 @@ export function createCreatorCampaignStudio({ api, toast }) {
       }
     }
 
-    const video = card(target, "Short video · " + pack.shortVideo.durationSeconds + "s", "Hook: " + pack.shortVideo.hook);
-    add(video, "p", "small muted", pack.shortVideo.caption);
+    const video = card(target, "Short video · " + pack.shortVideo.durationSeconds + "s", "Edit your hook, narration and screen copy before sending this draft to Media Studio.");
+    editorField(video, "Video title", pack.shortVideo.title, "shortVideo.title", undefined, 1, 90);
+    editorField(video, "Opening hook", pack.shortVideo.hook, "shortVideo.hook", undefined, 2, 320);
+    editorField(video, "Video caption", pack.shortVideo.caption, "shortVideo.caption", undefined, 3, 1500);
     for (const [index, scene] of pack.shortVideo.scenes.entries()) {
       const item = add(video, "article", "creator-campaign-scene");
-      add(item, "strong", "", (index + 1) + ". " + scene.heading + " · " + scene.durationSeconds + "s");
-      add(item, "p", "", scene.voiceover);
-      add(item, "p", "small muted", "On screen: " + scene.onScreenText);
-      add(item, "p", "small muted", "Visual: " + scene.visualPrompt);
+      add(item, "strong", "", (index + 1) + ". Scene · " + scene.durationSeconds + "s");
+      editorField(item, "Scene heading", scene.heading, "scene.heading", index, 1, 90);
+      editorField(item, "Voiceover", scene.voiceover, "scene.voiceover", index, 3, 900);
+      editorField(item, "On-screen text", scene.onScreenText, "scene.onScreenText", index, 2, 120);
+      editorField(item, "Visual direction", scene.visualPrompt, "scene.visualPrompt", index, 2, 360);
     }
 
-    const carousel = card(target, "Instagram carousel · " + pack.carousel.slides.length + " slides", pack.carousel.caption);
+    const carousel = card(target, "Instagram carousel · " + pack.carousel.slides.length + " slides", "Each slide is editable and also exported as a separate 1080×1080 SVG.");
+    editorField(carousel, "Carousel title", pack.carousel.title, "carousel.title", undefined, 1, 90);
+    editorField(carousel, "Carousel caption", pack.carousel.caption, "carousel.caption", undefined, 2, 1500);
     for (const [index, slide] of pack.carousel.slides.entries()) {
       const item = add(carousel, "article", "creator-campaign-slide");
-      add(item, "strong", "", (index + 1) + ". " + slide.heading);
-      add(item, "p", "", slide.body);
-      add(item, "p", "small muted", "Visual: " + slide.visualPrompt);
+      add(item, "strong", "", "Slide " + (index + 1));
+      editorField(item, "Slide heading", slide.heading, "slide.heading", index, 1, 90);
+      editorField(item, "Slide body", slide.body, "slide.body", index, 3, 360);
+      editorField(item, "Visual direction", slide.visualPrompt, "slide.visualPrompt", index, 2, 300);
     }
-    add(carousel, "p", "small muted", "Comment CTA: " + pack.carousel.commentCTA);
+    editorField(carousel, "Comment CTA", pack.carousel.commentCTA, "carousel.commentCTA", undefined, 2, 260);
 
     const seo = card(target, "SEO page draft", "Slug: /" + pack.seoPage.slug);
-    add(seo, "p", "", "Meta title: " + pack.seoPage.metaTitle);
-    add(seo, "p", "", "Meta description: " + pack.seoPage.metaDescription);
-    add(seo, "h3", "", pack.seoPage.h1);
+    editorField(seo, "Meta title", pack.seoPage.metaTitle, "seo.metaTitle", undefined, 1, 60);
+    editorField(seo, "Meta description", pack.seoPage.metaDescription, "seo.metaDescription", undefined, 2, 155);
+    editorField(seo, "Page H1", pack.seoPage.h1, "seo.h1", undefined, 1, 120);
     for (const section of pack.seoPage.sections) {
       add(seo, "strong", "", section.heading);
       add(seo, "p", "", section.summary);
@@ -225,8 +256,8 @@ export function createCreatorCampaignStudio({ api, toast }) {
 
     for (const draft of pack.socialDrafts) {
       const social = card(target, draft.platform + " draft");
-      add(social, "p", "", draft.caption);
-      add(social, "p", "", draft.cta);
+      editorField(social, "Caption", draft.caption, "social.caption", pack.socialDrafts.indexOf(draft), 3, 1500);
+      editorField(social, "Call to action", draft.cta, "social.cta", pack.socialDrafts.indexOf(draft), 2, 260);
       add(social, "p", "small muted", draft.hashtags.map(tag => "#" + tag).join(" "));
     }
 
@@ -246,7 +277,14 @@ export function createCreatorCampaignStudio({ api, toast }) {
     const ideaList = add(ideas, "ol", "creator-campaign-list");
     for (const idea of pack.ideas) add(ideaList, "li", "", idea);
 
-    setStatus(pack.generationNote || "Campaign draft is ready. Review sources and claims.");
+    if (pack.revisionHistory?.length) {
+      const history = card(target, "Revision history", "Latest " + pack.revisionHistory.length + " previous saved revision(s).");
+      for (const item of pack.revisionHistory) {
+        add(history, "p", "small muted", "Revision " + item.revision + " · " + item.title + (item.updatedAt ? " · " + item.updatedAt : ""));
+      }
+    }
+    $("creator-campaign-save-revision").disabled = false;
+    setStatus(pack.generationNote || "Campaign draft is ready. Edit any fields and save a new revision when you are satisfied.");
     $("creator-campaign-export-json").disabled = false;
     $("creator-campaign-export-md").disabled = false;
     $("creator-campaign-export-assets").disabled = false;
@@ -255,6 +293,73 @@ export function createCreatorCampaignStudio({ api, toast }) {
     $("creator-campaign-export-csv").disabled = false;
     $("creator-campaign-export-chapters").disabled = false;
     $("creator-campaign-to-media").disabled = false;
+  }
+
+  async function saveRevision() {
+    if (!current || loading) return;
+    loading = true;
+    const button = $("creator-campaign-save-revision");
+    button.disabled = true;
+    setStatus("Saving edits as a new campaign revision…");
+    try {
+      const shortVideo = {
+        ...current.shortVideo,
+        title: fieldValue("shortVideo.title"),
+        hook: fieldValue("shortVideo.hook"),
+        caption: fieldValue("shortVideo.caption"),
+        scenes: current.shortVideo.scenes.map((scene, index) => ({
+          ...scene,
+          heading: fieldValue("scene.heading", index),
+          voiceover: fieldValue("scene.voiceover", index),
+          onScreenText: fieldValue("scene.onScreenText", index),
+          visualPrompt: fieldValue("scene.visualPrompt", index)
+        }))
+      };
+      const carousel = {
+        ...current.carousel,
+        title: fieldValue("carousel.title"),
+        caption: fieldValue("carousel.caption"),
+        commentCTA: fieldValue("carousel.commentCTA"),
+        slides: current.carousel.slides.map((slide, index) => ({
+          ...slide,
+          heading: fieldValue("slide.heading", index),
+          body: fieldValue("slide.body", index),
+          visualPrompt: fieldValue("slide.visualPrompt", index)
+        }))
+      };
+      const seoPage = {
+        ...current.seoPage,
+        metaTitle: fieldValue("seo.metaTitle"),
+        metaDescription: fieldValue("seo.metaDescription"),
+        h1: fieldValue("seo.h1")
+      };
+      const socialDrafts = current.socialDrafts.map((draft, index) => ({
+        ...draft,
+        caption: fieldValue("social.caption", index),
+        cta: fieldValue("social.cta", index)
+      }));
+      const brandKit = {
+        brandName: $("creator-campaign-brand-name").value,
+        accentColor: $("creator-campaign-accent").value,
+        backgroundColor: $("creator-campaign-background").value,
+        textColor: $("creator-campaign-text").value
+      };
+      const result = await api("/api/creator/campaigns/" + encodeURIComponent(current.id), {
+        method: "PATCH",
+        body: JSON.stringify({
+          title: fieldValue("title"), shortVideo, carousel, seoPage, socialDrafts, brandKit
+        })
+      });
+      render(result.campaign);
+      await loadHistory();
+      toast("Saved campaign revision " + result.campaign.revision + ".");
+    } catch (error) {
+      setStatus(error.message || "Campaign revision could not be saved.", true);
+      toast(error.message || "Campaign revision could not be saved.", true);
+    } finally {
+      loading = false;
+      button.disabled = false;
+    }
   }
 
   async function createCampaign(event) {
@@ -274,6 +379,12 @@ export function createCreatorCampaignStudio({ api, toast }) {
           audience: $("creator-campaign-audience").value,
           language: $("creator-campaign-language").value,
           sourceText: $("creator-campaign-sources").value,
+          brandKit: {
+            brandName: $("creator-campaign-brand-name").value,
+            accentColor: $("creator-campaign-accent").value,
+            backgroundColor: $("creator-campaign-background").value,
+            textColor: $("creator-campaign-text").value
+          },
           includeTrendRadar: $("creator-campaign-trends").checked
         })
       });
@@ -359,6 +470,7 @@ export function createCreatorCampaignStudio({ api, toast }) {
       if (!current) return;
       download(safeName(current.topic) + "-campaign.md", markdown(current), "text/markdown;charset=utf-8");
     });
+    $("creator-campaign-save-revision").addEventListener("click", saveRevision);
     $("creator-campaign-export-assets").addEventListener("click", exportAssetBundle);
     $("creator-campaign-export-srt").addEventListener("click", () => exportCaptions("srt"));
     $("creator-campaign-export-vtt").addEventListener("click", () => exportCaptions("vtt"));
