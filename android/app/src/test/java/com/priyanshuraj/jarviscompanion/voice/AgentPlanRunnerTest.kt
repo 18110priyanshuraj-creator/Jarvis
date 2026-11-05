@@ -329,6 +329,48 @@ class AgentPlanRunnerTest {
         expectIllegalArgument { AgentPlanRunner.validate(missingResultCheck) }
     }
 
+
+    @Test
+    fun validatesPublicWebsiteHandoffAndRequiresMatchingBrowserVerification() {
+        val plan = JSONObject(
+            """{"mode":"device_action","reply":"Open the public website.","actions":[
+                {"type":"open_public_url","value":"https://example.com/learn","purpose":"Open a public website."},
+                {"type":"verify_public_url_foreground","value":"https://example.com/learn","purpose":"Verify the default browser."},
+                {"type":"ask_user","value":"Review the page in your browser.","purpose":"Return control to the user."}
+            ]}"""
+        )
+        val actions = AgentPlanRunner.validate(plan)
+        assertEquals(3, actions.length())
+        assertTrue(AgentPlanRunner.requiresAccessibility(plan))
+        assertTrue(AgentPlanRunner.describe(plan).contains("Open the public website https://example.com/learn"))
+        assertEquals(
+            "open website → verify browser → ask user",
+            AgentPlanRunner.actionKinds(plan)
+        )
+
+        val missingCheck = JSONObject(
+            """{"mode":"device_action","actions":[
+                {"type":"open_public_url","value":"https://example.com/","purpose":"Open website."},
+                {"type":"ask_user","value":"Review it.","purpose":"Handoff."}
+            ]}"""
+        )
+        val mismatchedCheck = JSONObject(
+            """{"mode":"device_action","actions":[
+                {"type":"open_public_url","value":"https://example.com/","purpose":"Open website."},
+                {"type":"verify_public_url_foreground","value":"https://other.example/","purpose":"Verify browser."}
+            ]}"""
+        )
+        val privateAddress = JSONObject(
+            """{"mode":"device_action","actions":[
+                {"type":"open_public_url","value":"http://192.168.1.1/","purpose":"Open local router."},
+                {"type":"verify_public_url_foreground","value":"http://192.168.1.1/","purpose":"Verify browser."}
+            ]}"""
+        )
+        expectIllegalArgument { AgentPlanRunner.validate(missingCheck) }
+        expectIllegalArgument { AgentPlanRunner.validate(mismatchedCheck) }
+        expectIllegalArgument { AgentPlanRunner.validate(privateAddress) }
+    }
+
     private fun expectIllegalArgument(block: () -> Unit) {
         try {
             block()

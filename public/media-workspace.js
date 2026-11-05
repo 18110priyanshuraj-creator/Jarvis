@@ -1,9 +1,11 @@
 const FORMATS = {
-  "vertical-short": { width: 720, height: 1280 },
-  "landscape-explainer": { width: 1280, height: 720 },
-  "square-carousel": { width: 1080, height: 1080 }
+  "vertical-short": { width: 720, height: 1280, maxDurationSeconds: 90 },
+  "landscape-explainer": { width: 1280, height: 720, maxDurationSeconds: 180 },
+  "long-form": { width: 1280, height: 720, maxDurationSeconds: 1200 },
+  "square-carousel": { width: 1080, height: 1080, maxDurationSeconds: 60 }
 };
-const MAX_SCENES = 12;
+const MAX_PROJECT_DURATION_SECONDS = 20 * 60;
+const MAX_SCENES = 80;
 const MIN_SCENES = 2;
 
 export function createMediaWorkspace({ api, toast }) {
@@ -20,6 +22,7 @@ export function createMediaWorkspace({ api, toast }) {
   let previewTimeMs = 0;
   let lastPlayheadUpdate = 0;
   let exporting = false;
+  let cancelExportRequested = false;
   let audioFile = null;
   let audioObjectUrl = null;
   let musicFile = null;
@@ -31,6 +34,22 @@ export function createMediaWorkspace({ api, toast }) {
   let activeVideoSceneId = null;
 
   const byId = (id) => document.getElementById(id);
+
+  function projectDurationLimit(project = currentProject) {
+    return FORMATS[project?.format]?.maxDurationSeconds || 180;
+  }
+
+  function sceneDurationLimit(project = currentProject) {
+    return project?.format === "long-form" ? 120 : 30;
+  }
+
+  function formatDurationLabel(totalSeconds) {
+    const seconds = Math.max(0, Math.round(Number(totalSeconds) || 0));
+    if (seconds < 60) return seconds + " sec";
+    const minutes = Math.floor(seconds / 60);
+    const remainder = seconds % 60;
+    return minutes + " min" + (remainder ? " " + remainder + " sec" : "");
+  }
 
   function setStatus(message, isError = false) {
     const target = byId("media-status");
@@ -81,7 +100,7 @@ export function createMediaWorkspace({ api, toast }) {
     else control.type = type;
     if (type === "number") {
       control.min = "3";
-      control.max = "30";
+      control.max = String(sceneDurationLimit());
       control.step = "1";
     }
     control.value = value ?? "";
@@ -373,7 +392,9 @@ export function createMediaWorkspace({ api, toast }) {
           element.addEventListener("loadedmetadata", resolve, { once: true });
           element.addEventListener("error", () => reject(new Error("The selected video could not be decoded.")), { once: true });
         });
-        duration = Number.isFinite(element.duration) ? Math.max(0.25, Math.min(180, element.duration)) : 6;
+        duration = Number.isFinite(element.duration)
+          ? Math.max(0.25, Math.min(projectDurationLimit(currentProject), element.duration))
+          : 6;
       } catch (error) {
         URL.revokeObjectURL(url);
         throw error;
@@ -399,14 +420,14 @@ export function createMediaWorkspace({ api, toast }) {
     currentClip.assetType = isAudio ? "audio" : isImage ? "image" : "video";
     currentClip.label = file.name.slice(0, 80);
     if (!reattaching && isVideo) {
-      currentClip.duration = Math.min(180 - currentClip.start, duration);
+      currentClip.duration = Math.max(0.25, Math.min(projectDurationLimit(currentProject) - currentClip.start, duration));
       currentClip.sourceIn = 0;
       currentClip.sourceOut = duration;
     } else if (!reattaching && isImage) {
       currentClip.duration = 6;
     }
     timelineAssets.set(clip.id, { projectId, type: currentClip.assetType, name: file.name, file, url, element, started: false, keyCanvas: null });
-    currentProject.durationSeconds = Math.min(180, Math.max(currentProject.durationSeconds || 0, currentClip.start + currentClip.duration));
+    currentProject.durationSeconds = Math.min(projectDurationLimit(currentProject), Math.max(currentProject.durationSeconds || 0, currentClip.start + currentClip.duration));
     selectedTimelineClipId = clip.id;
     renderTimelineEditor();
     renderPreviewAtTime(currentClip.start * 1000);
@@ -442,7 +463,12 @@ export function createMediaWorkspace({ api, toast }) {
       ? Math.max(...track.clips.map((item) => item.start + item.duration))
       : 0;
     const id = "clip-" + crypto.randomUUID();
-    const duration = Math.max(0.25, Math.min(180 - start, 6));
+    const remaining = projectDurationLimit(currentProject) - start;
+    if (remaining < 0.25) {
+      toast("This project has reached its maximum timeline duration.", true);
+      return null;
+    }
+    const duration = Math.max(0.25, Math.min(remaining, 6));
     const clip = {
       id,
       assetId: null,
@@ -574,8 +600,8 @@ export function createMediaWorkspace({ api, toast }) {
     remove.dataset.clipId = clip.id;
     actions.append(splitAt, split, remove);
     const timing = section("Clip timing and trimming");
-    field(timing, "Timeline start (s)", clip.start, "start", { min: 0, max: 180, step: 0.05 });
-    field(timing, "Clip duration (s)", clip.duration, "duration", { min: 0.25, max: 180, step: 0.05 });
+    field(timing, "Timeline start (s)", clip.start, "start", { min: 0, max: projectDurationLimit(), step: 0.05 });
+    field(timing, "Clip duration (s)", clip.duration, "duration", { min: 0.25, max: projectDurationLimit(), step: 0.05 });
     field(timing, "Source in (s)", clip.sourceIn, "sourceIn", { min: 0, max: 36000, step: 0.05 });
     field(timing, "Source out (s)", clip.sourceOut ?? "", "sourceOut", { min: 0, max: 36000, step: 0.05 });
     field(timing, "Base speed (×)", clip.speed, "speed", { min: 0.25, max: 4, step: 0.05 });
@@ -756,7 +782,7 @@ export function createMediaWorkspace({ api, toast }) {
             if (moveEvent.pointerId !== pointerId) return;
             const delta = (moveEvent.clientX - startX) / rect.width * total;
             if (edge === "move") {
-              clip.start = Math.max(0, Math.min(180 - initial.duration, initial.start + delta));
+              clip.start = Math.max(0, Math.min(projectDurationLimit(currentProject) - initial.duration, initial.start + delta));
             } else if (edge === "left") {
               const boundedDelta = Math.max(-Math.min(initial.sourceIn, initial.start),
                 Math.min(initial.duration - 0.25, delta));
@@ -767,7 +793,7 @@ export function createMediaWorkspace({ api, toast }) {
                 : -integrateClipSpeed({ ...clip, duration: initial.duration }, -boundedDelta)));
               if (initial.sourceOut !== null && initial.sourceOut !== undefined) clip.sourceOut = initial.sourceOut;
             } else if (edge === "right") {
-              clip.duration = Math.max(0.25, Math.min(180 - initial.start, initial.duration + delta));
+              clip.duration = Math.max(0.25, Math.min(projectDurationLimit(currentProject) - initial.start, initial.duration + delta));
               if (initial.sourceOut !== null && initial.sourceOut !== undefined) {
                 clip.sourceOut = initial.sourceIn + integrateClipSpeed({ ...clip, duration: initial.duration }, clip.duration);
               }
@@ -777,7 +803,7 @@ export function createMediaWorkspace({ api, toast }) {
             button.style.left = (clip.start / total * 100) + "%";
             button.style.width = Math.max(1.2, clip.duration / total * 100) + "%";
             timeLabel.textContent = Number(clip.start).toFixed(1) + "s · " + Number(clip.duration).toFixed(1) + "s";
-            currentProject.durationSeconds = Math.min(180, Math.max(0,
+            currentProject.durationSeconds = Math.min(projectDurationLimit(currentProject), Math.max(0,
               ...currentProject.tracks.flatMap((item) => item.clips.map((candidate) => candidate.start + candidate.duration))
             ));
           };
@@ -841,7 +867,7 @@ export function createMediaWorkspace({ api, toast }) {
     if (["start", "duration", "sourceIn", "sourceOut", "speed", "volume"].includes(path)) {
       selection.clip[path] = emptySourceOut ? null : value;
     }
-    currentProject.durationSeconds = Math.min(180, Math.max(0,
+    currentProject.durationSeconds = Math.min(projectDurationLimit(currentProject), Math.max(0,
       ...currentProject.tracks.flatMap((track) => track.clips.map((item) => item.start + item.duration))
     ));
     renderPreviewAtTime(selection.clip.start * 1000);
@@ -917,7 +943,7 @@ export function createMediaWorkspace({ api, toast }) {
           asset?.element?.pause?.();
           timelineAssets.delete(clipId);
           activeTimelineClipIds.delete(clipId);
-          currentProject.durationSeconds = Math.min(180, Math.max(0,
+          currentProject.durationSeconds = Math.min(projectDurationLimit(currentProject), Math.max(0,
             ...currentProject.tracks.flatMap((item) => item.clips.map((candidate) => candidate.start + candidate.duration))
           ));
           selectedTimelineClipId = null;
@@ -953,7 +979,7 @@ export function createMediaWorkspace({ api, toast }) {
       const scene = clip.sceneId ? scenesById.get(clip.sceneId) : null;
       if (scene) clip.label = scene.heading;
     }
-    project.durationSeconds = Math.min(180, Math.max(0,
+    project.durationSeconds = Math.min(projectDurationLimit(project), Math.max(0,
       ...project.tracks.flatMap((track) => track.clips.map((clip) => clip.start + clip.duration))
     ));
   }
@@ -962,6 +988,8 @@ export function createMediaWorkspace({ api, toast }) {
     const main = project.tracks?.find((track) => track.id === "track-main-video");
     if (!main || main.clips.some((clip) => clip.sceneId === scene.id)) return;
     const start = Math.max(0, ...main.clips.map((clip) => clip.start + clip.duration));
+    const remaining = projectDurationLimit(project) - start;
+    if (remaining < 0.25) return;
     main.clips.push({
       id: "clip-" + scene.id,
       sceneId: scene.id,
@@ -970,7 +998,7 @@ export function createMediaWorkspace({ api, toast }) {
       assetType: "scene",
       label: scene.heading,
       start,
-      duration: Math.min(scene.durationSeconds, Math.max(0.25, 180 - start)),
+      duration: Math.min(scene.durationSeconds, remaining),
       sourceIn: 0,
       sourceOut: null,
       speed: 1,
@@ -1264,7 +1292,7 @@ export function createMediaWorkspace({ api, toast }) {
         project.formatLabel,
         project.platform,
         project.language,
-        project.durationSeconds + " sec",
+        formatDurationLabel(project.durationSeconds),
         project.scenes.length + " scenes"
       ].join(" · "));
       const open = makeElement("button", "item-action", "Open storyboard");
@@ -1305,7 +1333,7 @@ export function createMediaWorkspace({ api, toast }) {
       const durationInput = makeElement("input", "media-scene-input");
       durationInput.type = "number";
       durationInput.min = "3";
-      durationInput.max = "30";
+      durationInput.max = String(sceneDurationLimit(currentProject));
       durationInput.step = "1";
       durationInput.value = String(scene.durationSeconds);
       durationInput.dataset.field = "durationSeconds";
@@ -1413,6 +1441,8 @@ export function createMediaWorkspace({ api, toast }) {
       const element = byId(id);
       if (element) element.disabled = !approved || exporting;
     }
+    const cancelButton = byId("media-export-cancel");
+    if (cancelButton) cancelButton.disabled = !exporting;
     for (const id of ["media-audio-file", "media-music-file", "media-audio-volume", "media-music-volume"]) {
       const element = byId(id);
       if (element) element.disabled = exporting;
@@ -1460,7 +1490,7 @@ export function createMediaWorkspace({ api, toast }) {
     byId("media-editor-title").textContent = currentProject.title;
     byId("media-editor-meta").textContent = currentProject.formatLabel + " · " +
       currentProject.width + " × " + currentProject.height + " · " +
-      currentProject.durationSeconds + " seconds · " + currentProject.status;
+      formatDurationLabel(currentProject.durationSeconds) + " · " + currentProject.status;
     byId("media-generation-note").textContent = currentProject.generationNote || "";
     renderSceneEditors();
     renderTimelineEditor();
@@ -2269,7 +2299,7 @@ export function createMediaWorkspace({ api, toast }) {
     }
     const size = FORMATS[project.format] || FORMATS["vertical-short"];
     const canvas = document.createElement("canvas");
-    canvas.width = Math.min(size.width, 720);
+    canvas.width = Math.min(size.width, project.format === "long-form" ? 1280 : 720);
     canvas.height = Math.round(canvas.width * size.height / size.width);
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("The browser could not create a video canvas.");
@@ -2288,9 +2318,13 @@ export function createMediaWorkspace({ api, toast }) {
       .flatMap((track) => track.clips.filter((clip) => !clip.muted && clip.visible !== false && clip.assetType === "audio" && timelineAssets.get(clip.id)?.file));
     const hasAudio = Boolean(audioFile || musicFile || timelineAudioClips.length);
 
-    setExportBusy(true, hasAudio
-      ? "Preparing voiceover and background music, then rendering locally. Keep this tab open until export finishes."
-      : "Rendering motion graphics without audio. Add voiceover or background music to create a mixed soundtrack.");
+    cancelExportRequested = false;
+    const longForm = project.durationSeconds > 180;
+    setExportBusy(true, longForm
+      ? "Long-form export may take up to the video duration in real time. Use a desktop browser, keep this tab open and in the foreground, and do not close the page. Imported media remains local."
+      : hasAudio
+        ? "Preparing voiceover and background music, then rendering locally. Keep this tab open until export finishes."
+        : "Rendering motion graphics without audio. Add voiceover or background music to create a mixed soundtrack.");
 
     try {
       canvasStream = canvas.captureStream(20);
@@ -2391,24 +2425,34 @@ export function createMediaWorkspace({ api, toast }) {
       for (const source of audioSources) {
         if (!scheduledAudioSources.has(source)) source.start();
       }
-      await new Promise((resolve) => {
+      const renderResult = await new Promise((resolve) => {
         const frame = (now) => {
+          if (cancelExportRequested) {
+            if (recorder?.state !== "inactive") recorder.stop();
+            resolve({ cancelled: true });
+            return;
+          }
           const elapsed = Math.min(totalMs, now - startedAt);
           drawTimelineFrame(ctx, canvas.width, canvas.height, project, elapsed);
           const current = sceneAtTime(project, elapsed);
           activateVideoForScene(project.scenes[current.index]?.id);
           activateTimelineClipAssets(elapsed);
-          setExportStatus("Rendering scene " + (current.index + 1) + " of " + project.scenes.length +
+          setExportStatus("Rendering scene " + Math.max(0, current.index + 1) + " of " + project.scenes.length +
+            " · " + formatDurationLabel(elapsed / 1000) + " / " + formatDurationLabel(project.durationSeconds) +
             (hasAudio ? " · voiceover/music mixed locally" : " · no audio track") + "…");
           if (elapsed >= totalMs) {
             if (recorder?.state !== "inactive") recorder.stop();
-            resolve();
+            resolve({ cancelled: false });
             return;
           }
           animation = requestAnimationFrame(frame);
         };
         animation = requestAnimationFrame(frame);
       });
+      if (renderResult.cancelled) {
+        try { await finished; } catch { /* cancellation still reports a cancelled export */ }
+        throw new Error("Video export cancelled. No file was downloaded.");
+      }
       const blob = await finished;
       const suffix = hasAudio ? "-mixed-audio" + extension : extension;
       downloadBlob(cleanFileName(project.title) + suffix, blob);
@@ -2536,13 +2580,17 @@ export function createMediaWorkspace({ api, toast }) {
   function addScene() {
     if (!currentProject || currentProject.status !== "draft") return;
     if (currentProject.scenes.length >= MAX_SCENES) return;
+    if (projectDurationLimit(currentProject) - currentProject.durationSeconds < 3) {
+      toast("This project has reached its maximum duration. Shorten another scene or clip first.", true);
+      return;
+    }
     currentProject.scenes.push({
       id: "local-" + Date.now(),
       heading: "New scene",
       voiceover: "Add your narration for this scene.",
       onScreenText: "New idea",
       visualPrompt: "Describe a simple visual that supports the narration.",
-      durationSeconds: 8,
+      durationSeconds: Math.min(currentProject.format === "long-form" ? 40 : 8, sceneDurationLimit(currentProject), projectDurationLimit(currentProject) - currentProject.durationSeconds),
       visualType: byId("media-editor-visual-style").value === "stick-figure-story" ? "stick-figure" : "auto",
       figurePose: "walk",
       animation: "walk",
@@ -2597,21 +2645,22 @@ export function createMediaWorkspace({ api, toast }) {
       const index = cards.indexOf(card);
       if (index < 0 || !currentProject.scenes[index]) return;
       if (field === "durationSeconds") {
+        const boundedDuration = Math.max(3, Math.min(sceneDurationLimit(currentProject), Number(event.target.value) || 8));
+        currentProject.scenes[index].durationSeconds = boundedDuration;
+        event.target.value = String(boundedDuration);
         const main = currentProject.tracks.find((track) => track.id === "track-main-video");
         const clip = main?.clips.find((item) => item.sceneId === currentProject.scenes[index].id);
-        if (clip) clip.duration = currentProject.scenes[index].durationSeconds;
+        if (clip) clip.duration = boundedDuration;
       }
       if (field.startsWith("grade.")) {
         const gradeField = field.slice("grade.".length);
         currentProject.scenes[index].grade ||= { brightness: 100, contrast: 100, saturation: 100, blur: 0 };
         currentProject.scenes[index].grade[gradeField] = Number(event.target.value);
       } else {
-        currentProject.scenes[index][field] = field === "durationSeconds"
-          ? Number(event.target.value)
-          : event.target.value;
+        if (field !== "durationSeconds") currentProject.scenes[index][field] = event.target.value;
       }
       syncSceneTimeline(currentProject);
-      currentProject.durationSeconds = Math.min(180, Math.max(0,
+      currentProject.durationSeconds = Math.min(projectDurationLimit(currentProject), Math.max(0,
         ...currentProject.tracks.flatMap((track) => track.clips.map((clip) => clip.start + clip.duration))
       ));
       renderTimelineEditor();
@@ -2681,6 +2730,11 @@ export function createMediaWorkspace({ api, toast }) {
     byId("media-export-webm")?.addEventListener("click", async () => {
       try { await exportWebm(); }
       catch (error) { setExportStatus(error.message, true); setExportBusy(false); }
+    });
+    byId("media-export-cancel")?.addEventListener("click", () => {
+      if (!exporting) return;
+      cancelExportRequested = true;
+      setExportStatus("Stopping the local render and discarding the incomplete file…");
     });
     byId("media-audio-file")?.addEventListener("change", (event) => {
       try { setAudioTrack(event.target.files?.[0] || null); }

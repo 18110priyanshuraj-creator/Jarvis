@@ -280,6 +280,97 @@ test("built-in planner declines ambiguous, secret-like, and restricted searches"
   assert.equal(createLocalAgentPlan("Open YouTube and search for adult content"), null);
 });
 
+
+test("built-in planner opens normalized public websites without accepting local or secret-bearing URLs", () => {
+  const fullUrl = createLocalAgentPlan("Open https://example.com/learn");
+  assert.ok(fullUrl);
+  assert.deepEqual(fullUrl.actions.map(item => item.type), [
+    "open_public_url", "verify_public_url_foreground", "ask_user"
+  ]);
+  assert.equal(fullUrl.actions[0].value, "https://example.com/learn");
+  assert.equal(fullUrl.actions[1].value, fullUrl.actions[0].value);
+
+  const bareDomain = createLocalAgentPlan("Open example.org");
+  assert.ok(bareDomain);
+  assert.equal(bareDomain.actions[0].value, "https://example.org/");
+
+  const hinglish = createLocalAgentPlan("example.com website kholo");
+  assert.ok(hinglish);
+  assert.equal(hinglish.actions[0].value, "https://example.com/");
+
+  for (const request of [
+    "Open http://localhost/admin",
+    "Open http://127.0.0.1/",
+    "Open http://192.168.1.1/",
+    "Open http://169.254.169.254/",
+    "Open http://203.0.113.10/",
+    "Open http://198.51.100.4/",
+    "Open http://100.64.0.1/",
+    "Open http://0177.0.0.1/",
+    "Open https://device.test/",
+    "Open https://router.home.arpa/",
+    "Open https://example.invalid/",
+    "Open https://example.com/adult-content/",
+    "Open https://example.com/search?q=porn",
+    "Open https://example.com/store/weapon",
+    "Open https://example.com/suicide-prevention/",
+    "Open https://example.com/self-harm/",
+    "Open https://example.com/drug/overdose",
+    "Open https://example.com/?access_token=secret",
+    "Open https://example.com/?code=123456",
+    "Open javascript:alert(1)"
+  ]) {
+    assert.equal(createLocalAgentPlan(request), null, request);
+  }
+});
+
+test("public URL device plans require a matching immediate browser foreground check", () => {
+  const checked = validateAgentPlan({
+    mode: "device_action",
+    reply: "Open the public website.",
+    actions: [
+      { type: "open_public_url", value: "https://example.com/", purpose: "Open website." },
+      { type: "verify_public_url_foreground", value: "https://example.com/", purpose: "Check browser." },
+      { type: "ask_user", value: "Review the page yourself.", purpose: "Manual handoff." }
+    ]
+  });
+  assert.equal(checked.actions[1].type, "verify_public_url_foreground");
+
+  assert.throws(() => validateAgentPlan({
+    mode: "device_action",
+    reply: "Open website.",
+    actions: [
+      { type: "open_public_url", value: "https://example.com/", purpose: "Open website." },
+      { type: "ask_user", value: "Review it.", purpose: "Handoff." }
+    ]
+  }), /matching browser foreground verification/i);
+
+  assert.throws(() => validateAgentPlan({
+    mode: "device_action",
+    reply: "Open website.",
+    actions: [
+      { type: "open_public_url", value: "https://example.com/", purpose: "Open website." },
+      { type: "verify_public_url_foreground", value: "https://different.org/", purpose: "Check browser." }
+    ]
+  }), /matching browser foreground verification/i);
+
+  for (const url of [
+    "file:///etc/passwd",
+    "https://user:password@example.com/",
+    "http://10.0.0.1/",
+    "https://example.com/?token=secret"
+  ]) {
+    assert.throws(() => validateAgentPlan({
+      mode: "device_action",
+      reply: "Open website.",
+      actions: [
+        { type: "open_public_url", value: url, purpose: "Open website." },
+        { type: "verify_public_url_foreground", value: url, purpose: "Check browser." }
+      ]
+    }), /normalized public HTTP or HTTPS URL/i);
+  }
+});
+
 test("device planner selects supported deterministic app and Google plans before any model fallback", async () => {
   const { createAgentPlan } = await import("../services/agent-planner.js");
   const appPlan = await createAgentPlan("Open YouTube and search for JEE Physics");

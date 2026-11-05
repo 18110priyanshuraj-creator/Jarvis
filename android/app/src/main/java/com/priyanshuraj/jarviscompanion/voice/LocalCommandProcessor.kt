@@ -31,10 +31,7 @@ object LocalCommandProcessor {
      * browser directly; the shared Android approval dialog remains mandatory.
      */
     fun createGoogleSearchPlan(message: String): JSONObject? {
-        val input = message.trim()
-            .replace(Regex("""(?i)^jarvis[\s,:;-]+"""), "")
-            .trim()
-            .trimEnd('.', '!', '?', '।', '॥')
+        val input = normalizeCommand(message)
         if (input.isBlank()) return null
 
         val query = googleSearchPatterns.firstNotNullOfOrNull { pattern ->
@@ -79,7 +76,15 @@ object LocalCommandProcessor {
     }
 
     private val openPrefix = Regex(
-        """^(?:(?:please|can you)\s+)?(?:open|launch|start|run|go to|take me to|chalao)\s+(.+)$""",
+        """^(?:(?:please|can you)\s+)?(?:open|launch|start|run|visit|browse|go to|navigate to|take me to|chalao)\s+(.+)$""",
+        RegexOption.IGNORE_CASE
+    )
+    private val websiteSuffix = Regex(
+        """^(.+?)\s+(?:website|site)\s+(?:kholo|khol do|open karo)$""",
+        RegexOption.IGNORE_CASE
+    )
+    private val websitePrefix = Regex(
+        """^(?:website|site)\s+(?:kholo|khol do|open karo)\s+(.+)$""",
         RegexOption.IGNORE_CASE
     )
     private val openSuffix = Regex(
@@ -122,7 +127,7 @@ object LocalCommandProcessor {
      */
     internal fun normalizeCommand(message: String): String =
         message.trim()
-            .replace(Regex("""(?i)^jarvis[\s,:;-]+"""), "")
+            .replace(Regex("""(?i)^(?:(?:hey|okay|ok|hello|hi)\s+)?jarvis(?:[\s,:;-]+|$)"""), "")
             .trim()
             .trimEnd('.', '!', '?', '।', '॥')
 
@@ -130,6 +135,8 @@ object LocalCommandProcessor {
     internal fun appLaunchTarget(message: String): String? {
         val input = normalizeCommand(message)
         val rawTarget = openPrefix.find(input)?.groupValues?.getOrNull(1)
+            ?: websiteSuffix.find(input)?.groupValues?.getOrNull(1)
+            ?: websitePrefix.find(input)?.groupValues?.getOrNull(1)
             ?: openSuffix.find(input)?.groupValues?.getOrNull(1)
             ?: return null
         // Remove polite/context clauses so "open Canva to edit a video" still
@@ -295,6 +302,8 @@ object LocalCommandProcessor {
             }
             "open_web_search" -> openGoogleSearch(context, value)
             "verify_browser_foreground" -> verifyBrowserForeground(context, value)
+            "open_public_url" -> openPublicUrl(context, value)
+            "verify_public_url_foreground" -> verifyPublicUrlForeground(context, value)
             "verify_app_foreground" -> verifyAppForeground(context, value)
             "drag_label_to_label" -> {
                 // The planner binds this action to Canva and the check is repeated at
@@ -330,6 +339,74 @@ object LocalCommandProcessor {
             "ask_user" -> PlannedActionResult(true, true, value)
             "finish" -> PlannedActionResult(true, true, value)
             else -> PlannedActionResult(false, true, "JARVIS rejected an unsupported action.")
+        }
+    }
+
+
+    private fun openPublicUrl(context: Context, rawUrl: String): PlannedActionResult {
+        val normalized = BrowserUrlPolicy.normalize(rawUrl)
+            ?: return PlannedActionResult(
+                false, true,
+                "JARVIS rejected this website because it is not a safe public HTTP or HTTPS address."
+            )
+        val uri = Uri.parse(normalized)
+        val intent = Intent(Intent.ACTION_VIEW, uri)
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return try {
+            context.startActivity(intent)
+            PlannedActionResult(
+                true, false,
+                "Opened the requested public website in Android's default browser. JARVIS has not signed in, submitted a form or interacted with the page."
+            )
+        } catch (_: Exception) {
+            PlannedActionResult(
+                false, true,
+                "Android could not open the website. Check that a default browser is available."
+            )
+        }
+    }
+
+    private fun verifyPublicUrlForeground(context: Context, rawUrl: String): PlannedActionResult {
+        val service = JarvisAccessibilityService.activeService
+            ?: return PlannedActionResult(
+                false, true,
+                "The website handoff happened, but JARVIS cannot verify the browser without its user-enabled Accessibility service. Check the browser manually."
+            )
+        val normalized = BrowserUrlPolicy.normalize(rawUrl)
+            ?: return PlannedActionResult(false, true, "The public website address failed its safety check.")
+        val uri = Uri.parse(normalized)
+        val viewIntent = Intent(Intent.ACTION_VIEW, uri)
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+        val expectedPackage = resolveViewActivity(context.packageManager, viewIntent)
+            ?.activityInfo
+            ?.packageName
+            .orEmpty()
+        if (expectedPackage.isBlank() ||
+            expectedPackage in setOf("android", "com.android.intentresolver", "com.android.systemui")
+        ) {
+            return PlannedActionResult(
+                false, true,
+                "Android has no unique default browser selected. Set a default browser in Android Settings and retry. JARVIS will not choose a browser or bypass the system chooser."
+            )
+        }
+        val root = service.rootInActiveWindow
+            ?: return PlannedActionResult(false, true, "The browser window is not available to JARVIS yet. Check it manually.")
+        val foregroundPackage = try {
+            root.packageName?.toString()?.trim().orEmpty()
+        } finally {
+            runCatching { root.recycle() }
+        }
+        return if (foregroundPackage == expectedPackage) {
+            PlannedActionResult(
+                true, false,
+                "JARVIS verified that the selected browser app is in the foreground. It has not verified page content or read the website yet."
+            )
+        } else {
+            PlannedActionResult(
+                false, true,
+                "The expected browser is not in the foreground. Check the website manually; no later steps were run."
+            )
         }
     }
 

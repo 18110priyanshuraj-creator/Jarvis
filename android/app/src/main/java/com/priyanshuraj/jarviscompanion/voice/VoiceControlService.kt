@@ -227,7 +227,7 @@ class VoiceControlService : Service() {
             return
         }
 
-        updateVoiceStatus(decision.status + " Listening in " + recognitionLanguage + ".")
+        updateVoiceStatus(decision.status + " Listening in " + recognitionLanguage + ". Say Hey JARVIS before commands.")
         try {
             recognizer?.destroy()
             recognizer = if (decision.useOnDeviceRecognizer) {
@@ -313,7 +313,27 @@ class VoiceControlService : Service() {
         }
     }
 
-    private fun handleTranscript(transcript: String) {
+    private fun handleTranscript(rawTranscript: String) {
+        // Pause, resume, cancel and stop remain available without the wake phrase so a
+        // user can always interrupt an active foreground voice session.
+        val wakeStripped = WakeWordPolicy.commandAfterWakeWord(rawTranscript)
+        val isSessionControl = taskControlIntent(rawTranscript) != null ||
+            LocalCommandProcessor.isStopCommand(rawTranscript)
+        val transcript = when {
+            isSessionControl -> rawTranscript
+            wakeStripped != null -> wakeStripped
+            else -> null
+        }
+        if (transcript == null) {
+            updateVoiceStatus("Voice session is active. Say Hey JARVIS before each command. Stop, pause, resume and cancel controls work without the wake phrase.")
+            scheduleListening(250)
+            return
+        }
+        if (transcript.isBlank()) {
+            speak("Yes? Tell me what you need.")
+            return
+        }
+
         when (taskControlIntent(transcript)) {
             "pause" -> {
                 val pause = pauseActivePlan

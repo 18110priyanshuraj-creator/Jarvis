@@ -46,7 +46,7 @@ object AgentPlanExecutionGate {
 
 object AgentPlanRunner {
     private val allowed = setOf(
-        "open_app", "verify_app_foreground", "open_web_search", "verify_browser_foreground", "read_screen", "tap_label", "type_text",
+        "open_app", "verify_app_foreground", "open_web_search", "verify_browser_foreground", "open_public_url", "verify_public_url_foreground", "read_screen", "tap_label", "type_text",
         "scroll_down", "scroll_up", "drag_label_to_label", "back", "home", "verify_screen_text", "ask_user", "finish"
     )
 
@@ -82,7 +82,7 @@ object AgentPlanRunner {
     fun requiresAccessibility(plan: JSONObject): Boolean {
         val actions = validate(plan)
         val accessibilityActions = setOf(
-            "verify_app_foreground", "verify_browser_foreground", "read_screen", "tap_label", "type_text",
+            "verify_app_foreground", "verify_browser_foreground", "verify_public_url_foreground", "read_screen", "tap_label", "type_text",
             "scroll_down", "scroll_up", "drag_label_to_label", "back", "home", "verify_screen_text"
         )
         return (0 until actions.length()).any { index ->
@@ -110,12 +110,13 @@ object AgentPlanRunner {
                 ?: throw IllegalArgumentException("The plan contains an invalid action.")
             val type = action.optString("type")
             val value = action.optString("value").trim()
+            val maxValueLength = if (type in setOf("open_public_url", "verify_public_url_foreground")) 2048 else 180
             val sourceLabel = action.optString("sourceLabel").trim()
             val targetLabel = action.optString("targetLabel").trim()
-            if (type !in allowed || value.length > 180) {
+            if (type !in allowed || value.length > maxValueLength) {
                 throw IllegalArgumentException("The plan contains an unsupported action.")
             }
-            if (type in setOf("open_app", "verify_app_foreground", "open_web_search", "verify_browser_foreground", "tap_label", "type_text", "verify_screen_text", "ask_user", "finish") && value.isBlank()) {
+            if (type in setOf("open_app", "verify_app_foreground", "open_web_search", "verify_browser_foreground", "open_public_url", "verify_public_url_foreground", "tap_label", "type_text", "verify_screen_text", "ask_user", "finish") && value.isBlank()) {
                 throw IllegalArgumentException("A required action value is missing.")
             }
             if (type == "tap_label" && UiActionPolicy.isProtectedControl(value)) {
@@ -152,6 +153,11 @@ object AgentPlanRunner {
             ) {
                 throw IllegalArgumentException("The browser verification value is outside the safe research policy.")
             }
+            if (type in setOf("open_public_url", "verify_public_url_foreground") &&
+                BrowserUrlPolicy.normalize(value) != value
+            ) {
+                throw IllegalArgumentException("The requested website is not a normalized public HTTP or HTTPS URL.")
+            }
             if (type == "verify_screen_text" &&
                 !UiActionPolicy.validateTextPayload(value, 160).allowed
             ) {
@@ -177,6 +183,28 @@ object AgentPlanRunner {
                     previous.optString("value") != action.optString("value")
                 ) {
                     throw IllegalArgumentException("Browser foreground verification must immediately follow its matching Google search launch.")
+                }
+            }
+        }
+
+        // Public website navigation must be immediately followed by its matching browser check.
+        for (index in 0 until actions.length()) {
+            val action = actions.getJSONObject(index)
+            val type = action.optString("type")
+            if (type == "open_public_url") {
+                val verifier = actions.optJSONObject(index + 1)
+                if (verifier?.optString("type") != "verify_public_url_foreground" ||
+                    verifier.optString("value") != action.optString("value")
+                ) {
+                    throw IllegalArgumentException("Every public website launch must be followed by a matching browser foreground check.")
+                }
+            }
+            if (type == "verify_public_url_foreground") {
+                val previous = actions.optJSONObject(index - 1)
+                if (previous?.optString("type") != "open_public_url" ||
+                    previous.optString("value") != action.optString("value")
+                ) {
+                    throw IllegalArgumentException("Public URL foreground verification must immediately follow its matching website launch.")
                 }
             }
         }
@@ -256,6 +284,8 @@ object AgentPlanRunner {
                 "verify_app_foreground" -> "Verify that " + value.take(40) + " is the foreground app"
                 "open_web_search" -> "Open Google search for " + value.take(100)
                 "verify_browser_foreground" -> "Verify the browser app is in the foreground"
+                "open_public_url" -> "Open the public website " + value.take(100)
+                "verify_public_url_foreground" -> "Verify the default browser is in the foreground"
                 "read_screen" -> "Read the visible screen locally"
                 "tap_label" -> "Tap the visible control " + value.take(30)
                 "type_text" -> "Enter this text into the field you focused: " + value.take(160)
@@ -288,6 +318,8 @@ object AgentPlanRunner {
                     "verify_app_foreground" -> "verify app"
                     "open_web_search" -> "open web search"
                     "verify_browser_foreground" -> "verify browser"
+                    "open_public_url" -> "open website"
+                    "verify_public_url_foreground" -> "verify browser"
                     "read_screen" -> "read screen"
                     "tap_label" -> "tap label"
                     "type_text" -> "type text"
@@ -371,6 +403,8 @@ object AgentPlanRunner {
                 when (action?.optString("type")) {
                     "open_app" -> 1400L
                     "open_web_search" -> 1800L
+                    "open_public_url" -> 1800L
+                    "verify_public_url_foreground" -> 900L
                     "tap_label" -> 600L
                     "drag_label_to_label" -> 900L
                     "back", "home" -> 700L

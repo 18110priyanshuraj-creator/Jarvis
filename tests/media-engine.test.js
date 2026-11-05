@@ -165,7 +165,7 @@ test("bounds excessive timeline counts and clamps invalid speed/key values", () 
   const tracks = normalizeTimelineTracks(Array.from({ length: 20 }, (_, index) => ({
     id: "track-" + index,
     kind: "video",
-    clips: Array.from({ length: 80 }, (_, clipIndex) => ({
+    clips: Array.from({ length: 220 }, (_, clipIndex) => ({
       id: "clip-" + index + "-" + clipIndex,
       duration: 999,
       start: 999,
@@ -175,7 +175,7 @@ test("bounds excessive timeline counts and clamps invalid speed/key values", () 
     }))
   })));
   assert.equal(tracks.length, 8);
-  assert.equal(tracks[0].clips.length, 48);
+  assert.equal(tracks[0].clips.length, 160);
   assert.equal(tracks[0].clips[0].duration, 180);
   assert.equal(tracks[0].clips[0].start, 0);
   assert.equal(tracks[0].clips[0].speed, 4);
@@ -298,6 +298,77 @@ test("accepts a valid AI-generated JSON object and preserves owner settings", as
   assert.deepEqual(project.scenes[0].grade, { brightness: 106, contrast: 112, saturation: 108, blur: 0 });
 });
 
+
+test("asks the AI provider for a complete 15-20 minute long-form narration and checks actual duration", async () => {
+  let request;
+  const narration = Array.from({ length: 10 }, (_, index) =>
+    "This chapter explains concept " + (index + 1) +
+    " with context, an example, why it matters and a clear transition to the next chapter."
+  ).join(" ");
+  const scenes = Array.from({ length: 30 }, (_, index) => ({
+    heading: "Chapter " + (index + 1),
+    voiceover: narration,
+    onScreenText: "Chapter " + (index + 1),
+    visualPrompt: "An accurate educational illustration for chapter " + (index + 1),
+    durationSeconds: 40
+  }));
+  const project = await makeDraft({ format: "long-form", platform: "youtube" }, {
+    generate: async (input) => {
+      request = input;
+      return { title: "Complete long-form lesson", scenes };
+    }
+  });
+  assert.equal(request.targetDurationSeconds, 1200);
+  assert.equal(request.targetDurationLabel, "15-20 minutes");
+  assert.equal(request.targetSceneCount, 30);
+  assert.equal(request.narrationTargetWordsPerScene, "80-100");
+  assert.equal(request.totalNarrationTargetWords, "2400-3000");
+  assert.match(request.generationGuidance, /not a short outline stretched/i);
+  assert.equal(request.outputShape.scenes[0].durationSeconds, 40);
+  assert.equal(project.generationSource, "ai-assisted");
+  assert.equal(project.durationSeconds, 1200);
+  assert.equal(project.scenes.length, 30);
+  assert.doesNotMatch(project.generationNote, /shorter outline/i);
+});
+
+test("does not label a short AI response as a complete long-form script", async () => {
+  const project = await makeDraft({ format: "long-form" }, {
+    generate: async () => ({
+      title: "Short outline",
+      scenes: [
+        { heading: "Start", voiceover: "Introduce the idea.", onScreenText: "Start", durationSeconds: 8 },
+        { heading: "Explain", voiceover: "Explain the idea.", onScreenText: "Explain", durationSeconds: 8 },
+        { heading: "Finish", voiceover: "Summarize the idea.", onScreenText: "Finish", durationSeconds: 8 }
+      ]
+    })
+  });
+  assert.equal(project.generationSource, "ai-assisted");
+  assert.equal(project.durationSeconds, 24);
+  assert.match(project.generationNote, /below the 15-20 minute script target/i);
+  assert.match(project.generationNote, /24 seconds of timeline/i);
+});
+
+test("does not mark a long timeline with very little narration as a complete script", async () => {
+  const scenes = Array.from({ length: 10 }, (_, index) => ({
+    heading: "Chapter " + (index + 1),
+    voiceover: "A short note.",
+    onScreenText: "Chapter " + (index + 1),
+    durationSeconds: 120
+  }));
+  const project = await makeDraft({ format: "long-form" }, {
+    generate: async () => ({ title: "Long silent outline", scenes })
+  });
+  assert.equal(project.durationSeconds, 1200);
+  assert.match(project.generationNote, /30 narration words/i);
+  assert.match(project.generationNote, /below the 15-20 minute script target/i);
+});
+
+test("explains when the local fallback is only a long-form outline", async () => {
+  const project = await makeDraft({ format: "long-form" });
+  assert.equal(project.generationSource, "local-template");
+  assert.match(project.generationNote, /not a finished 15-20 minute script/i);
+});
+
 test("parses fenced JSON output from a configured generator", async () => {
   const generated = JSON.stringify({
     title: "A clear concept",
@@ -342,6 +413,86 @@ test("caps scene count and durations to the selected format", async () => {
   assert.ok(project.scenes.every((scene) => scene.durationSeconds >= 3));
 });
 
+
+test("supports 20-minute long-form landscape projects with bounded scenes and timeline clips", () => {
+  const scenes = Array.from({ length: 20 }, (_, index) => ({
+    heading: "Chapter " + (index + 1),
+    voiceover: "Explain one complete chapter of the topic with a clear example and summary.",
+    onScreenText: "Chapter " + (index + 1),
+    visualPrompt: "A focused educational illustration.",
+    durationSeconds: 120
+  }));
+  const project = normalizeMediaProject({
+    title: "Long-form lesson",
+    brief,
+    format: "long-form",
+    platform: "youtube",
+    scenes
+  });
+
+  assert.equal(project.format, "long-form");
+  assert.deepEqual([project.width, project.height], [1280, 720]);
+  assert.equal(MEDIA_FORMATS["long-form"].maxDurationSeconds, 1200);
+  assert.equal(MEDIA_LIMITS.maxDurationSeconds, 1200);
+  assert.equal(project.scenes.length, 20);
+  assert.ok(project.scenes.every((scene) => scene.durationSeconds === 60));
+  assert.equal(project.durationSeconds, 1200);
+
+  const boundedTimeline = normalizeMediaProject({
+    title: "Long timeline",
+    brief,
+    format: "long-form",
+    scenes: scenes.slice(0, 2),
+    tracks: [{
+      id: "track-main-video",
+      kind: "video",
+      clips: [{ id: "long-clip", start: 1170, duration: 90, assetType: "video" }]
+    }]
+  });
+  assert.equal(boundedTimeline.tracks[0].clips[0].duration, 90);
+  assert.equal(boundedTimeline.tracks[0].clips[0].start, 1110);
+  assert.equal(boundedTimeline.durationSeconds, 1200);
+});
+
+
+test("preserves all 80 scenes in a 20-minute long-form main track", () => {
+  const scenes = Array.from({ length: 80 }, (_, index) => ({
+    id: "long-scene-" + index,
+    heading: "Chapter " + (index + 1),
+    voiceover: "Explain this chapter with context and one clear example.",
+    onScreenText: "Chapter " + (index + 1),
+    durationSeconds: 120
+  }));
+  const project = normalizeMediaProject({
+    title: "Eighty scene course",
+    brief,
+    format: "long-form",
+    scenes
+  });
+  assert.equal(project.scenes.length, 80);
+  assert.equal(project.tracks[0].clips.length, 80);
+  assert.equal(project.durationSeconds, 1200);
+  assert.equal(project.tracks[0].clips.at(-1).start + project.tracks[0].clips.at(-1).duration, 1200);
+});
+
+test("keeps standard landscape projects capped at three minutes", () => {
+  const scenes = Array.from({ length: 10 }, (_, index) => ({
+    heading: "Scene " + index,
+    voiceover: "A clear explanation for this scene.",
+    onScreenText: "Point " + index,
+    durationSeconds: 30
+  }));
+  const project = normalizeMediaProject({
+    title: "Standard landscape",
+    brief,
+    format: "landscape-explainer",
+    scenes
+  });
+  assert.equal(MEDIA_FORMATS["landscape-explainer"].maxDurationSeconds, 180);
+  assert.equal(project.durationSeconds, 180);
+  assert.ok(project.scenes.every((scene) => scene.durationSeconds <= 18));
+});
+
 test("edits a draft without mutating the original and rejects edits after approval", async () => {
   const project = await makeDraft();
   const firstScene = { ...project.scenes[0], heading: "Updated hook", voiceover: "A clearer opening sentence." };
@@ -354,6 +505,34 @@ test("edits a draft without mutating the original and rejects edits after approv
   assert.ok(approved.approvedAt);
   assert.throws(() => updateMediaProject(approved, { title: "Not allowed" }), /Only draft/);
   assert.throws(() => approveMediaProject(approved), /Only a draft/);
+});
+
+
+test("builds SRT captions from moved timeline clips and merges contiguous split scene clips", () => {
+  const project = normalizeMediaProject({
+    title: "Edited timeline captions",
+    brief,
+    format: "long-form",
+    scenes: [
+      { id: "scene-a", heading: "First", voiceover: "First narration belongs to the first scene.", durationSeconds: 8 },
+      { id: "scene-b", heading: "Second", voiceover: "Second narration belongs to the second scene.", durationSeconds: 8 }
+    ]
+  });
+  const mainTrack = structuredClone(project.tracks[0]);
+  const first = mainTrack.clips[0];
+  const second = mainTrack.clips[1];
+  mainTrack.clips = [
+    { ...first, start: 5, duration: 3 },
+    { ...first, id: "clip-scene-a-split-b", start: 8, duration: 3 },
+    { ...second, start: 20, duration: 6 }
+  ];
+  const edited = normalizeMediaProject({ ...project, tracks: [mainTrack] });
+  const captions = buildMediaCaptions(edited);
+
+  assert.match(captions, /00:00:05,000 --> 00:00:11,000/);
+  assert.match(captions, /00:00:20,000 --> 00:00:26,000/);
+  assert.equal((captions.match(/First narration/g) || []).length, 1);
+  assert.ok(captions.indexOf("First narration") < captions.indexOf("Second narration"));
 });
 
 test("builds ordered SRT captions and a human-readable production script", async () => {

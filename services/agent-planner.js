@@ -5,6 +5,8 @@ const ALLOWED_ACTIONS = new Set([
   "verify_app_foreground",
   "open_web_search",
   "verify_browser_foreground",
+  "open_public_url",
+  "verify_public_url_foreground",
   "read_screen",
   "tap_label",
   "type_text",
@@ -73,6 +75,70 @@ function extractCanvaDragIntent(input) {
   return null;
 }
 
+
+/**
+ * Normalize a user-supplied public website URL. URLs are opened only in the
+ * device's browser; the server never fetches them. Private/local destinations,
+ * credential-bearing URLs and secret-like query parameters are refused.
+ */
+function normalizePublicBrowserUrl(value) {
+  const raw = cleanLocalIntent(value, 2048);
+  if (!raw || /\s/.test(raw)) return "";
+  let parsed;
+  try {
+    parsed = new URL(raw.includes("://") ? raw : "https://" + raw);
+  } catch {
+    return "";
+  }
+  if (!["http:", "https:"].includes(parsed.protocol) || !parsed.hostname ||
+    parsed.username || parsed.password) return "";
+  const host = parsed.hostname.toLowerCase();
+  const reservedSuffixes = [
+    ".localhost", ".local", ".internal", ".test", ".example", ".invalid", ".home.arpa", ".onion"
+  ];
+  if (host.includes(":") || host === "localhost" ||
+    reservedSuffixes.some((suffix) => host === suffix.slice(1) || host.endsWith(suffix))) return "";
+  if (!host.includes(".")) return "";
+  const restrictedTarget = /\b(porn|xxx|adult[-_ ]?content|erotic|onlyfans|escort|vape|cigarette|tobacco|nicotine|alcohol|liquor|beer|wine|weed|marijuana|cannabis|cocaine|meth(?:amphetamine)?|heroin|opioid|fentanyl|steroids?|gambling|sports[-_ ]?betting|casino|firearms?|guns?|weapons?|ammunition|explosives?|bomb|suicide|self[-_ ]?harm|overdose)\b/i;
+  let decodedTarget = host + " " + parsed.pathname + " " + parsed.search;
+  try { decodedTarget = decodeURIComponent(decodedTarget); } catch { /* Keep the URL's encoded form for conservative matching. */ }
+  if (restrictedTarget.test(decodedTarget)) return "";
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    const [a, b, c, d] = ipv4.slice(1).map(Number);
+    if ([a,b,c,d].some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return "";
+    const privateOrReserved = a === 0 || a === 10 || a === 127 || a >= 224 ||
+      (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) ||
+      (a === 192 && b === 0) || (a === 192 && b === 88 && c === 99) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      (a === 198 && b === 51 && c === 100) ||
+      (a === 203 && b === 0 && c === 113);
+    if (privateOrReserved) return "";
+  }
+  const sensitiveQueryKey = /^(?:token|access_token|refresh_token|auth|authorization|password|passwd|pin|otp|code|session|sessionid|api[_-]?key)$/i;
+  for (const key of parsed.searchParams.keys()) {
+    if (sensitiveQueryKey.test(key)) return "";
+  }
+  return parsed.toString();
+}
+
+function extractPublicUrlIntent(input) {
+  const patterns = [
+    /^(?:please\s+)?(?:open|visit|browse|go to|navigate to)\s+(.+)$/i,
+    /^(.+?)\s+(?:website|site)\s+(?:kholo|khol do|open karo)$/i,
+    /^(?:website|site)\s+(?:kholo|khol do)\s+(.+)$/i
+  ];
+  for (const pattern of patterns) {
+    const match = input.match(pattern);
+    if (!match?.[1]) continue;
+    const raw = cleanLocalIntent(match[1], 2048).replace(/[.,!?]+$/u, "");
+    const normalized = normalizePublicBrowserUrl(raw);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
 /**
  * Deterministic fallback for small, clearly expressed Android tasks.
  * It never reads the screen, chooses a search result, or performs a sensitive action.
@@ -94,6 +160,19 @@ export function createLocalAgentPlan(message) {
         { type: "open_web_search", value: googleQuery, purpose: "Open a fixed Google HTTPS search URL in the default browser." },
         { type: "verify_browser_foreground", value: googleQuery, purpose: "Confirm the default browser is foregrounded after opening the fixed Google search URL." },
         { type: "ask_user", value: "The default browser opened for your Google search request. Check that the query loaded, then choose a public result yourself. Handle any login, consent or CAPTCHA prompt manually, then return to JARVIS.", purpose: "Keep result selection and access challenges under the user's control." }
+      ]
+    });
+  }
+
+  const publicUrl = extractPublicUrlIntent(input);
+  if (publicUrl) {
+    return validateAgentPlan({
+      mode: "device_action",
+      reply: "I will open the exact public website you requested, verify that the selected browser is foregrounded, and then hand control back to you. JARVIS will not sign in, submit forms, bypass challenges or open local/private network addresses.",
+      actions: [
+        { type: "open_public_url", value: publicUrl, purpose: "Open a validated public HTTP or HTTPS website in the default browser." },
+        { type: "verify_public_url_foreground", value: publicUrl, purpose: "Confirm the resolved default browser is foregrounded after opening the requested website." },
+        { type: "ask_user", value: "The website was handed off to your default browser. Say read screen to inspect visible page text, or tell JARVIS the exact visible label you want to select. Handle sign-in and consent prompts yourself.", purpose: "Keep page actions and account access under the user's control." }
       ]
     });
   }
@@ -188,10 +267,11 @@ export function validateAgentPlan(candidate) {
       throw new TypeError("The AI planner requested an unsupported device action.");
     }
 
-    const value = typeof action.value === "string" ? action.value.trim().slice(0, 180) : "";
+    const maxValueLength = ["open_public_url", "verify_public_url_foreground"].includes(action.type) ? 2048 : 180;
+    const value = typeof action.value === "string" ? action.value.trim().slice(0, maxValueLength) : "";
     const sourceLabel = typeof action.sourceLabel === "string" ? cleanLocalIntent(action.sourceLabel, 100) : "";
     const targetLabel = typeof action.targetLabel === "string" ? cleanLocalIntent(action.targetLabel, 100) : "";
-    if (["open_app", "verify_app_foreground", "open_web_search", "verify_browser_foreground", "tap_label", "type_text", "verify_screen_text", "ask_user", "finish", "drag_label_to_label"].includes(action.type) && !value) {
+    if (["open_app", "verify_app_foreground", "open_web_search", "verify_browser_foreground", "open_public_url", "verify_public_url_foreground", "tap_label", "type_text", "verify_screen_text", "ask_user", "finish", "drag_label_to_label"].includes(action.type) && !value) {
       throw new TypeError("A required action value is missing.");
     }
     if (action.type === "tap_label" && BLOCKED_LABEL.test(value)) {
@@ -213,6 +293,10 @@ export function validateAgentPlan(candidate) {
       (value.length > 120 || NUMERIC_SECRET.test(value) || BLOCKED_SEARCH_QUERY.test(value) ||
         /\b(password|passcode|otp|one.?time code|pin|cvv|cvc|bank account|card number)\b/i.test(value))) {
       throw new TypeError("The Google search phrase is outside the safe public-research policy.");
+    }
+    if (["open_public_url", "verify_public_url_foreground"].includes(action.type) &&
+      normalizePublicBrowserUrl(value) !== value) {
+      throw new TypeError("The requested website is not a normalized public HTTP or HTTPS URL.");
     }
     if (action.type === "verify_screen_text" &&
       (value.length > 160 || NUMERIC_SECRET.test(value) || BLOCKED_LABEL.test(value))) {
@@ -240,6 +324,23 @@ export function validateAgentPlan(candidate) {
       const previous = actions[index - 1];
       if (previous?.type !== "open_web_search" || previous.value !== action.value) {
         throw new TypeError("Browser foreground verification must immediately follow its matching Google search launch.");
+      }
+    }
+  }
+
+  // A public website launch must be followed by a matching browser foreground check.
+  for (let index = 0; index < actions.length; index += 1) {
+    const action = actions[index];
+    if (action.type === "open_public_url") {
+      const verifier = actions[index + 1];
+      if (verifier?.type !== "verify_public_url_foreground" || verifier.value !== action.value) {
+        throw new TypeError("Every public website launch must be followed by a matching browser foreground verification.");
+      }
+    }
+    if (action.type === "verify_public_url_foreground") {
+      const previous = actions[index - 1];
+      if (previous?.type !== "open_public_url" || previous.value !== action.value) {
+        throw new TypeError("Public URL verification must immediately follow its matching website launch.");
       }
     }
   }
@@ -307,7 +408,7 @@ const RESPONSE_SCHEMA = {
         properties: {
           type: {
             type: "string",
-            enum: ["open_app", "verify_app_foreground", "open_web_search", "verify_browser_foreground", "read_screen", "tap_label", "type_text", "scroll_down", "scroll_up", "drag_label_to_label", "back", "home", "verify_screen_text", "ask_user", "finish"]
+            enum: ["open_app", "verify_app_foreground", "open_web_search", "verify_browser_foreground", "open_public_url", "verify_public_url_foreground", "read_screen", "tap_label", "type_text", "scroll_down", "scroll_up", "drag_label_to_label", "back", "home", "verify_screen_text", "ask_user", "finish"]
           },
           value: { type: "string" },
           sourceLabel: { type: "string" },
@@ -327,11 +428,12 @@ const SYSTEM_INSTRUCTIONS = [
   "Use mode device_action only when the user clearly asks to operate the Android interface, such as opening an app, reading visible labels, searching, scrolling or navigating.",
   "Use mode clarification when a requested device action is ambiguous, unsafe, or outside the supported controls. Return actions as an empty array and put one short explanation or clarification question in reply.",
   "You do not control Android directly. The Android app validates and executes every device action locally.",
-  "Allowed device action types only: open_app, verify_app_foreground, open_web_search, verify_browser_foreground, read_screen, tap_label, type_text, scroll_down, scroll_up, drag_label_to_label, back, home, verify_screen_text, ask_user, finish.",
+  "Allowed device action types only: open_app, verify_app_foreground, open_web_search, verify_browser_foreground, open_public_url, verify_public_url_foreground, read_screen, tap_label, type_text, scroll_down, scroll_up, drag_label_to_label, back, home, verify_screen_text, ask_user, finish.",
   "Never create actions for sending messages, submitting forms, deleting, purchasing, paying, transferring money, changing account/security settings, handling OTP/PIN/password, granting permissions, installing apps, or bypassing system dialogs.",
+  "For an explicit public website request, use open_public_url with a normalized public HTTP or HTTPS URL. Reject credentials, local/private hosts, secret-bearing query parameters and non-web schemes. Follow it immediately with verify_public_url_foreground carrying the identical URL. This checks only the browser app identity, not that the page loaded or was read. Then return control to the user; do not sign in, submit forms, bypass consent or CAPTCHA challenges.",
   "For an explicit Google search request, use open_web_search with only the query text; Android opens a fixed HTTPS Google search URL in the user's default browser. Follow it immediately with verify_browser_foreground carrying the same query; this checks only that the resolved browser app is foregrounded, not that the page content/results are correct. Then ask the user to check the query and choose a public result. Never claim that the result page was read. Do not bypass login, consent or CAPTCHA challenges.",
   "For an app-specific search workflow, open the requested app and immediately verify its foreground identity, tap the visible Search label, type the query and verify that the query is visible. Do not claim that search results have loaded: tell the user to submit the query in the app and choose a result manually.",
-  "Every open_app action must be followed immediately by verify_app_foreground with the same app label. Every open_web_search action must be followed immediately by verify_browser_foreground with the exact same query text. Every UI mutation (tap, type, scroll, back or home) must be followed by verify_screen_text for the expected visible result before the plan can finish.",
+  "Every open_app action must be followed immediately by verify_app_foreground with the same app label. Every open_web_search action must be followed immediately by verify_browser_foreground with the exact same query text. Every open_public_url action must be followed immediately by verify_public_url_foreground with the same URL. Every UI mutation (tap, type, scroll, back or home) must be followed by verify_screen_text for the expected visible result before the plan can finish.",
   "A verification action is an observation only; it never taps, submits, sends, purchases, deletes or changes account state. If the expected result is not visible, stop and ask the user to review the screen. Never report completion without that check.",
   "A tap_label must be a short exact UI label such as Search or Library. If uncertain, choose clarification instead of guessing.",
   "For drag_label_to_label, only handle an explicitly requested Canva edit. Set value to exactly Canva, sourceLabel to the exact accessible label of the item to move, and targetLabel to the exact accessible label of the destination. Do not invent labels or infer them from the screen: the planner does not receive screen contents. Require the actions immediately before it to be open_app Canva and verify_app_foreground Canva, then immediately follow the drag with verify_screen_text for a phrase the user expects to see. If the user has not supplied both exact labels, choose clarification and ask for them. Drag works only if Canva exposes Android semantic accessibility drag actions; never use coordinates or claim timeline editing succeeded if the action is unavailable.",

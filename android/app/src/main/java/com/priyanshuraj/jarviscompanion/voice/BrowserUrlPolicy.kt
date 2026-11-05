@@ -5,9 +5,36 @@ import java.util.Locale
 
 /**
  * Accepts only ordinary public web URLs for explicit user-requested browser launches.
- * Credentials, local/private hosts and non-web schemes are rejected.
+ * Credentials, local/private hosts and non-web schemes are rejected. This is an intent
+ * safety check, not a server-side URL fetcher or a guarantee about a site's DNS records.
  */
 object BrowserUrlPolicy {
+    private fun isPrivateOrReservedIpv4(host: String): Boolean {
+        val parts = host.split(".")
+        if (parts.size != 4 || parts.any { it.isEmpty() || !it.all { character -> character in '0'..'9' } }) return false
+
+        // Reject ambiguous octal-looking address forms rather than relying on how a
+        // particular browser parses leading-zero IPv4 components.
+        if (parts.any { it.length > 1 && it.startsWith("0") }) return true
+        val octets = parts.map { it.toIntOrNull() ?: return true }
+        if (octets.any { it !in 0..255 }) return true
+
+        val a = octets[0]
+        val b = octets[1]
+        val c = octets[2]
+        return a == 0 || a == 10 || a == 127 || a >= 224 ||
+            (a == 100 && b in 64..127) ||
+            (a == 169 && b == 254) ||
+            (a == 172 && b in 16..31) ||
+            (a == 192 && b == 0) ||
+            (a == 192 && b == 0 && c == 2) ||
+            (a == 192 && b == 88 && c == 99) ||
+            (a == 192 && b == 168) ||
+            (a == 198 && b in 18..19) ||
+            (a == 198 && b == 51 && c == 100) ||
+            (a == 203 && b == 0 && c == 113)
+    }
+
     fun normalize(raw: String): String? {
         val input = raw.trim().trim('"', '\'')
         if (input.isBlank() || input.length > 2048 || input.any { it.isISOControl() }) return null
@@ -17,12 +44,32 @@ object BrowserUrlPolicy {
         val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return null
         val host = uri.host?.lowercase(Locale.ROOT) ?: return null
         if (scheme !in setOf("http", "https")) return null
-        if (uri.userInfo != null || host.isBlank() || host == "localhost" ||
-            host.endsWith(".localhost") || host == "127.0.0.1" || host == "::1" ||
-            host.startsWith("10.") || host.startsWith("192.168.") ||
-            host.matches(Regex("""172\.(1[6-9]|2[0-9]|3[0-1])\..+""")) ||
-            host.endsWith(".local") || host.endsWith(".internal")) return null
+        if (uri.userInfo != null || host.isBlank() || host.endsWith(".")) return null
+
+        // Disallow IPv6 literals in this browser handoff path. Public IPv6 can be
+        // added later with a dedicated global-unicast range check.
+        if (host.contains(':') || host == "localhost" || host.endsWith(".localhost") ||
+            host.endsWith(".local") || host.endsWith(".internal") ||
+            host.endsWith(".test") || host.endsWith(".example") ||
+            host.endsWith(".invalid") || host.endsWith(".home.arpa") || host.endsWith(".onion") ||
+            isPrivateOrReservedIpv4(host)) return null
+
+        if (!host.contains(".")) return null
         if (uri.port !in -1..65535) return null
+
+        val restrictedTarget = Regex(
+            """(?i)\b(porn|xxx|adult[-_ ]?content|erotic|onlyfans|escort|vape|cigarette|tobacco|nicotine|alcohol|liquor|beer|wine|weed|marijuana|cannabis|cocaine|meth(?:amphetamine)?|heroin|opioid|fentanyl|steroids?|gambling|sports[-_ ]?betting|casino|firearms?|guns?|weapons?|ammunition|explosives?|bomb|suicide|self[-_ ]?harm|overdose)\b"""
+        )
+        val destinationText = listOf(host, uri.path.orEmpty(), uri.query.orEmpty()).joinToString(" ")
+        if (restrictedTarget.containsMatchIn(destinationText)) return null
+
+        val sensitiveQueryKeys = setOf(
+            "token", "access_token", "refresh_token", "auth", "authorization",
+            "password", "passwd", "pin", "otp", "code", "session", "sessionid", "api_key"
+        )
+        if (uri.query.orEmpty().split('&').any { parameter ->
+            parameter.substringBefore('=').lowercase(Locale.ROOT) in sensitiveQueryKeys
+        }) return null
 
         val normalized = uri.toASCIIString()
         if (!uri.rawPath.isNullOrEmpty()) return normalized

@@ -7,8 +7,38 @@ class LocalCommandProcessorParsingTest {
     @Test
     fun stripsWakeWordBeforeMatchingLocalCommands() {
         assertEquals("open Canva", LocalCommandProcessor.normalizeCommand("Jarvis, open Canva"))
+        assertEquals("open Canva", LocalCommandProcessor.normalizeCommand("Hey Jarvis, open Canva"))
+        assertEquals("open Canva", LocalCommandProcessor.normalizeCommand("Okay JARVIS open Canva"))
         assertEquals("open Chrome", LocalCommandProcessor.normalizeCommand("  JARVIS: open Chrome  "))
         assertEquals("open Canva", LocalCommandProcessor.normalizeCommand("open Canva"))
+    }
+
+
+    @Test
+    fun recognizesPublicWebsiteLaunchTargetsAndRejectsPrivateDestinations() {
+        val website = LocalCommandProcessor.appLaunchTarget(
+            "Hey Jarvis, open https://www.canva.com/design/demo"
+        )
+        assertEquals("https://www.canva.com/design/demo", website)
+        assertEquals(
+            "https://www.canva.com/design/demo",
+            BrowserUrlPolicy.normalize(website!!)
+        )
+
+        val bareDomain = LocalCommandProcessor.appLaunchTarget("open example.com")
+        assertEquals("https://example.com/", BrowserUrlPolicy.normalize(bareDomain!!))
+
+        val hinglishSuffix = LocalCommandProcessor.appLaunchTarget("example.com website kholo")
+        assertEquals("https://example.com/", BrowserUrlPolicy.normalize(hinglishSuffix!!))
+
+        val hinglishPrefix = LocalCommandProcessor.appLaunchTarget("website kholo www.canva.com")
+        assertEquals("https://www.canva.com/", BrowserUrlPolicy.normalize(hinglishPrefix!!))
+
+        val visit = LocalCommandProcessor.appLaunchTarget("visit https://www.youtube.com/")
+        assertEquals("https://www.youtube.com/", BrowserUrlPolicy.normalize(visit!!))
+
+        val localAddress = LocalCommandProcessor.appLaunchTarget("open http://192.168.1.1")
+        assertEquals(null, BrowserUrlPolicy.normalize(localAddress!!))
     }
 
     @Test

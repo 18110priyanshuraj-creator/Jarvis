@@ -2,12 +2,13 @@ import crypto from "node:crypto";
 
 const MAX_BRIEF = 1800;
 const MAX_TITLE = 90;
-const MAX_SCENES = 12;
+const MAX_SCENES = 80;
+const MAX_PROJECT_DURATION_SECONDS = 20 * 60;
 const MIN_SCENES = 2;
 const MAX_SCENE_TEXT = 900;
 const MAX_VISUAL_PROMPT = 360;
 const MAX_TIMELINE_TRACKS = 8;
-const MAX_TIMELINE_CLIPS = 48;
+const MAX_TIMELINE_CLIPS = 160;
 const MAX_KEYFRAMES = 16;
 const MAX_SPEED_POINTS = 8;
 const TIMELINE_TRACK_KINDS = new Set(["video", "overlay", "audio"]);
@@ -15,9 +16,10 @@ const TIMELINE_EASINGS = new Set(["linear", "ease-in", "ease-out", "ease-in-out"
 const TIMELINE_ASSET_TYPES = new Set(["scene", "image", "video", "audio"]);
 
 const FORMATS = Object.freeze({
-  "vertical-short": Object.freeze({ label: "Vertical short", width: 720, height: 1280, maxDurationSeconds: 90 }),
-  "landscape-explainer": Object.freeze({ label: "Landscape explainer", width: 1280, height: 720, maxDurationSeconds: 180 }),
-  "square-carousel": Object.freeze({ label: "Square carousel", width: 1080, height: 1080, maxDurationSeconds: 60 })
+  "vertical-short": Object.freeze({ label: "Vertical short", width: 720, height: 1280, maxDurationSeconds: 90, maxSceneDurationSeconds: 30 }),
+  "landscape-explainer": Object.freeze({ label: "Landscape explainer", width: 1280, height: 720, maxDurationSeconds: 180, maxSceneDurationSeconds: 30 }),
+  "long-form": Object.freeze({ label: "Long-form video (up to 20 minutes)", width: 1280, height: 720, maxDurationSeconds: MAX_PROJECT_DURATION_SECONDS, maxSceneDurationSeconds: 120 }),
+  "square-carousel": Object.freeze({ label: "Square carousel", width: 1080, height: 1080, maxDurationSeconds: 60, maxSceneDurationSeconds: 5 })
 });
 const PLATFORMS = new Set(["youtube-shorts", "youtube", "instagram-reels", "instagram-carousel", "tiktok", "general"]);
 const LANGUAGES = new Set(["en-IN", "hi-IN", "hinglish"]);
@@ -43,10 +45,10 @@ function validDate(value, fallback) {
   return parsed && Number.isFinite(parsed.getTime()) ? parsed.toISOString() : fallback;
 }
 
-function boundedDuration(value, fallback = 8) {
+function boundedDuration(value, fallback = 8, maximum = 30) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(30, Math.max(3, Math.round(parsed)));
+  return Math.min(maximum, Math.max(3, Math.round(parsed)));
 }
 function boundedNumber(value, fallback, min, max) {
   if (value === undefined || value === null || value === "") return fallback;
@@ -111,9 +113,9 @@ function normalizeSpeedRamp(value, durationSeconds, fallbackSpeed = 1) {
   return points.slice(0, MAX_SPEED_POINTS);
 }
 
-function normalizeTimelineClip(clip, index, trackKind) {
-  const duration = boundedNumber(clip?.duration, 6, 0.25, 180);
-  const start = boundedNumber(clip?.start, 0, 0, Math.max(0, 180 - duration));
+function normalizeTimelineClip(clip, index, trackKind, maxDurationSeconds = 180) {
+  const duration = boundedNumber(clip?.duration, 6, 0.25, maxDurationSeconds);
+  const start = boundedNumber(clip?.start, 0, 0, Math.max(0, maxDurationSeconds - duration));
   const speed = boundedNumber(clip?.speed, 1, 0.25, 4);
   const assetType = TIMELINE_ASSET_TYPES.has(clip?.assetType)
     ? clip.assetType
@@ -167,7 +169,7 @@ function normalizeTimelineClip(clip, index, trackKind) {
   };
 }
 
-export function normalizeTimelineTracks(value, scenes = []) {
+export function normalizeTimelineTracks(value, scenes = [], maxDurationSeconds = 180) {
   const source = Array.isArray(value) ? value.slice(0, MAX_TIMELINE_TRACKS) : [];
   const fallback = [{
     id: "track-main-video",
@@ -194,7 +196,7 @@ export function normalizeTimelineTracks(value, scenes = []) {
       kind,
       visible: track?.visible !== false,
       muted: track?.muted === true,
-      clips: clips.map((clip, clipIndex) => normalizeTimelineClip(clip, clipIndex, kind))
+      clips: clips.map((clip, clipIndex) => normalizeTimelineClip(clip, clipIndex, kind, maxDurationSeconds))
     };
   });
   return tracks;
@@ -227,8 +229,8 @@ function easedProgress(t, easing, curve) {
 }
 
 export function sampleTimelineKeyframes(clip, timeSeconds) {
-  const points = normalizeKeyframes(clip?.keyframes, boundedNumber(clip?.duration, 6, 0.25, 180));
-  const time = boundedNumber(timeSeconds, 0, 0, 180);
+  const points = normalizeKeyframes(clip?.keyframes, boundedNumber(clip?.duration, 6, 0.25, MAX_PROJECT_DURATION_SECONDS));
+  const time = boundedNumber(timeSeconds, 0, 0, MAX_PROJECT_DURATION_SECONDS);
   let rightIndex = points.findIndex((point) => point.time >= time);
   if (rightIndex <= 0) return { ...points[0] };
   if (rightIndex < 0) return { ...points.at(-1) };
@@ -247,8 +249,8 @@ export function sampleTimelineKeyframes(clip, timeSeconds) {
 }
 
 export function sampleTimelineSpeed(clip, timeSeconds) {
-  const points = normalizeSpeedRamp(clip?.speedRamp, boundedNumber(clip?.duration, 6, 0.25, 180), boundedNumber(clip?.speed, 1, 0.25, 4));
-  const time = boundedNumber(timeSeconds, 0, 0, 180);
+  const points = normalizeSpeedRamp(clip?.speedRamp, boundedNumber(clip?.duration, 6, 0.25, MAX_PROJECT_DURATION_SECONDS), boundedNumber(clip?.speed, 1, 0.25, 4));
+  const time = boundedNumber(timeSeconds, 0, 0, MAX_PROJECT_DURATION_SECONDS);
   const rightIndex = points.findIndex((point) => point.time >= time);
   if (rightIndex <= 0) return points[0].speed;
   if (rightIndex < 0) return points.at(-1).speed;
@@ -309,8 +311,8 @@ export function splitTimelineClip(clip, splitAtSeconds) {
       .map((point) => ({ ...point, time: point.time - splitAt }))
   };
   return [
-    normalizeTimelineClip(first, 0, "video"),
-    normalizeTimelineClip(second, 1, "video")
+    normalizeTimelineClip(first, 0, "video", MAX_PROJECT_DURATION_SECONDS),
+    normalizeTimelineClip(second, 1, "video", MAX_PROJECT_DURATION_SECONDS)
   ];
 }
 
@@ -418,7 +420,7 @@ function normalizeScene(scene, index, format, now, visualStyle) {
       saturation: boundedNumber(scene?.grade?.saturation, 100, 0, 180),
       blur: boundedNumber(scene?.grade?.blur, 0, 0, 12)
     },
-    durationSeconds: format === "square-carousel" ? 5 : boundedDuration(scene?.durationSeconds),
+    durationSeconds: format === "square-carousel" ? 5 : boundedDuration(scene?.durationSeconds, 8, FORMATS[format]?.maxSceneDurationSeconds || 30),
     order: index + 1,
     createdAt: validDate(scene?.createdAt, now)
   };
@@ -454,7 +456,7 @@ export function normalizeMediaProject(input = {}) {
   const maxPerScene = Math.max(3, Math.floor(format.maxDurationSeconds / scenes.length));
   scenes = scenes.map((scene) => ({ ...scene, durationSeconds: Math.min(scene.durationSeconds, maxPerScene) }));
   const sceneDurationSeconds = scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0);
-  const tracks = normalizeTimelineTracks(input.tracks, scenes);
+  const tracks = normalizeTimelineTracks(input.tracks, scenes, format.maxDurationSeconds);
   const timelineDuration = Math.max(0, ...tracks.flatMap((track) =>
     track.clips.map((clip) => clip.start + clip.duration)
   ));
@@ -488,29 +490,41 @@ export function normalizeMediaProject(input = {}) {
   };
 }
 
+function formatDurationLabel(totalSeconds) {
+  const seconds = Math.max(0, Math.round(Number(totalSeconds) || 0));
+  if (seconds < 60) return seconds + " seconds";
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return minutes + " minutes" + (remainder ? " " + remainder + " seconds" : "");
+}
+
 export async function createMediaDraft(input = {}, options = {}) {
   const brief = cleanText(input.brief, MAX_BRIEF);
   if (!brief) throw new TypeError("Describe what the media should be about.");
   const selectedFormat = formatKey(input.format);
   const visualStyle = VISUAL_STYLES.has(input.visualStyle) ? input.visualStyle : "cinematic-motion";
   const now = new Date().toISOString();
+  const isLongForm = selectedFormat === "long-form";
+  const targetDurationSeconds = FORMATS[selectedFormat].maxDurationSeconds;
   const base = normalizeMediaProject({
     ...input,
     id: crypto.randomUUID(),
     brief,
-    title: cleanText(input.title, MAX_TITLE) || cleanText(brief.split(/[.!?\n।]/u)[0], MAX_TITLE) || "Untitled media project",
+    title: cleanText(input.title, MAX_TITLE) || cleanText(brief.split(/[.!?\\n।]/u)[0], MAX_TITLE) || "Untitled media project",
     format: selectedFormat,
     visualStyle,
     scenes: createTemplateScenes(brief, selectedFormat, visualStyle),
     status: "draft",
     generationSource: "local-template",
-    generationNote: "A structured local storyboard is ready. Review wording and verify factual claims before exporting.",
+    generationNote: isLongForm
+      ? "Local long-form outline only, not a finished 15-20 minute script. Add complete narration to every chapter or configure the AI generator for a full-length storyboard before export."
+      : "A structured local storyboard is ready. Review wording and verify factual claims before exporting.",
     createdAt: now,
     updatedAt: now
   });
   if (typeof options.generate !== "function") return base;
   try {
-    const generated = parseGeneratedContent(await options.generate({
+    const generationRequest = {
       brief: base.brief,
       format: base.format,
       platform: base.platform,
@@ -519,6 +533,14 @@ export async function createMediaDraft(input = {}, options = {}) {
       audience: base.audience,
       visualStyle: base.visualStyle,
       sceneLimit: MAX_SCENES,
+      targetDurationSeconds,
+      targetDurationLabel: isLongForm ? "15-20 minutes" : formatKey(selectedFormat),
+      targetSceneCount: isLongForm ? 30 : null,
+      narrationTargetWordsPerScene: isLongForm ? "80-100" : null,
+      totalNarrationTargetWords: isLongForm ? "2400-3000" : null,
+      generationGuidance: isLongForm
+        ? "Create a genuinely complete long-form educational or storytelling script, not a short outline stretched across long scene durations. Return about 30 coherent scenes with 80-100 spoken words per scene, factual transitions, examples, a clear progression and a concise final recap. Aim for 15-20 minutes of spoken narration. Do not repeat filler to reach the target. If the supplied brief does not support enough factual detail, return a shorter honest outline and explain what needs research."
+        : "Create a concise, complete storyboard appropriate for the selected output format. Avoid filler and invented factual claims.",
       outputShape: {
         title: "string",
         scenes: [{
@@ -527,11 +549,12 @@ export async function createMediaDraft(input = {}, options = {}) {
           animation: "gesture", background: "midnight", transition: "fade",
           cameraMotion: "ken-burns",
           grade: { brightness: 100, contrast: 100, saturation: 100, blur: 0 },
-          durationSeconds: 8
+          durationSeconds: isLongForm ? 40 : 8
         }]
       }
-    }));
-    return normalizeMediaProject({
+    };
+    const generated = parseGeneratedContent(await options.generate(generationRequest));
+    const normalized = normalizeMediaProject({
       ...base,
       ...generated,
       id: base.id,
@@ -550,8 +573,21 @@ export async function createMediaDraft(input = {}, options = {}) {
       createdAt: base.createdAt,
       updatedAt: new Date().toISOString()
     });
+    const narrationWordCount = normalized.scenes.reduce((total, scene) =>
+      total + scene.voiceover.trim().split(/\s+/u).filter(Boolean).length, 0
+    );
+    if (isLongForm && (normalized.durationSeconds < 900 || narrationWordCount < 2100)) {
+      normalized.generationNote = "The AI provider returned about " + formatDurationLabel(normalized.durationSeconds) +
+        " of timeline and " + narrationWordCount + " narration words, below the 15-20 minute script target. Expand the narration and chapters before treating this as long-form.";
+    }
+    return normalized;
   } catch {
-    return { ...base, generationNote: "The AI content provider was unavailable or returned an invalid draft. A local storyboard template was used instead." };
+    return {
+      ...base,
+      generationNote: isLongForm
+        ? "The AI content provider was unavailable or returned an invalid draft. This is only a local outline, not a finished 15-20 minute script."
+        : "The AI content provider was unavailable or returned an invalid draft. A local storyboard template was used instead."
+    };
   }
 }
 
@@ -590,14 +626,52 @@ function formatSrtTime(totalSeconds) {
 
 export function buildMediaCaptions(project) {
   const normalized = normalizeMediaProject(project);
-  let cursor = 0;
-  return normalized.scenes.map((scene, index) => {
-    const start = cursor;
-    cursor += scene.durationSeconds;
-    return String(index + 1) + "\n" +
-      formatSrtTime(start) + " --> " + formatSrtTime(cursor) + "\n" +
-      (scene.voiceover || scene.onScreenText).replace(/\s+/g, " ").trim() + "\n";
-  }).join("\n");
+  const scenesById = new Map(normalized.scenes.map((scene) => [scene.id, scene]));
+  const mainTrack = normalized.tracks.find((track) => track.id === "track-main-video");
+  const timelineCues = mainTrack && mainTrack.visible !== false
+    ? mainTrack.clips
+      .filter((clip) => clip.sceneId && clip.visible !== false && scenesById.has(clip.sceneId))
+      .map((clip) => {
+        const scene = scenesById.get(clip.sceneId);
+        return {
+          sceneId: clip.sceneId,
+          start: clip.start,
+          end: clip.start + clip.duration,
+          text: (scene.voiceover || scene.onScreenText).replace(/\s+/g, " ").trim()
+        };
+      })
+      .filter((cue) => cue.end > cue.start && cue.text)
+      .sort((a, b) => a.start - b.start)
+    : [];
+
+  // Splitting a scene clip creates two adjacent timeline clips with the same scene ID.
+  // Merge adjacent pieces so the SRT does not repeat the complete narration twice.
+  const mergedTimelineCues = [];
+  for (const cue of timelineCues) {
+    const previous = mergedTimelineCues.at(-1);
+    if (previous && previous.sceneId === cue.sceneId && Math.abs(previous.end - cue.start) < 0.01) {
+      previous.end = cue.end;
+    } else {
+      mergedTimelineCues.push({ ...cue });
+    }
+  }
+
+  const cues = mainTrack
+    ? mergedTimelineCues
+    : normalized.scenes.map((scene, index) => {
+      const start = normalized.scenes.slice(0, index).reduce((sum, item) => sum + item.durationSeconds, 0);
+      return {
+        start,
+        end: start + scene.durationSeconds,
+        text: (scene.voiceover || scene.onScreenText).replace(/\s+/g, " ").trim()
+      };
+    });
+
+  return cues.map((cue, index) =>
+    String(index + 1) + "\n" +
+    formatSrtTime(cue.start) + " --> " + formatSrtTime(cue.end) + "\n" +
+    cue.text + "\n"
+  ).join("\n");
 }
 
 export function buildMediaScript(project) {
@@ -628,5 +702,5 @@ export const MEDIA_LIMITS = Object.freeze({
   scenes: MAX_SCENES,
   minScenes: MIN_SCENES,
   sceneText: MAX_SCENE_TEXT,
-  maxDurationSeconds: 180
+  maxDurationSeconds: MAX_PROJECT_DURATION_SECONDS
 });
