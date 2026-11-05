@@ -16,6 +16,12 @@ const PLATFORMS = new Set(["youtube-shorts", "youtube", "instagram-reels", "inst
 const LANGUAGES = new Set(["en-IN", "hi-IN", "hinglish"]);
 const TONES = new Set(["clear", "friendly", "energetic", "calm", "documentary", "professional"]);
 const PROJECT_STATES = new Set(["draft", "approved"]);
+const VISUAL_STYLES = new Set(["cinematic-motion", "stick-figure-story", "minimal-editorial"]);
+const SCENE_VISUAL_TYPES = new Set(["auto", "stick-figure", "diagram", "quote", "title-card"]);
+const FIGURE_POSES = new Set(["idle", "walk", "point", "think", "celebrate"]);
+const SCENE_ANIMATIONS = new Set(["fade", "rise", "bounce", "walk", "gesture"]);
+const SCENE_BACKGROUNDS = new Set(["midnight", "sunset", "paper", "mint", "violet"]);
+const SCENE_TRANSITIONS = new Set(["cut", "fade", "slide", "wipe", "zoom"]);
 const SECRET_PATTERN = /(?:\b|_)(?:api[_ -]?key|access[_ -]?token|password|passcode|one[- ]time code|otp|private key)\b\s*[:=]\s*\S+/i;
 const TOKEN_PATTERN = /\bBearer\s+[A-Za-z0-9._~+/-]{24,}/i;
 const RESTRICTED_MEDIA_PATTERN = /(?:\b(?:porn(?:ography|ographic)?|erotic|masturbat(?:e|ion)|explicit sexual|nude|suicid(?:e|al)|self[- ]harm|cutting tutorial|weapon construction|build (?:a )?(?:bomb|gun|weapon|knife|sword|taser)|make (?:a )?(?:bomb|explosive|weapon|gun)|explosive device|drug synthesis|how to (?:hide|use) (?:drugs|a weapon)|how to vape\b|how to (?:use|refill) (?:a )?(?:vape|e-cigarette)|how to (?:smoke|vape|drink|take|use|dose) (?:weed|marijuana|cannabis|cocaine|meth|heroin|ecstasy|mdma|alcohol|nicotine|tobacco|vapes?)|how to (?:use|carry|fight with) (?:a )?(?:gun|knife|sword|weapon|taser)|vape tricks|nicotine challenge)\b|आत्महत्या|खुदकुशी|खुद\s+को\s+नुकसान|बम\s+बनाना|बंदूक\s+बनाना|हथियार\s+बनाना|विस्फोटक\s+बनाना|ज़हर\s+बनाना|जहर\s+बनाना|शराब\s+(?:कैसे\s+)?(?:पीएं|पिएं)|सिगरेट\s+(?:कैसे\s+)?(?:पीएं|पिएं)|नशा\s+कैसे\s+करें|\b(?:khudkushi|aatmahatya|bomb|bam|bandook|hathiyar|zehar|zahar)\s+(?:kaise|banana|banaye|banane)\b|\b(?:daru|sharab|nasha|ganja|weed|cannabis)\s+(?:kaise|use|piye|peeye|le)\b)/iu;
@@ -46,7 +52,7 @@ function splitBrief(brief) {
     .slice(0, 6);
 }
 
-function createTemplateScenes(brief, format) {
+function createTemplateScenes(brief, format, visualStyle) {
   const points = splitBrief(brief);
   const topic = cleanText(brief.split(/[.!?\n।]/u)[0], 120) || "The main idea";
   const ideas = points.length ? points : [topic];
@@ -97,7 +103,7 @@ function parseGeneratedContent(value) {
   return parsed;
 }
 
-function normalizeScene(scene, index, format, now) {
+function normalizeScene(scene, index, format, now, visualStyle) {
   const heading = cleanText(scene?.heading || scene?.title, 80) || "Scene " + (index + 1);
   const voiceover = cleanText(scene?.voiceover || scene?.narration || scene?.script, MAX_SCENE_TEXT);
   const onScreenText = cleanText(scene?.onScreenText || scene?.caption, 120);
@@ -116,6 +122,22 @@ function normalizeScene(scene, index, format, now) {
     voiceover,
     onScreenText,
     visualPrompt,
+    visualType: SCENE_VISUAL_TYPES.has(scene?.visualType)
+      ? scene.visualType
+      : visualStyle === "stick-figure-story" ? "stick-figure"
+        : visualStyle === "minimal-editorial" ? "quote" : "auto",
+    figurePose: FIGURE_POSES.has(scene?.figurePose)
+      ? scene.figurePose
+      : ["walk", "point", "think", "celebrate"][index % 4],
+    animation: SCENE_ANIMATIONS.has(scene?.animation)
+      ? scene.animation
+      : ["rise", "walk", "gesture", "bounce"][index % 4],
+    background: SCENE_BACKGROUNDS.has(scene?.background)
+      ? scene.background
+      : ["midnight", "sunset", "paper", "mint", "violet"][index % 5],
+    transition: SCENE_TRANSITIONS.has(scene?.transition)
+      ? scene.transition
+      : index === 0 ? "fade" : ["fade", "slide", "wipe", "zoom"][index % 4],
     durationSeconds: format === "square-carousel" ? 5 : boundedDuration(scene?.durationSeconds),
     order: index + 1,
     createdAt: validDate(scene?.createdAt, now)
@@ -142,10 +164,11 @@ export function normalizeMediaProject(input = {}) {
   }
   const selectedFormat = formatKey(input.format);
   const format = FORMATS[selectedFormat];
+  const visualStyle = VISUAL_STYLES.has(input.visualStyle) ? input.visualStyle : "cinematic-motion";
   const scenesInput = Array.isArray(input.scenes) ? input.scenes.slice(0, MAX_SCENES) : [];
   if (scenesInput.length < MIN_SCENES) throw new TypeError("A storyboard needs at least two scenes.");
   const now = new Date().toISOString();
-  let scenes = scenesInput.map((scene, index) => normalizeScene(scene, index, selectedFormat, now));
+  let scenes = scenesInput.map((scene, index) => normalizeScene(scene, index, selectedFormat, now, visualStyle));
   const maxCount = Math.max(MIN_SCENES, Math.min(MAX_SCENES, Math.floor(format.maxDurationSeconds / 3)));
   scenes = scenes.slice(0, maxCount);
   const maxPerScene = Math.max(3, Math.floor(format.maxDurationSeconds / scenes.length));
@@ -166,6 +189,7 @@ export function normalizeMediaProject(input = {}) {
     language: LANGUAGES.has(input.language) ? input.language : "en-IN",
     tone: TONES.has(input.tone) ? input.tone : "clear",
     audience,
+    visualStyle,
     scenes,
     durationSeconds,
     status: state,
@@ -181,6 +205,7 @@ export async function createMediaDraft(input = {}, options = {}) {
   const brief = cleanText(input.brief, MAX_BRIEF);
   if (!brief) throw new TypeError("Describe what the media should be about.");
   const selectedFormat = formatKey(input.format);
+  const visualStyle = VISUAL_STYLES.has(input.visualStyle) ? input.visualStyle : "cinematic-motion";
   const now = new Date().toISOString();
   const base = normalizeMediaProject({
     ...input,
@@ -188,7 +213,8 @@ export async function createMediaDraft(input = {}, options = {}) {
     brief,
     title: cleanText(input.title, MAX_TITLE) || cleanText(brief.split(/[.!?\n।]/u)[0], MAX_TITLE) || "Untitled media project",
     format: selectedFormat,
-    scenes: createTemplateScenes(brief, selectedFormat),
+    visualStyle,
+    scenes: createTemplateScenes(brief, selectedFormat, visualStyle),
     status: "draft",
     generationSource: "local-template",
     generationNote: "A structured local storyboard is ready. Review wording and verify factual claims before exporting.",
@@ -204,10 +230,15 @@ export async function createMediaDraft(input = {}, options = {}) {
       language: base.language,
       tone: base.tone,
       audience: base.audience,
+      visualStyle: base.visualStyle,
       sceneLimit: MAX_SCENES,
       outputShape: {
         title: "string",
-        scenes: [{ heading: "string", voiceover: "string", onScreenText: "string", visualPrompt: "string", durationSeconds: 8 }]
+        scenes: [{
+          heading: "string", voiceover: "string", onScreenText: "string",
+          visualPrompt: "string", visualType: "stick-figure", figurePose: "point",
+          animation: "gesture", background: "midnight", transition: "fade", durationSeconds: 8
+        }]
       }
     }));
     return normalizeMediaProject({
@@ -220,6 +251,7 @@ export async function createMediaDraft(input = {}, options = {}) {
       language: base.language,
       tone: base.tone,
       audience: base.audience,
+      visualStyle: base.visualStyle,
       status: "draft",
       approvedAt: null,
       generationSource: "ai-assisted",
@@ -240,6 +272,7 @@ export function updateMediaProject(existing, updates = {}) {
     title: updates.title ?? existing.title,
     audience: updates.audience ?? existing.audience,
     tone: updates.tone ?? existing.tone,
+    visualStyle: updates.visualStyle ?? existing.visualStyle,
     scenes: updates.scenes ?? existing.scenes,
     updatedAt: new Date().toISOString(),
     status: "draft",

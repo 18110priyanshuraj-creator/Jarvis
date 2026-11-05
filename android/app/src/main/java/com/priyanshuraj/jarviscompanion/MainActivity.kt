@@ -32,6 +32,7 @@ import android.widget.TextView
 import android.widget.Toast
 import android.net.Uri
 import android.net.http.SslError
+import android.webkit.JavascriptInterface
 import android.webkit.CookieManager
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceError
@@ -57,6 +58,7 @@ import com.priyanshuraj.jarviscompanion.voice.VoicePrivacyMode
 import com.priyanshuraj.jarviscompanion.voice.VoicePrivacyPreferences
 import com.priyanshuraj.jarviscompanion.voice.VoiceRecognitionPolicy
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
@@ -89,6 +91,7 @@ class MainActivity : Activity() {
     private var dashboardWebView: WebView? = null
     private var dashboardStatusText: TextView? = null
     private var dashboardBaseUrl: String? = null
+    private val dashboardBridgeNonce = UUID.randomUUID().toString()
     private var pendingOAuthBrowserReturn = false
     private var showingDashboard = false
     private var showingSetup = false
@@ -684,6 +687,7 @@ class MainActivity : Activity() {
             }
         }
         dashboardWebView = webView
+        webView.addJavascriptInterface(WorkspaceNativeBridge(), "JarvisNative")
         webView.webChromeClient = object : WebChromeClient() {
             override fun onJsAlert(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
                 val callback = result ?: return true
@@ -763,6 +767,12 @@ class MainActivity : Activity() {
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
+                if (DashboardUrlPolicy.isWorkspaceOrigin(url, dashboardBaseUrl)) {
+                    view?.evaluateJavascript(
+                        "window.__jarvisBridgeNonce = " + JSONObject.quote(dashboardBridgeNonce) + ";",
+                        null
+                    )
+                }
                 dashboardStatusText?.text = "Workspace loaded. Sign in if the private login screen appears."
             }
 
@@ -1426,6 +1436,29 @@ class MainActivity : Activity() {
 
     private fun sendVoiceCommand(message: String) {
         dispatchCoreCommand(message, CoreCommandSource.SPEAK_ONCE)
+    }
+
+    /**
+     * Bridge for clear app and in-app task requests from the authenticated
+     * Workspace. Native planning still validates and previews device actions.
+     * It is not exposed to ordinary mobile/desktop browsers.
+     */
+    private inner class WorkspaceNativeBridge {
+        @JavascriptInterface
+        fun submitNativeCommand(rawMessage: String, nonce: String?): Boolean {
+            val message = rawMessage.trim()
+            if (nonce != dashboardBridgeNonce) return false
+            if (!WorkspaceNativeCommandPolicy.isNativeAppTaskRequest(message)) return false
+
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed && showingDashboard &&
+                    DashboardUrlPolicy.isWorkspaceOrigin(dashboardWebView?.url, dashboardBaseUrl)
+                ) {
+                    dispatchCoreCommand(message, CoreCommandSource.HOME_TEXT)
+                }
+            }
+            return true
+        }
     }
 
     private fun dispatchCoreCommand(message: String, source: CoreCommandSource) {

@@ -78,8 +78,14 @@ object LocalCommandProcessor {
             .put("actions", actions)
     }
 
-    private val openPrefix = Regex("""^(?:please\s+)?(?:open|launch|start)\s+(.+)$""", RegexOption.IGNORE_CASE)
-    private val openSuffix = Regex("""^(.+?)\s+(?:kholo|khol do|open karo|chalu karo)$""", RegexOption.IGNORE_CASE)
+    private val openPrefix = Regex(
+        """^(?:(?:please|can you)\s+)?(?:open|launch|start|run|go to|take me to|chalao)\s+(.+)$""",
+        RegexOption.IGNORE_CASE
+    )
+    private val openSuffix = Regex(
+        """^(?:mujhe\s+)?(.+?)\s+(?:ko\s+)?(?:kholo|khol do|open karo|launch karo|chalao|start karo|shuru karo|chalu karo)$""",
+        RegexOption.IGNORE_CASE
+    )
     private val tapPrefix = Regex("""^(?:tap|click|press|select|dabao)\s+(.+)$""", RegexOption.IGNORE_CASE)
     private val tapSuffix = Regex("""^(.+?)\s+par\s+(?:tap|click|dabao)\s+karo$""", RegexOption.IGNORE_CASE)
     private val typePrefix = Regex("""^(?:type|enter text|likho|text likho)\s+(.+)$""", RegexOption.IGNORE_CASE)
@@ -109,8 +115,34 @@ object LocalCommandProcessor {
      * Handles simple local actions. Screen actions are allowed only during the
      * explicit hands-free session, when another app can remain in the foreground.
      */
+    /**
+     * Remove an optional spoken wake word before matching local commands.
+     * Without this, requests such as "Jarvis, open Canva" miss the direct
+     * app-launch parser and are unnecessarily sent to remote planning.
+     */
+    internal fun normalizeCommand(message: String): String =
+        message.trim()
+            .replace(Regex("""(?i)^jarvis[\s,:;-]+"""), "")
+            .trim()
+            .trimEnd('.', '!', '?', '।', '॥')
+
+    /** Return the app target for common English and Hindi launch phrasings. */
+    internal fun appLaunchTarget(message: String): String? {
+        val input = normalizeCommand(message)
+        val rawTarget = openPrefix.find(input)?.groupValues?.getOrNull(1)
+            ?: openSuffix.find(input)?.groupValues?.getOrNull(1)
+            ?: return null
+        // Remove polite/context clauses so "open Canva to edit a video" still
+        // resolves to the app name rather than searching for a fictitious app.
+        return rawTarget
+            .replace(Regex("""(?i)\s+(?:to|for|and|then|because|so|please)\b.*$"""), "")
+            .trim()
+            .trimEnd('.', '!', '?', '।', '॥')
+            .ifBlank { null }
+    }
+
     fun handle(context: Context, message: String, allowUiActions: Boolean): String? {
-        val original = message.trim()
+        val original = normalizeCommand(message)
         if (original.isBlank()) return null
 
         if (normalize(original) == "open home screen") {
@@ -120,8 +152,7 @@ object LocalCommandProcessor {
             return UIActionExecutor.goHome(active).message
         }
 
-        val appName = openPrefix.find(original)?.groupValues?.getOrNull(1)
-            ?: openSuffix.find(original)?.groupValues?.getOrNull(1)
+        val appName = appLaunchTarget(original)
         if (!appName.isNullOrBlank()) {
             val website = BrowserUrlPolicy.normalize(appName)
             if (website != null) {

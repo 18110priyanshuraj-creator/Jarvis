@@ -9,11 +9,16 @@ const MIN_SCENES = 2;
 export function createMediaWorkspace({ api, toast }) {
   let projects = [];
   let currentProject = null;
+  let selectedProjectId = null;
   let initialized = false;
   let previewFrame = 0;
   let previewStartedAt = 0;
   let previewing = false;
   let exporting = false;
+  let audioFile = null;
+  let audioObjectUrl = null;
+  const sceneAssets = new Map();
+  let activeVideoSceneId = null;
 
   const byId = (id) => document.getElementById(id);
 
@@ -75,6 +80,151 @@ export function createMediaWorkspace({ api, toast }) {
     return wrapper;
   }
 
+  function makeSelectField(labelText, value, field, choices) {
+    const wrapper = makeElement("label", "media-field");
+    wrapper.append(makeElement("span", "", labelText));
+    const select = makeElement("select", "media-scene-input");
+    select.dataset.field = field;
+    for (const [optionValue, optionLabel] of choices) {
+      const option = makeElement("option", "", optionLabel);
+      option.value = optionValue;
+      select.append(option);
+    }
+    select.value = value;
+    wrapper.append(select);
+    return wrapper;
+  }
+
+  const VISUAL_CHOICES = [
+    ["auto", "Automatic layout"],
+    ["stick-figure", "Stick figure"],
+    ["diagram", "Diagram / process"],
+    ["quote", "Quote / text focus"],
+    ["title-card", "Title card"]
+  ];
+  const POSE_CHOICES = [
+    ["idle", "Neutral"], ["walk", "Walking"], ["point", "Pointing"],
+    ["think", "Thinking"], ["celebrate", "Celebrating"]
+  ];
+  const ANIMATION_CHOICES = [
+    ["fade", "Fade in"], ["rise", "Rise up"], ["bounce", "Bounce"],
+    ["walk", "Walk cycle"], ["gesture", "Gesture"]
+  ];
+  const BACKGROUND_CHOICES = [
+    ["midnight", "Midnight"], ["sunset", "Sunset"], ["paper", "Warm paper"],
+    ["mint", "Mint"], ["violet", "Violet"]
+  ];
+  const TRANSITION_CHOICES = [
+    ["cut", "Cut"], ["fade", "Crossfade"], ["slide", "Slide"],
+    ["wipe", "Wipe"], ["zoom", "Zoom"]
+  ];
+
+  function disposeSceneAsset(sceneId) {
+    const asset = sceneAssets.get(sceneId);
+    if (!asset) return;
+    if (asset.type === "video") {
+      asset.element.pause();
+      asset.element.removeAttribute("src");
+      asset.element.load();
+    }
+    URL.revokeObjectURL(asset.url);
+    sceneAssets.delete(sceneId);
+  }
+
+  function releaseProjectAssets(projectId) {
+    for (const [sceneId, asset] of sceneAssets.entries()) {
+      if (asset.projectId === projectId) disposeSceneAsset(sceneId);
+    }
+  }
+
+  async function setSceneAsset(scene, file) {
+    const projectId = currentProject?.id;
+    if (!projectId || !scene?.id) return;
+    if (!file) {
+      disposeSceneAsset(scene.id);
+      renderSceneEditors();
+      renderPreview(currentProject, currentProject.scenes.findIndex((item) => item.id === scene.id));
+      return;
+    }
+    const type = String(file.type || "").toLowerCase();
+    if (!type.startsWith("image/") && !type.startsWith("video/")) {
+      throw new Error("Choose an image or video file for this scene.");
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      throw new Error("Scene assets must be 100 MiB or smaller for local rendering.");
+    }
+    disposeSceneAsset(scene.id);
+    const url = URL.createObjectURL(file);
+    let element;
+    if (type.startsWith("image/")) {
+      element = new Image();
+      element.decoding = "async";
+      element.src = url;
+      try {
+        if (typeof element.decode === "function") await element.decode();
+        else await new Promise((resolve, reject) => {
+          element.onload = resolve;
+          element.onerror = () => reject(new Error("The selected image could not be opened."));
+        });
+      } catch {
+        URL.revokeObjectURL(url);
+        throw new Error("The selected image could not be opened.");
+      }
+    } else {
+      element = document.createElement("video");
+      element.muted = true;
+      element.loop = true;
+      element.playsInline = true;
+      element.preload = "auto";
+      element.src = url;
+      element.load();
+    }
+    if (currentProject?.id !== projectId ||
+        !currentProject.scenes.some((item) => item.id === scene.id)) {
+      URL.revokeObjectURL(url);
+      if (type.startsWith("video/")) {
+        element.pause();
+        element.removeAttribute("src");
+        element.load();
+      }
+      return;
+    }
+    sceneAssets.set(scene.id, {
+      projectId,
+      type: type.startsWith("video/") ? "video" : "image",
+      name: file.name,
+      url,
+      element
+    });
+    const index = currentProject.scenes.findIndex((item) => item.id === scene.id);
+    renderSceneEditors();
+    renderPreview(currentProject, index);
+    setExportStatus("Local scene asset selected: " + file.name + ". It will be included in the exported video and is not uploaded.");
+  }
+
+  function activateVideoForScene(sceneId) {
+    if (activeVideoSceneId === sceneId) return;
+    activeVideoSceneId = sceneId || null;
+    for (const [id, asset] of sceneAssets.entries()) {
+      if (asset.type !== "video") continue;
+      if (id === sceneId) {
+        try { asset.element.currentTime = 0; } catch { /* metadata may not be ready */ }
+        asset.element.play().catch(() => {
+          // A blocked local video remains visible as a still frame where available.
+        });
+      } else {
+        asset.element.pause();
+      }
+    }
+  }
+
+  function pauseSceneVideos() {
+    activeVideoSceneId = null;
+    for (const asset of sceneAssets.values()) {
+      if (asset.type === "video") asset.element.pause();
+    }
+  }
+
   function renderProjectList() {
     const target = byId("media-project-list");
     if (!target) return;
@@ -109,6 +259,17 @@ export function createMediaWorkspace({ api, toast }) {
     }
   }
 
+  function moveScene(index, offset) {
+    if (!currentProject || currentProject.status !== "draft") return;
+    const destination = index + offset;
+    if (destination < 0 || destination >= currentProject.scenes.length) return;
+    [currentProject.scenes[index], currentProject.scenes[destination]] =
+      [currentProject.scenes[destination], currentProject.scenes[index]];
+    currentProject.scenes.forEach((scene, order) => { scene.order = order + 1; });
+    renderSceneEditors();
+    renderPreview(currentProject, destination);
+  }
+
   function renderSceneEditors() {
     const target = byId("media-editor-scenes");
     if (!target || !currentProject) return;
@@ -116,8 +277,8 @@ export function createMediaWorkspace({ api, toast }) {
     currentProject.scenes.forEach((scene, index) => {
       const card = makeElement("article", "media-scene-editor");
       const heading = makeElement("div", "media-scene-heading");
-      heading.append(makeElement("strong", "", "Scene " + (index + 1)));
       const duration = makeElement("label", "media-duration-field");
+      heading.append(makeElement("strong", "", "Scene " + (index + 1)));
       duration.append(makeElement("span", "", "Seconds"));
       const durationInput = makeElement("input", "media-scene-input");
       durationInput.type = "number";
@@ -128,24 +289,73 @@ export function createMediaWorkspace({ api, toast }) {
       durationInput.dataset.field = "durationSeconds";
       durationInput.disabled = currentProject.format === "square-carousel";
       duration.append(durationInput);
-      heading.append(duration);
+      const moveControls = makeElement("div", "media-scene-order");
+      const moveUp = makeElement("button", "item-action", "↑");
+      moveUp.type = "button";
+      moveUp.title = "Move scene up";
+      moveUp.setAttribute("aria-label", "Move scene " + (index + 1) + " up");
+      moveUp.disabled = currentProject.status !== "draft" || index === 0;
+      moveUp.addEventListener("click", () => moveScene(index, -1));
+      const moveDown = makeElement("button", "item-action", "↓");
+      moveDown.type = "button";
+      moveDown.title = "Move scene down";
+      moveDown.setAttribute("aria-label", "Move scene " + (index + 1) + " down");
+      moveDown.disabled = currentProject.status !== "draft" || index === currentProject.scenes.length - 1;
+      moveDown.addEventListener("click", () => moveScene(index, 1));
+      moveControls.append(moveUp, moveDown);
+      heading.append(duration, moveControls);
       card.append(heading);
       card.append(makeField("Scene heading", scene.heading, "heading"));
       card.append(makeField("Voiceover script", scene.voiceover, "voiceover", "textarea"));
       card.append(makeField("On-screen text", scene.onScreenText, "onScreenText", "textarea"));
       card.append(makeField("Visual direction", scene.visualPrompt, "visualPrompt", "textarea"));
+      card.append(makeSelectField("Visual type", scene.visualType || "auto", "visualType", VISUAL_CHOICES));
+      card.append(makeSelectField("Stick-figure pose", scene.figurePose || "point", "figurePose", POSE_CHOICES));
+      card.append(makeSelectField("Motion", scene.animation || "rise", "animation", ANIMATION_CHOICES));
+      card.append(makeSelectField("Background", scene.background || "midnight", "background", BACKGROUND_CHOICES));
+      card.append(makeSelectField("Transition into scene", scene.transition || "fade", "transition", TRANSITION_CHOICES));
+      const assetField = makeElement("label", "media-field");
+      assetField.append(makeElement("span", "", "Optional local image or video"));
+      const assetInput = makeElement("input", "media-scene-input");
+      assetInput.type = "file";
+      assetInput.accept = "image/*,video/*";
+      assetInput.disabled = currentProject.status !== "draft";
+      assetInput.setAttribute("aria-label", "Choose a local image or video for scene " + (index + 1));
+      assetInput.addEventListener("change", async (event) => {
+        try { await setSceneAsset(scene, event.target.files?.[0] || null); }
+        catch (error) {
+          event.target.value = "";
+          toast(error.message, true);
+        }
+      });
+      const asset = sceneAssets.get(scene.id);
+      assetField.append(assetInput, makeElement("span", "small muted", asset ? asset.name : "No file selected; this scene uses generated motion graphics."));
+      if (asset) {
+        const clearAsset = makeElement("button", "item-action media-remove-scene", "Remove local asset");
+        clearAsset.type = "button";
+        clearAsset.disabled = currentProject.status !== "draft";
+        clearAsset.addEventListener("click", () => {
+          disposeSceneAsset(scene.id);
+          renderSceneEditors();
+          renderPreview(currentProject, index);
+        });
+        assetField.append(clearAsset);
+      }
+      card.append(assetField);
       if (currentProject.status === "draft") {
         const remove = makeElement("button", "item-action media-remove-scene", "Remove scene");
         remove.type = "button";
         remove.disabled = currentProject.scenes.length <= MIN_SCENES;
         remove.addEventListener("click", () => {
+          disposeSceneAsset(scene.id);
           currentProject.scenes.splice(index, 1);
+          currentProject.scenes.forEach((item, order) => { item.order = order + 1; });
           renderSceneEditors();
           renderPreview(currentProject, 0);
         });
         card.append(remove);
       } else {
-        card.querySelectorAll("input, textarea").forEach((control) => { control.disabled = true; });
+        card.querySelectorAll("input, textarea, select, button").forEach((control) => { control.disabled = true; });
       }
       target.append(card);
     });
@@ -158,7 +368,7 @@ export function createMediaWorkspace({ api, toast }) {
   function setEditorControls() {
     const editable = currentProject?.status === "draft";
     const approved = currentProject?.status === "approved";
-    for (const id of ["media-editor-project-title", "media-editor-audience", "media-editor-tone"]) {
+    for (const id of ["media-editor-project-title", "media-editor-audience", "media-editor-visual-style", "media-editor-tone"]) {
       const element = byId(id);
       if (element) element.disabled = !editable;
     }
@@ -170,6 +380,12 @@ export function createMediaWorkspace({ api, toast }) {
       const element = byId(id);
       if (element) element.disabled = !approved || exporting;
     }
+    const audioInput = byId("media-audio-file");
+    if (audioInput) audioInput.disabled = exporting;
+    const volume = byId("media-audio-volume");
+    if (volume) volume.disabled = exporting;
+    const exportButton = byId("media-export-webm");
+    if (exportButton) exportButton.textContent = audioFile ? "Export video + audio" : "Export video (silent)";
     const status = byId("media-export-status");
     if (status) status.textContent = approved
       ? "Approved storyboard. Export files are generated locally in this browser."
@@ -180,11 +396,17 @@ export function createMediaWorkspace({ api, toast }) {
     const selected = projects.find((item) => item.id === id);
     if (!selected) return;
     stopPreview();
+    if (selectedProjectId && selectedProjectId !== id) {
+      releaseProjectAssets(selectedProjectId);
+      setAudioTrack(null);
+    }
+    selectedProjectId = id;
     currentProject = structuredClone(selected);
     byId("media-editor").classList.remove("hidden");
     byId("media-editor-project-title").value = currentProject.title;
     byId("media-editor-audience").value = currentProject.audience || "";
     byId("media-editor-tone").value = currentProject.tone || "clear";
+    byId("media-editor-visual-style").value = currentProject.visualStyle || "cinematic-motion";
     byId("media-editor-title").textContent = currentProject.title;
     byId("media-editor-meta").textContent = currentProject.formatLabel + " · " +
       currentProject.width + " × " + currentProject.height + " · " +
@@ -217,67 +439,294 @@ export function createMediaWorkspace({ api, toast }) {
     return lines;
   }
 
-  function drawScene(ctx, width, height, project, index, progress = 0) {
+  function drawStickFigure(ctx, width, height, scene, progress, opacity) {
+    const unit = Math.min(width, height);
+    const centerX = width > height ? width * 0.78 : width * 0.5;
+    const groundY = height * 0.86;
+    const animation = scene.animation || "rise";
+    const pose = scene.figurePose || "point";
+    const phase = progress * Math.PI * 2;
+    const bob = animation === "bounce" ? Math.abs(Math.sin(phase * 2)) * unit * 0.018
+      : animation === "rise" ? (1 - Math.min(1, progress * 2)) * unit * 0.06 : 0;
+    const scale = animation === "bounce" ? 0.94 + Math.abs(Math.sin(phase * 2)) * 0.08 : 1;
+    const torso = 0.29;
+    const armLength = 0.23;
+    const legLength = 0.28;
+    let leftArm = 2.35;
+    let rightArm = 0.78;
+    let leftLeg = 1.92;
+    let rightLeg = 1.22;
+    if (pose === "walk" || animation === "walk") {
+      const swing = Math.sin(phase) * 0.58;
+      leftArm = 2.0 + swing;
+      rightArm = 1.14 - swing;
+      leftLeg = 1.55 + swing;
+      rightLeg = 1.58 - swing;
+    } else if (pose === "point") {
+      rightArm = -0.62 + (animation === "gesture" ? Math.sin(phase) * 0.12 : 0);
+      leftArm = 2.55;
+    } else if (pose === "think") {
+      rightArm = 3.88;
+      leftArm = 2.45;
+    } else if (pose === "celebrate") {
+      leftArm = 4.05;
+      rightArm = 5.38;
+      leftLeg = 1.9;
+      rightLeg = 1.25;
+    }
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.translate(centerX, groundY - bob);
+    ctx.scale(unit * 0.72 * scale, unit * 0.72 * scale);
+    ctx.strokeStyle = "#f7e6c7";
+    ctx.fillStyle = "#f7e6c7";
+    ctx.lineWidth = 0.018;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.ellipse(0, 0.008, 0.23, 0.025, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(2, 5, 12, 0.38)";
+    ctx.fill();
+    ctx.fillStyle = "#f7e6c7";
+    ctx.beginPath();
+    ctx.arc(0, -0.79, 0.09, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(-0.028, -0.80, 0.008, 0, Math.PI * 2);
+    ctx.arc(0.028, -0.80, 0.008, 0, Math.PI * 2);
+    ctx.fillStyle = "#17202b";
+    ctx.fill();
+    ctx.strokeStyle = "#f7e6c7";
+    ctx.beginPath();
+    ctx.moveTo(0, -0.69);
+    ctx.lineTo(0, -0.69 + torso);
+    ctx.stroke();
+    const shoulderY = -0.61;
+    const hipY = -0.40;
+    const drawLimb = (x, y, angle, length) => {
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length);
+      ctx.stroke();
+    };
+    drawLimb(0, shoulderY, leftArm, armLength);
+    drawLimb(0, shoulderY, rightArm, armLength);
+    drawLimb(0, hipY, leftLeg, legLength);
+    drawLimb(0, hipY, rightLeg, legLength);
+    ctx.restore();
+  }
+
+  function drawDiagram(ctx, width, height, scene, opacity) {
+    const unit = Math.min(width, height);
+    const y = height * 0.68;
+    const boxWidth = Math.min(width * 0.31, unit * 0.38);
+    const boxHeight = unit * 0.20;
+    const left = width * 0.15;
+    const right = width - left - boxWidth;
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.lineWidth = Math.max(2, unit * 0.004);
+    ctx.strokeStyle = "#f0cf9f";
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    for (const x of [left, right]) {
+      ctx.beginPath();
+      if (typeof ctx.roundRect === "function") {
+        ctx.roundRect(x, y - boxHeight / 2, boxWidth, boxHeight, unit * 0.025);
+      } else {
+        ctx.rect(x, y - boxHeight / 2, boxWidth, boxHeight);
+      }
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#f7e6c7";
+    ctx.font = "600 " + Math.round(unit * 0.032) + "px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("INPUT", left + boxWidth / 2, y + unit * 0.01);
+    ctx.fillText("RESULT", right + boxWidth / 2, y + unit * 0.01);
+    ctx.strokeStyle = "#e8c28f";
+    ctx.beginPath();
+    ctx.moveTo(left + boxWidth + unit * 0.035, y);
+    ctx.lineTo(right - unit * 0.035, y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(right - unit * 0.075, y - unit * 0.035);
+    ctx.lineTo(right - unit * 0.035, y);
+    ctx.lineTo(right - unit * 0.075, y + unit * 0.035);
+    ctx.stroke();
+    ctx.textAlign = "start";
+    ctx.restore();
+  }
+
+  function drawScene(ctx, width, height, project, index, progress = 0, opacity = 1) {
     const scene = project.scenes[index];
+    if (!scene) return;
+    const palettes = {
+      midnight: ["#07111f", "#172840", "#4b2e32"],
+      sunset: ["#321b35", "#9a4d48", "#edac73"],
+      paper: ["#f4ead8", "#d7c8b0", "#9d9a8e"],
+      mint: ["#0e3435", "#27786c", "#b5bb8a"],
+      violet: ["#211b47", "#55418c", "#b16b9d"]
+    };
+    const palette = palettes[scene.background] || palettes.midnight;
+    ctx.save();
+    ctx.globalAlpha = opacity;
     const gradient = ctx.createLinearGradient(0, 0, width, height);
-    gradient.addColorStop(0, "#07111f");
-    gradient.addColorStop(0.56, "#172840");
-    gradient.addColorStop(1, "#4b2e32");
+    gradient.addColorStop(0, palette[0]);
+    gradient.addColorStop(0.56, palette[1]);
+    gradient.addColorStop(1, palette[2]);
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
 
+    const asset = sceneAssets.get(scene.id);
+    const assetElement = asset?.element;
+    const assetWidth = asset?.type === "video" ? assetElement?.videoWidth : assetElement?.naturalWidth;
+    const assetHeight = asset?.type === "video" ? assetElement?.videoHeight : assetElement?.naturalHeight;
+    if (assetWidth > 0 && assetHeight > 0) {
+      const coverScale = Math.max(width / assetWidth, height / assetHeight);
+      const drawWidth = assetWidth * coverScale;
+      const drawHeight = assetHeight * coverScale;
+      ctx.globalAlpha = opacity * 0.52;
+      ctx.drawImage(assetElement, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+      ctx.globalAlpha = opacity * 0.48;
+      ctx.fillStyle = scene.background === "paper" ? "#f5ead6" : "#06101f";
+      ctx.fillRect(0, 0, width, height);
+      ctx.globalAlpha = opacity;
+    }
+
     const unit = Math.min(width, height);
-    ctx.globalAlpha = 0.18;
-    ctx.fillStyle = "#e6bd86";
+    const light = scene.background === "paper" ? "rgba(56,48,40,0.10)" : "rgba(255,255,255,0.14)";
+    ctx.globalAlpha = opacity * 0.22;
+    ctx.fillStyle = light;
     ctx.beginPath();
     ctx.arc(width * (0.82 - progress * 0.06), height * 0.2, unit * 0.2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = 0.12;
-    ctx.strokeStyle = "#f2d5a8";
+    ctx.globalAlpha = opacity * 0.12;
+    ctx.strokeStyle = scene.background === "paper" ? "#655d51" : "#f2d5a8";
     ctx.lineWidth = Math.max(2, unit * 0.003);
     for (let n = 1; n <= 4; n++) {
       ctx.beginPath();
       ctx.arc(width * 0.18, height * 0.76, unit * (0.08 + n * 0.035), 0, Math.PI * 2);
       ctx.stroke();
     }
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = opacity;
 
+    const isPaper = scene.background === "paper";
+    const foreground = isPaper ? "#263342" : "#f8f3eb";
+    const accent = isPaper ? "#87613d" : "#e8c28f";
+    const muted = isPaper ? "rgba(38,51,66,0.76)" : "rgba(248,243,235,0.82)";
+    const visualType = scene.visualType === "auto"
+      ? (project.visualStyle === "stick-figure-story" ? "stick-figure" : "diagram")
+      : scene.visualType;
     const margin = width * 0.1;
-    ctx.fillStyle = "#e8c28f";
+    ctx.fillStyle = accent;
     ctx.font = "700 " + Math.round(unit * 0.021) + "px system-ui, sans-serif";
     ctx.fillText("JARVIS STUDIO", margin, height * 0.1);
-    ctx.fillStyle = "rgba(255,255,255,0.48)";
+    ctx.fillStyle = isPaper ? "rgba(38,51,66,0.58)" : "rgba(255,255,255,0.58)";
     ctx.font = "500 " + Math.round(unit * 0.018) + "px system-ui, sans-serif";
     ctx.fillText("SCENE " + (index + 1) + " / " + project.scenes.length, margin, height * 0.145);
 
-    ctx.fillStyle = "#f8f3eb";
+    const titleWidth = visualType === "stick-figure" && width > height ? width * 0.56 : width - margin * 2;
+    ctx.fillStyle = foreground;
     ctx.font = "700 " + Math.round(unit * (width > height ? 0.068 : 0.061)) + "px system-ui, sans-serif";
-    const titleLines = wrapCanvasText(ctx, scene.onScreenText || scene.heading, width - margin * 2, width > height ? 3 : 5);
+    const titleLines = wrapCanvasText(ctx, scene.onScreenText || scene.heading, titleWidth, width > height ? 3 : 4);
     const titleLineHeight = unit * 0.085;
-    let y = height * 0.39;
+    let y = visualType === "stick-figure" ? height * 0.34 : height * 0.39;
     for (const line of titleLines) {
       ctx.fillText(line, margin, y);
       y += titleLineHeight;
     }
 
-    ctx.fillStyle = "rgba(248,243,235,0.82)";
-    ctx.font = "400 " + Math.round(unit * 0.027) + "px system-ui, sans-serif";
+    ctx.fillStyle = muted;
+    ctx.font = "400 " + Math.round(unit * 0.026) + "px system-ui, sans-serif";
     const supporting = scene.voiceover || scene.visualPrompt;
-    const supportLines = wrapCanvasText(ctx, supporting, width - margin * 2, width > height ? 4 : 7);
-    y += unit * 0.035;
+    const supportLines = wrapCanvasText(ctx, supporting, titleWidth, width > height ? 4 : 4);
+    y += unit * 0.025;
     for (const line of supportLines) {
       ctx.fillText(line, margin, y);
-      y += unit * 0.043;
+      y += unit * 0.041;
+    }
+
+    if (visualType === "stick-figure") {
+      drawStickFigure(ctx, width, height, scene, progress, opacity);
+    } else if (visualType === "diagram") {
+      drawDiagram(ctx, width, height, scene, opacity);
+    } else if (visualType === "quote") {
+      ctx.globalAlpha = opacity * 0.28;
+      ctx.fillStyle = accent;
+      ctx.font = "700 " + Math.round(unit * 0.3) + "px Georgia, serif";
+      ctx.fillText("“", margin, height * 0.78);
+      ctx.globalAlpha = opacity;
     }
 
     const barY = height * 0.91;
-    ctx.fillStyle = "rgba(255,255,255,0.2)";
+    ctx.fillStyle = isPaper ? "rgba(38,51,66,0.18)" : "rgba(255,255,255,0.22)";
     ctx.fillRect(margin, barY, width - margin * 2, Math.max(4, unit * 0.006));
-    ctx.fillStyle = "#e8c28f";
+    ctx.fillStyle = accent;
     ctx.fillRect(margin, barY, (width - margin * 2) * Math.max(0, Math.min(1, progress)), Math.max(4, unit * 0.006));
-    ctx.fillStyle = "rgba(255,255,255,0.6)";
+    ctx.fillStyle = isPaper ? "rgba(38,51,66,0.62)" : "rgba(255,255,255,0.68)";
     ctx.font = "500 " + Math.round(unit * 0.016) + "px system-ui, sans-serif";
     ctx.fillText(project.title, margin, height * 0.955);
+    ctx.restore();
+  }
+
+  function sceneAtTime(project, elapsedMs) {
+    const totalMs = project.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
+    const bounded = Math.max(0, Math.min(totalMs, elapsedMs));
+    let cursor = 0;
+    for (let index = 0; index < project.scenes.length; index++) {
+      const durationMs = project.scenes[index].durationSeconds * 1000;
+      if (bounded < cursor + durationMs || index === project.scenes.length - 1) {
+        return { index, sceneElapsedMs: Math.min(durationMs, bounded - cursor), progress: Math.min(1, Math.max(0, (bounded - cursor) / durationMs)), totalMs };
+      }
+      cursor += durationMs;
+    }
+    return { index: 0, sceneElapsedMs: 0, progress: 0, totalMs };
+  }
+
+  function drawTimelineFrame(ctx, width, height, project, elapsedMs) {
+    const frame = sceneAtTime(project, elapsedMs);
+    const { index, sceneElapsedMs, progress } = frame;
+    const scene = project.scenes[index];
+    const transitionMs = 650;
+    const transitionProgress = Math.min(1, sceneElapsedMs / transitionMs);
+    const transition = scene.transition || "fade";
+    ctx.clearRect(0, 0, width, height);
+    if (index === 0 || sceneElapsedMs >= transitionMs || transition === "cut") {
+      drawScene(ctx, width, height, project, index, progress);
+      return;
+    }
+    const previousIndex = index - 1;
+    if (transition === "fade") {
+      drawScene(ctx, width, height, project, previousIndex, 1, 1 - transitionProgress);
+      drawScene(ctx, width, height, project, index, progress, transitionProgress);
+    } else if (transition === "slide") {
+      ctx.save();
+      ctx.translate(-width * transitionProgress, 0);
+      drawScene(ctx, width, height, project, previousIndex, 1);
+      ctx.restore();
+      ctx.save();
+      ctx.translate(width * (1 - transitionProgress), 0);
+      drawScene(ctx, width, height, project, index, progress);
+      ctx.restore();
+    } else if (transition === "wipe") {
+      drawScene(ctx, width, height, project, previousIndex, 1);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, width * transitionProgress, height);
+      ctx.clip();
+      drawScene(ctx, width, height, project, index, progress);
+      ctx.restore();
+    } else if (transition === "zoom") {
+      drawScene(ctx, width, height, project, previousIndex, 1);
+      ctx.save();
+      ctx.translate(width / 2, height / 2);
+      ctx.scale(0.88 + transitionProgress * 0.12, 0.88 + transitionProgress * 0.12);
+      ctx.translate(-width / 2, -height / 2);
+      drawScene(ctx, width, height, project, index, progress);
+      ctx.restore();
+    } else {
+      drawScene(ctx, width, height, project, index, progress);
+    }
   }
 
   function renderPreview(project, index = 0) {
@@ -290,19 +739,24 @@ export function createMediaWorkspace({ api, toast }) {
       canvas.height = 960;
       canvas.width = Math.round(canvas.height * size.width / size.height);
     }
+    let startMs = 0;
+    for (let cursor = 0; cursor < Math.min(index, project.scenes.length); cursor++) {
+      startMs += project.scenes[cursor].durationSeconds * 1000;
+    }
     const ctx = canvas.getContext("2d");
-    if (ctx) drawScene(ctx, canvas.width, canvas.height, project, Math.min(index, project.scenes.length - 1), 0);
+    if (ctx) drawTimelineFrame(ctx, canvas.width, canvas.height, project, startMs + 1);
   }
 
   function stopPreview() {
     previewing = false;
+    pauseSceneVideos();
     if (previewFrame) cancelAnimationFrame(previewFrame);
     previewFrame = 0;
     const button = byId("media-preview-button");
     if (button) button.textContent = "Preview storyboard";
   }
 
-  function playPreview() {
+  async function playPreview() {
     if (!currentProject) return;
     if (previewing) {
       stopPreview();
@@ -311,13 +765,15 @@ export function createMediaWorkspace({ api, toast }) {
     previewing = true;
     previewStartedAt = performance.now();
     byId("media-preview-button").textContent = "Stop preview";
+    const totalMs = currentProject.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
     const tick = (now) => {
       if (!previewing || !currentProject) return;
-      const index = Math.floor((now - previewStartedAt) / 2200) % currentProject.scenes.length;
-      const progress = ((now - previewStartedAt) % 2200) / 2200;
+      const elapsed = (now - previewStartedAt) % totalMs;
+      const current = sceneAtTime(currentProject, elapsed);
+      activateVideoForScene(currentProject.scenes[current.index]?.id);
       const canvas = byId("media-preview-canvas");
       const ctx = canvas?.getContext("2d");
-      if (ctx) drawScene(ctx, canvas.width, canvas.height, currentProject, index, progress);
+      if (ctx) drawTimelineFrame(ctx, canvas.width, canvas.height, currentProject, elapsed);
       previewFrame = requestAnimationFrame(tick);
     };
     previewFrame = requestAnimationFrame(tick);
@@ -333,6 +789,11 @@ export function createMediaWorkspace({ api, toast }) {
         voiceover: value("voiceover"),
         onScreenText: value("onScreenText"),
         visualPrompt: value("visualPrompt"),
+        visualType: value("visualType"),
+        figurePose: value("figurePose"),
+        animation: value("animation"),
+        background: value("background"),
+        transition: value("transition"),
         durationSeconds: Number(value("durationSeconds"))
       };
     });
@@ -346,7 +807,10 @@ export function createMediaWorkspace({ api, toast }) {
       const refreshed = projects.find((item) => item.id === currentProject.id);
       if (refreshed) selectProject(refreshed.id);
       else {
+        releaseProjectAssets(currentProject.id);
         currentProject = null;
+        selectedProjectId = null;
+        setAudioTrack(null);
         byId("media-editor").classList.add("hidden");
       }
     }
@@ -358,6 +822,7 @@ export function createMediaWorkspace({ api, toast }) {
       title: byId("media-editor-project-title").value,
       audience: byId("media-editor-audience").value,
       tone: byId("media-editor-tone").value,
+      visualStyle: byId("media-editor-visual-style").value,
       scenes: readSceneEditors()
     };
     const result = await api("/api/media/projects/" + encodeURIComponent(currentProject.id), {
@@ -389,8 +854,11 @@ export function createMediaWorkspace({ api, toast }) {
     if (!window.confirm("Delete this media project from your JARVIS workspace?")) return;
     await api("/api/media/projects/" + encodeURIComponent(id), { method: "DELETE" });
     projects = projects.filter((item) => item.id !== id);
+    releaseProjectAssets(id);
     if (currentProject?.id === id) {
       currentProject = null;
+      selectedProjectId = null;
+      setAudioTrack(null);
       byId("media-editor").classList.add("hidden");
       stopPreview();
     }
@@ -430,10 +898,15 @@ export function createMediaWorkspace({ api, toast }) {
       schemaVersion: 1,
       exportedAt: new Date().toISOString(),
       project,
+      localAssetManifest: project.scenes.map((scene) => {
+        const asset = sceneAssets.get(scene.id);
+        return asset ? { sceneId: scene.id, fileName: asset.name, type: asset.type } : null;
+      }).filter(Boolean),
+      audioTrack: audioFile ? { fileName: audioFile.name, sizeBytes: audioFile.size } : null,
       exportNotes: {
-        video: "Use Export WebM to render a silent motion-graphic video in this browser.",
-        audio: "Voiceover is supplied as a script and captions; no audio is recorded or generated.",
-        assets: "Visual directions are prompts only. Add media assets only when you have the rights to use them."
+        video: "The local browser renderer exports the storyboard as a video file when MediaRecorder supports MP4 or WebM.",
+        audio: "A user-selected local audio file may be mixed into the video export. Audio files are not uploaded to the JARVIS server.",
+        assets: "Scene image/video files are selected locally and embedded into the video export. The project JSON contains only an asset manifest, not the file bytes. Use assets you own or have permission to use."
       }
     };
     downloadText(cleanFileName(project.title) + "-project.json", JSON.stringify(bundle, null, 2), "application/json");
@@ -505,7 +978,7 @@ export function createMediaWorkspace({ api, toast }) {
   async function exportWebm() {
     const project = approvedProject();
     if (typeof MediaRecorder === "undefined" || typeof HTMLCanvasElement.prototype.captureStream !== "function") {
-      throw new Error("WebM export is not supported by this browser. Export the storyboard, script, captions or slide PNGs instead.");
+      throw new Error("WebM export is not supported by this browser. Export the storyboard, script, captions or scene PNGs instead.");
     }
     const size = FORMATS[project.format] || FORMATS["vertical-short"];
     const canvas = document.createElement("canvas");
@@ -513,51 +986,88 @@ export function createMediaWorkspace({ api, toast }) {
     canvas.height = Math.round(canvas.width * size.height / size.width);
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("The browser could not create a video canvas.");
-    const stream = canvas.captureStream(15);
-    const mimeTypes = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
-    const mimeType = mimeTypes.find((candidate) => MediaRecorder.isTypeSupported(candidate));
-    const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-    const chunks = [];
-    let animation = 0;
-    const totalMs = project.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
-    const sceneStarts = [];
-    let running = 0;
-    project.scenes.forEach((scene) => {
-      sceneStarts.push(running);
-      running += scene.durationSeconds * 1000;
-    });
 
-    setExportBusy(true, "Rendering a silent WebM at real time. Keep this tab open until the export finishes.");
-    const finished = new Promise((resolve, reject) => {
-      recorder.addEventListener("dataavailable", (event) => {
-        if (event.data?.size) chunks.push(event.data);
-      });
-      recorder.addEventListener("error", () => reject(new Error("The browser stopped the video export unexpectedly.")), { once: true });
-      recorder.addEventListener("stop", () => {
-        stream.getTracks().forEach((track) => track.stop());
-        resolve(new Blob(chunks, { type: recorder.mimeType || "video/webm" }));
-      }, { once: true });
-    });
+    let audioContext = null;
+    let audioSource = null;
+    let audioDestination = null;
+    let canvasStream = null;
+    let stream = null;
+    let animation = 0;
+    let recorder = null;
+    const totalMs = project.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
+    const chunks = [];
+
+    setExportBusy(true, audioFile
+      ? "Preparing the local audio track and rendering the video. Keep this tab open until export finishes."
+      : "Rendering motion graphics without an audio track. Add a local audio file above to include voiceover or music.");
 
     try {
+      canvasStream = canvas.captureStream(20);
+      let audioTracks = [];
+      if (audioFile) {
+        const AudioContextType = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextType || typeof MediaStream === "undefined") {
+          throw new Error("This browser cannot mix a local audio track into WebM. Remove the audio file and export silent motion graphics.");
+        }
+        audioContext = new AudioContextType();
+        await audioContext.resume();
+        const decoded = await audioContext.decodeAudioData(await audioFile.arrayBuffer());
+        audioDestination = audioContext.createMediaStreamDestination();
+        audioSource = audioContext.createBufferSource();
+        audioSource.buffer = decoded;
+        const gain = audioContext.createGain();
+        gain.gain.value = Math.max(0, Math.min(1.5, Number(byId("media-audio-volume")?.value || 1)));
+        audioSource.connect(gain);
+        gain.connect(audioDestination);
+        audioTracks = audioDestination.stream.getAudioTracks();
+      }
+      stream = typeof MediaStream !== "undefined"
+        ? new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks])
+        : canvasStream;
+      const mediaTypes = audioFile
+        ? [
+            { mime: "video/mp4;codecs=avc1.42E01E,mp4a.40.2", extension: ".mp4" },
+            { mime: "video/webm;codecs=vp9,opus", extension: ".webm" },
+            { mime: "video/webm;codecs=vp8,opus", extension: ".webm" },
+            { mime: "video/webm", extension: ".webm" }
+          ]
+        : [
+            { mime: "video/mp4;codecs=avc1.42E01E", extension: ".mp4" },
+            { mime: "video/webm;codecs=vp9", extension: ".webm" },
+            { mime: "video/webm;codecs=vp8", extension: ".webm" },
+            { mime: "video/webm", extension: ".webm" }
+          ];
+      const selectedType = typeof MediaRecorder.isTypeSupported === "function"
+        ? mediaTypes.find((candidate) => MediaRecorder.isTypeSupported(candidate.mime))
+        : null;
+      const mimeType = selectedType?.mime;
+      const extension = selectedType?.extension || ".webm";
+      recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+
+      const finished = new Promise((resolve, reject) => {
+        recorder.addEventListener("dataavailable", (event) => {
+          if (event.data?.size) chunks.push(event.data);
+        });
+        recorder.addEventListener("error", () => reject(new Error("The browser stopped the video export unexpectedly.")), { once: true });
+        recorder.addEventListener("stop", () => {
+          resolve(new Blob(chunks, { type: recorder.mimeType || "video/webm" }));
+        }, { once: true });
+      });
+
+      activateVideoForScene(project.scenes[0]?.id);
       const startedAt = performance.now();
       recorder.start(500);
+      if (audioSource) audioSource.start();
       await new Promise((resolve) => {
         const frame = (now) => {
           const elapsed = Math.min(totalMs, now - startedAt);
-          let index = project.scenes.length - 1;
-          for (let i = 0; i < sceneStarts.length; i++) {
-            if (elapsed < sceneStarts[i] + project.scenes[i].durationSeconds * 1000) {
-              index = i;
-              break;
-            }
-          }
-          const sceneElapsed = elapsed - sceneStarts[index];
-          const sceneProgress = sceneElapsed / (project.scenes[index].durationSeconds * 1000);
-          drawScene(ctx, canvas.width, canvas.height, project, index, sceneProgress);
-          setExportStatus("Rendering scene " + (index + 1) + " of " + project.scenes.length + "…");
+          drawTimelineFrame(ctx, canvas.width, canvas.height, project, elapsed);
+          const current = sceneAtTime(project, elapsed);
+          activateVideoForScene(project.scenes[current.index]?.id);
+          setExportStatus("Rendering scene " + (current.index + 1) + " of " + project.scenes.length +
+            (audioFile ? " · audio mixed locally" : " · no audio track") + "…");
           if (elapsed >= totalMs) {
-            recorder.stop();
+            if (recorder?.state !== "inactive") recorder.stop();
             resolve();
             return;
           }
@@ -566,14 +1076,80 @@ export function createMediaWorkspace({ api, toast }) {
         animation = requestAnimationFrame(frame);
       });
       const blob = await finished;
-      downloadBlob(cleanFileName(project.title) + ".webm", blob);
-      setExportStatus("WebM export finished. This file contains motion graphics and no audio track; use the script or SRT captions for voiceover editing.");
+      const suffix = audioFile ? "-with-audio" + extension : extension;
+      downloadBlob(cleanFileName(project.title) + suffix, blob);
+      setExportStatus("Video export finished as " + extension.slice(1).toUpperCase() +
+        (audioFile ? " with the selected local audio track." : " without an audio track.") +
+        " Preview the downloaded file before using it.");
     } finally {
       if (animation) cancelAnimationFrame(animation);
-      if (recorder.state !== "inactive") recorder.stop();
-      stream.getTracks().forEach((track) => track.stop());
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+      pauseSceneVideos();
+      for (const mediaStream of [stream, canvasStream, audioDestination?.stream]) {
+        mediaStream?.getTracks().forEach((track) => track.stop());
+      }
+      try { audioSource?.stop(); } catch { /* source may already have ended */ }
+      if (audioContext && audioContext.state !== "closed") await audioContext.close().catch(() => {});
       setExportBusy(false);
     }
+  }
+
+  function setAudioTrack(file) {
+    const preview = byId("media-audio-preview");
+    if (audioObjectUrl) {
+      URL.revokeObjectURL(audioObjectUrl);
+      audioObjectUrl = null;
+    }
+    audioFile = null;
+    if (!file) {
+      preview?.pause();
+      if (preview) {
+        preview.removeAttribute("src");
+        preview.classList.add("hidden");
+        preview.load();
+      }
+      setExportStatus("No audio track selected. The next WebM export will be silent.");
+      setEditorControls();
+      return;
+    }
+    if (!String(file.type || "").toLowerCase().startsWith("audio/")) {
+      throw new Error("Choose an audio file such as MP3, WAV, M4A or OGG.");
+    }
+    if (file.size > 60 * 1024 * 1024) {
+      throw new Error("Audio files must be 60 MiB or smaller for in-browser export.");
+    }
+    audioFile = file;
+    audioObjectUrl = URL.createObjectURL(file);
+    if (preview) {
+      preview.src = audioObjectUrl;
+      preview.classList.remove("hidden");
+      preview.load();
+    }
+    setExportStatus("Local audio selected: " + file.name + ". It will be mixed into the next WebM export on this device.");
+    setEditorControls();
+  }
+
+  async function createFromPrompt(message, intent) {
+    if (!intent || !intent.brief) throw new Error("Describe the video or animation you want to make.");
+    await refresh();
+    const result = await api("/api/media/drafts", {
+      method: "POST",
+      body: JSON.stringify({
+        title: intent.title,
+        brief: intent.brief,
+        format: intent.format,
+        platform: intent.platform,
+        language: intent.language,
+        tone: intent.tone,
+        audience: intent.audience,
+        visualStyle: intent.visualStyle
+      })
+    });
+    projects.unshift(result.project);
+    renderProjectList();
+    selectProject(result.project.id);
+    setStatus("Created a private draft from your instruction. Review each scene, adjust its motion and audio, then approve it before export.");
+    return result.project;
   }
 
   function addScene() {
@@ -586,6 +1162,11 @@ export function createMediaWorkspace({ api, toast }) {
       onScreenText: "New idea",
       visualPrompt: "Describe a simple visual that supports the narration.",
       durationSeconds: 8,
+      visualType: byId("media-editor-visual-style").value === "stick-figure-story" ? "stick-figure" : "auto",
+      figurePose: "walk",
+      animation: "walk",
+      background: "midnight",
+      transition: "fade",
       order: currentProject.scenes.length + 1
     });
     renderSceneEditors();
@@ -609,7 +1190,8 @@ export function createMediaWorkspace({ api, toast }) {
           platform: byId("media-platform").value,
           language: byId("media-language").value,
           tone: byId("media-tone").value,
-          audience: byId("media-audience").value
+          audience: byId("media-audience").value,
+          visualStyle: byId("media-visual-style").value
         };
         const result = await api("/api/media/drafts", { method: "POST", body: JSON.stringify(payload) });
         projects.unshift(result.project);
@@ -624,7 +1206,7 @@ export function createMediaWorkspace({ api, toast }) {
       }
     });
 
-    byId("media-editor-scenes")?.addEventListener("input", (event) => {
+    const updateSceneField = (event) => {
       const field = event.target?.dataset?.field;
       const card = event.target?.closest?.(".media-scene-editor");
       if (!field || !card || !currentProject) return;
@@ -635,7 +1217,9 @@ export function createMediaWorkspace({ api, toast }) {
         ? Number(event.target.value)
         : event.target.value;
       renderPreview(currentProject, index);
-    });
+    };
+    byId("media-editor-scenes")?.addEventListener("input", updateSceneField);
+    byId("media-editor-scenes")?.addEventListener("change", updateSceneField);
     byId("media-add-scene")?.addEventListener("click", addScene);
     byId("media-save-button")?.addEventListener("click", async () => {
       const button = byId("media-save-button");
@@ -671,6 +1255,17 @@ export function createMediaWorkspace({ api, toast }) {
       try { await exportWebm(); }
       catch (error) { setExportStatus(error.message, true); setExportBusy(false); }
     });
+    byId("media-audio-file")?.addEventListener("change", (event) => {
+      try { setAudioTrack(event.target.files?.[0] || null); }
+      catch (error) {
+        event.target.value = "";
+        setAudioTrack(null);
+        setExportStatus(error.message, true);
+      }
+    });
+    byId("media-audio-volume")?.addEventListener("input", (event) => {
+      setExportStatus("Export volume: " + Math.round(Number(event.target.value) * 100) + "%.");
+    });
   }
 
   async function open() {
@@ -683,5 +1278,5 @@ export function createMediaWorkspace({ api, toast }) {
     }
   }
 
-  return { open, refresh };
+  return { open, refresh, createFromPrompt };
 }
