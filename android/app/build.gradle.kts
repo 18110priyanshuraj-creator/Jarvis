@@ -13,8 +13,29 @@ android {
         applicationId = "com.priyanshuraj.jarviscompanion"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.8.1-web-workspace"
+        versionCode = 7
+        versionName = "0.8.2-release-candidate"
+    }
+
+    // Production signing material is injected only by the protected release workflow.
+    // Debug builds remain usable without any signing secrets.
+    signingConfigs {
+        create("release") {
+            val keystorePath = providers.environmentVariable("ANDROID_SIGNING_KEYSTORE_PATH").orNull
+            if (!keystorePath.isNullOrBlank()) {
+                storeFile = file(keystorePath)
+            }
+            storePassword = providers.environmentVariable("ANDROID_SIGNING_STORE_PASSWORD").orNull
+            keyAlias = providers.environmentVariable("ANDROID_SIGNING_KEY_ALIAS").orNull
+            keyPassword = providers.environmentVariable("ANDROID_SIGNING_KEY_PASSWORD").orNull
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
     }
 
     compileOptions {
@@ -45,4 +66,28 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // Android local unit tests use the real JVM JSON implementation, not android.jar stubs.
     testImplementation("org.json:json:20260814")
+}
+
+
+val validateReleaseSigning = tasks.register("validateReleaseSigning") {
+    doLast {
+        val required = listOf(
+            "ANDROID_SIGNING_KEYSTORE_PATH",
+            "ANDROID_SIGNING_STORE_PASSWORD",
+            "ANDROID_SIGNING_KEY_ALIAS",
+            "ANDROID_SIGNING_KEY_PASSWORD"
+        )
+        val missing = required.filter { System.getenv(it).isNullOrBlank() }
+        if (missing.isNotEmpty()) {
+            throw GradleException("Release signing is not configured. Missing environment values: " + missing.joinToString(", "))
+        }
+        val keystore = file(System.getenv("ANDROID_SIGNING_KEYSTORE_PATH")!!)
+        if (!keystore.isFile || keystore.length() <= 0L) {
+            throw GradleException("The configured Android release keystore file is missing or empty.")
+        }
+    }
+}
+
+tasks.matching { it.name == "validateSigningRelease" }.configureEach {
+    dependsOn(validateReleaseSigning)
 }
