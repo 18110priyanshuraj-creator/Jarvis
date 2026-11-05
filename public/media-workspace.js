@@ -242,6 +242,12 @@ export function createMediaWorkspace({ api, toast }) {
       const element = byId(id);
       if (element) element.disabled = !approved || exporting;
     }
+    const audioInput = byId("media-audio-file");
+    if (audioInput) audioInput.disabled = exporting;
+    const volume = byId("media-audio-volume");
+    if (volume) volume.disabled = exporting;
+    const exportButton = byId("media-export-webm");
+    if (exportButton) exportButton.textContent = audioFile ? "Export video + audio" : "Export video (silent)";
     const status = byId("media-export-status");
     if (status) status.textContent = approved
       ? "Approved storyboard. Export files are generated locally in this browser."
@@ -894,6 +900,64 @@ export function createMediaWorkspace({ api, toast }) {
     }
   }
 
+  function setAudioTrack(file) {
+    const preview = byId("media-audio-preview");
+    if (audioObjectUrl) {
+      URL.revokeObjectURL(audioObjectUrl);
+      audioObjectUrl = null;
+    }
+    audioFile = null;
+    if (!file) {
+      preview?.pause();
+      if (preview) {
+        preview.removeAttribute("src");
+        preview.classList.add("hidden");
+        preview.load();
+      }
+      setExportStatus("No audio track selected. The next WebM export will be silent.");
+      setEditorControls();
+      return;
+    }
+    if (!String(file.type || "").toLowerCase().startsWith("audio/")) {
+      throw new Error("Choose an audio file such as MP3, WAV, M4A or OGG.");
+    }
+    if (file.size > 60 * 1024 * 1024) {
+      throw new Error("Audio files must be 60 MiB or smaller for in-browser export.");
+    }
+    audioFile = file;
+    audioObjectUrl = URL.createObjectURL(file);
+    if (preview) {
+      preview.src = audioObjectUrl;
+      preview.classList.remove("hidden");
+      preview.load();
+    }
+    setExportStatus("Local audio selected: " + file.name + ". It will be mixed into the next WebM export on this device.");
+    setEditorControls();
+  }
+
+  async function createFromPrompt(message, intent) {
+    if (!intent || !intent.brief) throw new Error("Describe the video or animation you want to make.");
+    await refresh();
+    const result = await api("/api/media/drafts", {
+      method: "POST",
+      body: JSON.stringify({
+        title: intent.title,
+        brief: intent.brief,
+        format: intent.format,
+        platform: intent.platform,
+        language: intent.language,
+        tone: intent.tone,
+        audience: intent.audience,
+        visualStyle: intent.visualStyle
+      })
+    });
+    projects.unshift(result.project);
+    renderProjectList();
+    selectProject(result.project.id);
+    setStatus("Created a private draft from your instruction. Review each scene, adjust its motion and audio, then approve it before export.");
+    return result.project;
+  }
+
   function addScene() {
     if (!currentProject || currentProject.status !== "draft") return;
     if (currentProject.scenes.length >= MAX_SCENES) return;
@@ -995,6 +1059,17 @@ export function createMediaWorkspace({ api, toast }) {
       try { await exportWebm(); }
       catch (error) { setExportStatus(error.message, true); setExportBusy(false); }
     });
+    byId("media-audio-file")?.addEventListener("change", (event) => {
+      try { setAudioTrack(event.target.files?.[0] || null); }
+      catch (error) {
+        event.target.value = "";
+        setAudioTrack(null);
+        setExportStatus(error.message, true);
+      }
+    });
+    byId("media-audio-volume")?.addEventListener("input", (event) => {
+      setExportStatus("Export volume: " + Math.round(Number(event.target.value) * 100) + "%.");
+    });
   }
 
   async function open() {
@@ -1007,5 +1082,5 @@ export function createMediaWorkspace({ api, toast }) {
     }
   }
 
-  return { open, refresh };
+  return { open, refresh, createFromPrompt };
 }
