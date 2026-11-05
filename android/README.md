@@ -2,6 +2,15 @@
 
 This is an additive native Android companion for the existing JARVIS Node.js application. It does not replace the web dashboard or the existing offline brain.
 
+## Website-first Android app
+
+The launcher opens the deployed JARVIS Workspace at `https://jarvis-personal-assistant-nutriton.vercel.app` on a fresh install. The workspace runs inside the Android app's HTTPS-only WebView; sign in with the same web account used in a browser. Pairing is not required just to open and use the website.
+
+- The Workspace toolbar's Home control opens the native JARVIS orb.
+- Setup retains device pairing, voice, privacy and Android permission controls.
+- If a custom server URL has already been saved, the app keeps using it instead of replacing it with the default deployment.
+- The website requires an internet connection; it is not copied into the APK as an offline website bundle.
+
 ## Phase 1
 
 - Short-lived, single-use device pairing code generated from the authenticated web dashboard.
