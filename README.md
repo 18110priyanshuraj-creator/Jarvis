@@ -481,3 +481,10 @@ The current `docs/JARVIS_PHASE_ROADMAP.md` supersedes historical component label
 - Binary attachments are excluded from the JSON data export; download each attachment separately.
 
 Implementation contract: `docs/JARVIS_PHASE_20_KNOWLEDGE_MANAGER.md`. Physical Galaxy Tab A9 file-picker/download testing remains Phase 31.
+
+## Android release and final acceptance
+
+Main includes the advanced multitrack Media Studio, bounded Canva accessibility drag support, and Creator Campaign Studio. See [JARVIS release and acceptance status](docs/JARVIS_RELEASE_AND_ACCEPTANCE.md) for the exact feature boundaries, the signed-APK workflow, required private GitHub Actions secrets, and the physical Galaxy Tab A9 acceptance checklist.
+
+The regular CI workflow produces a **debug** APK for testing. A signed release APK is produced separately by `.github/workflows/release-android.yml` after the owner configures the four Android signing secrets. A green CI build is not proof of physical-device or Canva UI acceptance.
+
