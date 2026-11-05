@@ -461,6 +461,7 @@ export function createMediaWorkspace({ api, toast }) {
         { time: duration, speed: 1, easing: "linear", curve: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 } }
       ],
       chromaKey: { enabled: false, color: "#00ff00", similarity: 0.34, softness: 0.12 },
+      mask: { shape: "none", x: 0, y: 0, width: 1, height: 1, feather: 0, invert: false },
       visible: true,
       muted: false
     };
@@ -593,6 +594,17 @@ export function createMediaWorkspace({ api, toast }) {
     keying.append(colorField);
     range(keying, "Similarity", clip.chromaKey?.similarity ?? 0.34, "chromaKey.similarity", 0.01, 1, 0.01);
     range(keying, "Edge softness", clip.chromaKey?.softness ?? 0.12, "chromaKey.softness", 0, 1, 0.01);
+
+    const maskBox = section("Shape mask");
+    select(maskBox, "Mask shape", clip.mask?.shape || "none", "mask.shape", [
+      ["none", "No mask"], ["rectangle", "Rectangle"], ["ellipse", "Ellipse / circle"], ["rounded", "Rounded rectangle"]
+    ]);
+    toggle(maskBox, "Invert mask", clip.mask?.invert === true, "mask.invert");
+    field(maskBox, "Mask X", clip.mask?.x ?? 0, "mask.x", { min: -1, max: 1, step: 0.01 });
+    field(maskBox, "Mask Y", clip.mask?.y ?? 0, "mask.y", { min: -1, max: 1, step: 0.01 });
+    range(maskBox, "Mask width", clip.mask?.width ?? 1, "mask.width", 0.05, 2, 0.01);
+    range(maskBox, "Mask height", clip.mask?.height ?? 1, "mask.height", 0.05, 2, 0.01);
+    range(maskBox, "Mask feather", clip.mask?.feather ?? 0, "mask.feather", 0, 0.5, 0.01);
 
     const speedBox = section("Speed ramp");
     const speedAdd = makeElement("button", "item-action", "Add speed point");
@@ -973,6 +985,59 @@ export function createMediaWorkspace({ api, toast }) {
     }
   }
 
+  function applyTimelineMask(asset, source, mask) {
+    if (!mask || mask.shape === "none") return source;
+    const sourceWidth = source.width || source.videoWidth || source.naturalWidth || 0;
+    const sourceHeight = source.height || source.videoHeight || source.naturalHeight || 0;
+    if (!sourceWidth || !sourceHeight) return source;
+    const maskCanvas = asset.maskCanvas || document.createElement("canvas");
+    asset.maskCanvas = maskCanvas;
+    maskCanvas.width = sourceWidth;
+    maskCanvas.height = sourceHeight;
+    const maskContext = maskCanvas.getContext("2d");
+    if (!maskContext) return source;
+    maskContext.clearRect(0, 0, sourceWidth, sourceHeight);
+    maskContext.fillStyle = mask.invert ? "#fff" : "#000";
+    if (mask.invert) maskContext.fillRect(0, 0, sourceWidth, sourceHeight);
+    const centerX = sourceWidth * (0.5 + Number(mask.x || 0) * 0.5);
+    const centerY = sourceHeight * (0.5 + Number(mask.y || 0) * 0.5);
+    const maskWidth = sourceWidth * Math.max(0.05, Math.min(2, Number(mask.width || 1)));
+    const maskHeight = sourceHeight * Math.max(0.05, Math.min(2, Number(mask.height || 1)));
+    const left = centerX - maskWidth / 2;
+    const top = centerY - maskHeight / 2;
+    const featherPx = Math.max(0, Math.min(0.5, Number(mask.feather || 0))) * Math.min(sourceWidth, sourceHeight);
+    const shapeColor = mask.invert ? "#000" : "#fff";
+    maskContext.save();
+    maskContext.fillStyle = shapeColor;
+    if (featherPx > 0) {
+      maskContext.shadowColor = shapeColor;
+      maskContext.shadowBlur = featherPx;
+    }
+    maskContext.beginPath();
+    if (mask.shape === "ellipse") {
+      maskContext.ellipse(centerX, centerY, maskWidth / 2, maskHeight / 2, 0, 0, Math.PI * 2);
+    } else if (mask.shape === "rounded" && typeof maskContext.roundRect === "function") {
+      maskContext.roundRect(left, top, maskWidth, maskHeight, Math.min(maskWidth, maskHeight) * 0.12);
+    } else {
+      maskContext.rect(left, top, maskWidth, maskHeight);
+    }
+    maskContext.fill();
+    maskContext.restore();
+
+    const output = asset.compositeCanvas || document.createElement("canvas");
+    asset.compositeCanvas = output;
+    output.width = sourceWidth;
+    output.height = sourceHeight;
+    const outputContext = output.getContext("2d");
+    if (!outputContext) return source;
+    outputContext.clearRect(0, 0, sourceWidth, sourceHeight);
+    outputContext.drawImage(source, 0, 0, sourceWidth, sourceHeight);
+    outputContext.globalCompositeOperation = "destination-in";
+    outputContext.drawImage(maskCanvas, 0, 0);
+    outputContext.globalCompositeOperation = "source-over";
+    return output;
+  }
+
   function drawTimelineOverlays(ctx, width, height, project, elapsedMs) {
     const time = elapsedMs / 1000;
     for (const track of project.tracks || []) {
@@ -1004,6 +1069,7 @@ export function createMediaWorkspace({ api, toast }) {
         }
         let source = element;
         if (clip.chromaKey?.enabled) source = keyedFrameForAsset(asset, width, height, clip.chromaKey) || element;
+        if (clip.mask?.shape && clip.mask.shape !== "none") source = applyTimelineMask(asset, source, clip.mask) || source;
         ctx.save();
         ctx.globalAlpha = Math.max(0, Math.min(1, transform.opacity));
         ctx.translate(width * (0.5 + transform.x), height * (0.5 + transform.y));
