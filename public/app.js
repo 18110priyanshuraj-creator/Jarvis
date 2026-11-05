@@ -8,6 +8,7 @@ import { createAgentEvolution } from "./agent-evolution.js";
 import { createAutoHealWorkspace } from "./auto-heal.js";
 import { createSpecialistWorkersWorkspace } from "./specialist-workers.js";
 import { createScheduleWorkspace } from "./schedule-workspace.js";
+import { parseMediaCreationIntent } from "./media-intent.js";
 const $ = (selector) => document.querySelector(selector);
 const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, taskPlan: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", knowledgeFilter: "all", knowledgeSummary: { total: 0, trusted: 0, unreviewed: 0, rejected: 0 }, diagnostics: null, activeView: "chat" };
 let toastTimer;
@@ -2298,6 +2299,16 @@ $("#chat-form").addEventListener("submit", async (event) => {
         setOrbitalStatus("idle", "Request sent to Android");
         return;
       }
+    }
+    const mediaIntent = parseMediaCreationIntent(message);
+    if (mediaIntent) {
+      const project = await mediaWorkspace.createFromPrompt(message, mediaIntent);
+      setView("media");
+      body.textContent = "Created a private " + project.visualStyle.replace(/-/g, " ") +
+        " storyboard draft: " + project.title + ". Review the scenes, motions and audio in Media Studio before approving and exporting.";
+      awaitingAssistantReply = false;
+      setOrbitalStatus("idle", "Media Studio draft created");
+      return;
     }
     const data = await api("/api/chat", { method: "POST", body: JSON.stringify({ message, applicationId: "web-dashboard" }) });
     if ($("#speak-toggle").checked || voiceModeActive) {
