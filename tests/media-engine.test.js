@@ -57,6 +57,31 @@ test("creates editable stick-figure scenes with visual and motion metadata", asy
   assert.ok(project.scenes.every((scene) => ["cut", "fade", "slide", "wipe", "zoom"].includes(scene.transition)));
 });
 
+test("supports validated camera movements and bounded per-scene colour grading", () => {
+  const project = normalizeMediaProject({
+    title: "Advanced camera and colour test",
+    brief,
+    scenes: [
+      {
+        heading: "Push in",
+        voiceover: "A clear opening.",
+        cameraMotion: "ken-burns",
+        grade: { brightness: 128, contrast: 115, saturation: 145, blur: 2.5 }
+      },
+      {
+        heading: "Fallback and bounds",
+        voiceover: "A clear ending.",
+        cameraMotion: "run-script",
+        grade: { brightness: 300, contrast: -20, saturation: 250, blur: 90 }
+      }
+    ]
+  });
+  assert.equal(project.scenes[0].cameraMotion, "ken-burns");
+  assert.deepEqual(project.scenes[0].grade, { brightness: 128, contrast: 115, saturation: 145, blur: 2.5 });
+  assert.equal(project.scenes[1].cameraMotion, "static");
+  assert.deepEqual(project.scenes[1].grade, { brightness: 150, contrast: 50, saturation: 180, blur: 12 });
+});
+
 test("rejects unknown visual selectors by falling back to the supported design defaults", async () => {
   const project = await makeDraft({
     visualStyle: "arbitrary-html",
