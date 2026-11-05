@@ -22,6 +22,8 @@ test("creates a complete local campaign pack without requiring AI or OAuth", asy
   assert.equal(pack.socialDrafts.length, 3);
   assert.deepEqual(new Set(pack.socialDrafts.map(item => item.platform)), new Set(["instagram", "youtube-shorts", "facebook"]));
   assert.ok(pack.leadMagnet.sections.length >= 2);
+  assert.equal(pack.leadMachine.commentKeyword.length > 0, true);
+  assert.match(pack.leadMachine.followUpRule, /Do not send repeated unsolicited follow-ups/);
   assert.ok(pack.ideas.length >= 3);
 });
 
