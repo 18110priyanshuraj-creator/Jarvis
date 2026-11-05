@@ -390,7 +390,11 @@ export function createMediaWorkspace({ api, toast }) {
     ctx.fillStyle = "rgba(255,255,255,0.08)";
     for (const x of [left, right]) {
       ctx.beginPath();
-      ctx.roundRect(x, y - boxHeight / 2, boxWidth, boxHeight, unit * 0.025);
+      if (typeof ctx.roundRect === "function") {
+        ctx.roundRect(x, y - boxHeight / 2, boxWidth, boxHeight, unit * 0.025);
+      } else {
+        ctx.rect(x, y - boxHeight / 2, boxWidth, boxHeight);
+      }
       ctx.fill();
       ctx.stroke();
     }
