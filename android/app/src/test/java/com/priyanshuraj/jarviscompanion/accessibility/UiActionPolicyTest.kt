@@ -113,4 +113,29 @@ class UiActionPolicyTest {
         assertEquals(UiActionPolicyCode.TARGET_NOT_CLICKABLE,
             UiActionPolicy.validateScrollTarget(true, true, false).code)
     }
+
+    @Test
+    fun dragTargetsRequireExactAccessibleActionsAndRejectProtectedItems() {
+        assertTrue(UiActionPolicy.validateDragTarget(
+            "Presenter clip 1", listOf("Presenter clip 1", "Video timeline"),
+            visible = true, enabled = true, dragActionAvailable = true
+        ).allowed)
+
+        assertEquals(UiActionPolicyCode.TARGET_NOT_DRAGGABLE,
+            UiActionPolicy.validateDragTarget(
+                "Presenter clip 1", listOf("Presenter clip 1"),
+                visible = true, enabled = true, dragActionAvailable = false
+            ).code)
+
+        assertEquals(UiActionPolicyCode.PROTECTED_CONTROL,
+            UiActionPolicy.validateDragTarget(
+                "Continue", listOf("Continue", "Delete project"),
+                visible = true, enabled = true, dragActionAvailable = true
+            ).code)
+
+        assertEquals(UiActionPolicyCode.TARGET_NOT_VISIBLE,
+            UiActionPolicy.validateDragTarget(
+                "Clip", emptyList(), visible = false, enabled = true, dragActionAvailable = true
+            ).code)
+    }
 }
