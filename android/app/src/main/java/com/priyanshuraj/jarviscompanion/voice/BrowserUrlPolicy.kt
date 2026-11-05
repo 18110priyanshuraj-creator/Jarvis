@@ -57,6 +57,14 @@ object BrowserUrlPolicy {
         if (!host.contains(".")) return null
         if (uri.port !in -1..65535) return null
 
+        val sensitiveQueryKeys = setOf(
+            "token", "access_token", "refresh_token", "auth", "authorization",
+            "password", "passwd", "pin", "otp", "code", "session", "sessionid", "api_key"
+        )
+        if (uri.query.orEmpty().split('&').any { parameter ->
+            parameter.substringBefore('=').lowercase(Locale.ROOT) in sensitiveQueryKeys
+        }) return null
+
         val normalized = uri.toASCIIString()
         if (!uri.rawPath.isNullOrEmpty()) return normalized
 
