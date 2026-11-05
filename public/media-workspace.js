@@ -290,67 +290,274 @@ export function createMediaWorkspace({ api, toast }) {
     return lines;
   }
 
-  function drawScene(ctx, width, height, project, index, progress = 0) {
+  function drawStickFigure(ctx, width, height, scene, progress, opacity) {
+    const unit = Math.min(width, height);
+    const centerX = width > height ? width * 0.78 : width * 0.5;
+    const groundY = height * 0.86;
+    const animation = scene.animation || "rise";
+    const pose = scene.figurePose || "point";
+    const phase = progress * Math.PI * 2;
+    const bob = animation === "bounce" ? Math.abs(Math.sin(phase * 2)) * unit * 0.018
+      : animation === "rise" ? (1 - Math.min(1, progress * 2)) * unit * 0.06 : 0;
+    const scale = animation === "bounce" ? 0.94 + Math.abs(Math.sin(phase * 2)) * 0.08 : 1;
+    const torso = 0.29;
+    const armLength = 0.23;
+    const legLength = 0.28;
+    let leftArm = 2.35;
+    let rightArm = 0.78;
+    let leftLeg = 1.92;
+    let rightLeg = 1.22;
+    if (pose === "walk" || animation === "walk") {
+      const swing = Math.sin(phase) * 0.58;
+      leftArm = 2.0 + swing;
+      rightArm = 1.14 - swing;
+      leftLeg = 1.55 + swing;
+      rightLeg = 1.58 - swing;
+    } else if (pose === "point") {
+      rightArm = -0.62 + (animation === "gesture" ? Math.sin(phase) * 0.12 : 0);
+      leftArm = 2.55;
+    } else if (pose === "think") {
+      rightArm = 3.88;
+      leftArm = 2.45;
+    } else if (pose === "celebrate") {
+      leftArm = 4.05;
+      rightArm = 5.38;
+      leftLeg = 1.9;
+      rightLeg = 1.25;
+    }
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.translate(centerX, groundY - bob);
+    ctx.scale(unit * 0.72 * scale, unit * 0.72 * scale);
+    ctx.strokeStyle = "#f7e6c7";
+    ctx.fillStyle = "#f7e6c7";
+    ctx.lineWidth = 0.018;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.ellipse(0, 0.008, 0.23, 0.025, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(2, 5, 12, 0.38)";
+    ctx.fill();
+    ctx.fillStyle = "#f7e6c7";
+    ctx.beginPath();
+    ctx.arc(0, -0.79, 0.09, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(-0.028, -0.80, 0.008, 0, Math.PI * 2);
+    ctx.arc(0.028, -0.80, 0.008, 0, Math.PI * 2);
+    ctx.fillStyle = "#17202b";
+    ctx.fill();
+    ctx.strokeStyle = "#f7e6c7";
+    ctx.beginPath();
+    ctx.moveTo(0, -0.69);
+    ctx.lineTo(0, -0.69 + torso);
+    ctx.stroke();
+    const shoulderY = -0.61;
+    const hipY = -0.40;
+    const drawLimb = (x, y, angle, length) => {
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length);
+      ctx.stroke();
+    };
+    drawLimb(0, shoulderY, leftArm, armLength);
+    drawLimb(0, shoulderY, rightArm, armLength);
+    drawLimb(0, hipY, leftLeg, legLength);
+    drawLimb(0, hipY, rightLeg, legLength);
+    ctx.restore();
+  }
+
+  function drawDiagram(ctx, width, height, scene, opacity) {
+    const unit = Math.min(width, height);
+    const y = height * 0.68;
+    const boxWidth = Math.min(width * 0.31, unit * 0.38);
+    const boxHeight = unit * 0.20;
+    const left = width * 0.15;
+    const right = width - left - boxWidth;
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.lineWidth = Math.max(2, unit * 0.004);
+    ctx.strokeStyle = "#f0cf9f";
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    for (const x of [left, right]) {
+      ctx.beginPath();
+      ctx.roundRect(x, y - boxHeight / 2, boxWidth, boxHeight, unit * 0.025);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#f7e6c7";
+    ctx.font = "600 " + Math.round(unit * 0.032) + "px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("INPUT", left + boxWidth / 2, y + unit * 0.01);
+    ctx.fillText("RESULT", right + boxWidth / 2, y + unit * 0.01);
+    ctx.strokeStyle = "#e8c28f";
+    ctx.beginPath();
+    ctx.moveTo(left + boxWidth + unit * 0.035, y);
+    ctx.lineTo(right - unit * 0.035, y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(right - unit * 0.075, y - unit * 0.035);
+    ctx.lineTo(right - unit * 0.035, y);
+    ctx.lineTo(right - unit * 0.075, y + unit * 0.035);
+    ctx.stroke();
+    ctx.textAlign = "start";
+    ctx.restore();
+  }
+
+  function drawScene(ctx, width, height, project, index, progress = 0, opacity = 1) {
     const scene = project.scenes[index];
+    if (!scene) return;
+    const palettes = {
+      midnight: ["#07111f", "#172840", "#4b2e32"],
+      sunset: ["#321b35", "#9a4d48", "#edac73"],
+      paper: ["#f4ead8", "#d7c8b0", "#9d9a8e"],
+      mint: ["#0e3435", "#27786c", "#b5bb8a"],
+      violet: ["#211b47", "#55418c", "#b16b9d"]
+    };
+    const palette = palettes[scene.background] || palettes.midnight;
+    ctx.save();
+    ctx.globalAlpha = opacity;
     const gradient = ctx.createLinearGradient(0, 0, width, height);
-    gradient.addColorStop(0, "#07111f");
-    gradient.addColorStop(0.56, "#172840");
-    gradient.addColorStop(1, "#4b2e32");
+    gradient.addColorStop(0, palette[0]);
+    gradient.addColorStop(0.56, palette[1]);
+    gradient.addColorStop(1, palette[2]);
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
 
     const unit = Math.min(width, height);
-    ctx.globalAlpha = 0.18;
-    ctx.fillStyle = "#e6bd86";
+    const light = scene.background === "paper" ? "rgba(56,48,40,0.10)" : "rgba(255,255,255,0.14)";
+    ctx.globalAlpha = opacity * 0.22;
+    ctx.fillStyle = light;
     ctx.beginPath();
     ctx.arc(width * (0.82 - progress * 0.06), height * 0.2, unit * 0.2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = 0.12;
-    ctx.strokeStyle = "#f2d5a8";
+    ctx.globalAlpha = opacity * 0.12;
+    ctx.strokeStyle = scene.background === "paper" ? "#655d51" : "#f2d5a8";
     ctx.lineWidth = Math.max(2, unit * 0.003);
     for (let n = 1; n <= 4; n++) {
       ctx.beginPath();
       ctx.arc(width * 0.18, height * 0.76, unit * (0.08 + n * 0.035), 0, Math.PI * 2);
       ctx.stroke();
     }
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = opacity;
 
+    const isPaper = scene.background === "paper";
+    const foreground = isPaper ? "#263342" : "#f8f3eb";
+    const accent = isPaper ? "#87613d" : "#e8c28f";
+    const muted = isPaper ? "rgba(38,51,66,0.76)" : "rgba(248,243,235,0.82)";
+    const visualType = scene.visualType === "auto"
+      ? (project.visualStyle === "stick-figure-story" ? "stick-figure" : "diagram")
+      : scene.visualType;
     const margin = width * 0.1;
-    ctx.fillStyle = "#e8c28f";
+    ctx.fillStyle = accent;
     ctx.font = "700 " + Math.round(unit * 0.021) + "px system-ui, sans-serif";
     ctx.fillText("JARVIS STUDIO", margin, height * 0.1);
-    ctx.fillStyle = "rgba(255,255,255,0.48)";
+    ctx.fillStyle = isPaper ? "rgba(38,51,66,0.58)" : "rgba(255,255,255,0.58)";
     ctx.font = "500 " + Math.round(unit * 0.018) + "px system-ui, sans-serif";
     ctx.fillText("SCENE " + (index + 1) + " / " + project.scenes.length, margin, height * 0.145);
 
-    ctx.fillStyle = "#f8f3eb";
+    const titleWidth = visualType === "stick-figure" && width > height ? width * 0.56 : width - margin * 2;
+    ctx.fillStyle = foreground;
     ctx.font = "700 " + Math.round(unit * (width > height ? 0.068 : 0.061)) + "px system-ui, sans-serif";
-    const titleLines = wrapCanvasText(ctx, scene.onScreenText || scene.heading, width - margin * 2, width > height ? 3 : 5);
+    const titleLines = wrapCanvasText(ctx, scene.onScreenText || scene.heading, titleWidth, width > height ? 3 : 4);
     const titleLineHeight = unit * 0.085;
-    let y = height * 0.39;
+    let y = visualType === "stick-figure" ? height * 0.34 : height * 0.39;
     for (const line of titleLines) {
       ctx.fillText(line, margin, y);
       y += titleLineHeight;
     }
 
-    ctx.fillStyle = "rgba(248,243,235,0.82)";
-    ctx.font = "400 " + Math.round(unit * 0.027) + "px system-ui, sans-serif";
+    ctx.fillStyle = muted;
+    ctx.font = "400 " + Math.round(unit * 0.026) + "px system-ui, sans-serif";
     const supporting = scene.voiceover || scene.visualPrompt;
-    const supportLines = wrapCanvasText(ctx, supporting, width - margin * 2, width > height ? 4 : 7);
-    y += unit * 0.035;
+    const supportLines = wrapCanvasText(ctx, supporting, titleWidth, width > height ? 4 : 4);
+    y += unit * 0.025;
     for (const line of supportLines) {
       ctx.fillText(line, margin, y);
-      y += unit * 0.043;
+      y += unit * 0.041;
+    }
+
+    if (visualType === "stick-figure") {
+      drawStickFigure(ctx, width, height, scene, progress, opacity);
+    } else if (visualType === "diagram") {
+      drawDiagram(ctx, width, height, scene, opacity);
+    } else if (visualType === "quote") {
+      ctx.globalAlpha = opacity * 0.28;
+      ctx.fillStyle = accent;
+      ctx.font = "700 " + Math.round(unit * 0.3) + "px Georgia, serif";
+      ctx.fillText("“", margin, height * 0.78);
+      ctx.globalAlpha = opacity;
     }
 
     const barY = height * 0.91;
-    ctx.fillStyle = "rgba(255,255,255,0.2)";
+    ctx.fillStyle = isPaper ? "rgba(38,51,66,0.18)" : "rgba(255,255,255,0.22)";
     ctx.fillRect(margin, barY, width - margin * 2, Math.max(4, unit * 0.006));
-    ctx.fillStyle = "#e8c28f";
+    ctx.fillStyle = accent;
     ctx.fillRect(margin, barY, (width - margin * 2) * Math.max(0, Math.min(1, progress)), Math.max(4, unit * 0.006));
-    ctx.fillStyle = "rgba(255,255,255,0.6)";
+    ctx.fillStyle = isPaper ? "rgba(38,51,66,0.62)" : "rgba(255,255,255,0.68)";
     ctx.font = "500 " + Math.round(unit * 0.016) + "px system-ui, sans-serif";
     ctx.fillText(project.title, margin, height * 0.955);
+    ctx.restore();
+  }
+
+  function sceneAtTime(project, elapsedMs) {
+    const totalMs = project.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
+    const bounded = Math.max(0, Math.min(totalMs, elapsedMs));
+    let cursor = 0;
+    for (let index = 0; index < project.scenes.length; index++) {
+      const durationMs = project.scenes[index].durationSeconds * 1000;
+      if (bounded < cursor + durationMs || index === project.scenes.length - 1) {
+        return { index, sceneElapsedMs: Math.min(durationMs, bounded - cursor), progress: Math.min(1, Math.max(0, (bounded - cursor) / durationMs)), totalMs };
+      }
+      cursor += durationMs;
+    }
+    return { index: 0, sceneElapsedMs: 0, progress: 0, totalMs };
+  }
+
+  function drawTimelineFrame(ctx, width, height, project, elapsedMs) {
+    const frame = sceneAtTime(project, elapsedMs);
+    const { index, sceneElapsedMs, progress } = frame;
+    const scene = project.scenes[index];
+    const transitionMs = 650;
+    const transitionProgress = Math.min(1, sceneElapsedMs / transitionMs);
+    const transition = scene.transition || "fade";
+    ctx.clearRect(0, 0, width, height);
+    if (index === 0 || sceneElapsedMs >= transitionMs || transition === "cut") {
+      drawScene(ctx, width, height, project, index, progress);
+      return;
+    }
+    const previousIndex = index - 1;
+    if (transition === "fade") {
+      drawScene(ctx, width, height, project, previousIndex, 1, 1 - transitionProgress);
+      drawScene(ctx, width, height, project, index, progress, transitionProgress);
+    } else if (transition === "slide") {
+      ctx.save();
+      ctx.translate(-width * transitionProgress, 0);
+      drawScene(ctx, width, height, project, previousIndex, 1);
+      ctx.restore();
+      ctx.save();
+      ctx.translate(width * (1 - transitionProgress), 0);
+      drawScene(ctx, width, height, project, index, progress);
+      ctx.restore();
+    } else if (transition === "wipe") {
+      drawScene(ctx, width, height, project, previousIndex, 1);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, width * transitionProgress, height);
+      ctx.clip();
+      drawScene(ctx, width, height, project, index, progress);
+      ctx.restore();
+    } else if (transition === "zoom") {
+      drawScene(ctx, width, height, project, previousIndex, 1);
+      ctx.save();
+      ctx.translate(width / 2, height / 2);
+      ctx.scale(0.88 + transitionProgress * 0.12, 0.88 + transitionProgress * 0.12);
+      ctx.translate(-width / 2, -height / 2);
+      drawScene(ctx, width, height, project, index, progress);
+      ctx.restore();
+    } else {
+      drawScene(ctx, width, height, project, index, progress);
+    }
   }
 
   function renderPreview(project, index = 0) {
