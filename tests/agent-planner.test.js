@@ -170,6 +170,26 @@ test("built-in device planner supports Hindi and Hinglish search phrasing", () =
   assert.equal(hinglish.actions[3].value, "mole concept");
 });
 
+test("built-in planner creates Canva drag plan only from quoted exact labels", () => {
+  const english = createLocalAgentPlan('Open Canva and move "Presenter clip 1" to "Video track 2"');
+  assert.ok(english);
+  assert.deepEqual(english.actions.map(item => item.type), [
+    "open_app", "verify_app_foreground", "drag_label_to_label", "verify_screen_text", "ask_user"
+  ]);
+  assert.equal(english.actions[2].sourceLabel, "Presenter clip 1");
+  assert.equal(english.actions[2].targetLabel, "Video track 2");
+  assert.equal(english.actions[2].value, "Canva");
+
+  const hinglish = createLocalAgentPlan('Canva kholo aur "Clip 1" ko "Track 2" par move karo');
+  assert.ok(hinglish);
+  assert.equal(hinglish.actions[2].sourceLabel, "Clip 1");
+  assert.equal(hinglish.actions[2].targetLabel, "Track 2");
+
+  assert.equal(createLocalAgentPlan("Open Canva and move Clip 1 to Track 2"), null);
+  assert.equal(createLocalAgentPlan('Open Canva and move "Clip 1" to "Clip 1"'), null);
+  assert.equal(createLocalAgentPlan('Open Canva and move "Clip 1" to "Delete project"'), null);
+});
+
 test("agent planner validates Canva semantic drag with exact labels and foreground checks", () => {
   const plan = validateAgentPlan({
     mode: "device_action",
