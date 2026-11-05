@@ -342,6 +342,65 @@ test("caps scene count and durations to the selected format", async () => {
   assert.ok(project.scenes.every((scene) => scene.durationSeconds >= 3));
 });
 
+
+test("supports 20-minute long-form landscape projects with bounded scenes and timeline clips", () => {
+  const scenes = Array.from({ length: 20 }, (_, index) => ({
+    heading: "Chapter " + (index + 1),
+    voiceover: "Explain one complete chapter of the topic with a clear example and summary.",
+    onScreenText: "Chapter " + (index + 1),
+    visualPrompt: "A focused educational illustration.",
+    durationSeconds: 120
+  }));
+  const project = normalizeMediaProject({
+    title: "Long-form lesson",
+    brief,
+    format: "long-form",
+    platform: "youtube",
+    scenes
+  });
+
+  assert.equal(project.format, "long-form");
+  assert.deepEqual([project.width, project.height], [1280, 720]);
+  assert.equal(MEDIA_FORMATS["long-form"].maxDurationSeconds, 1200);
+  assert.equal(MEDIA_LIMITS.maxDurationSeconds, 1200);
+  assert.equal(project.scenes.length, 20);
+  assert.ok(project.scenes.every((scene) => scene.durationSeconds === 60));
+  assert.equal(project.durationSeconds, 1200);
+
+  const boundedTimeline = normalizeMediaProject({
+    title: "Long timeline",
+    brief,
+    format: "long-form",
+    scenes: scenes.slice(0, 2),
+    tracks: [{
+      id: "track-main-video",
+      kind: "video",
+      clips: [{ id: "long-clip", start: 1170, duration: 90, assetType: "video" }]
+    }]
+  });
+  assert.equal(boundedTimeline.tracks[0].clips[0].duration, 90);
+  assert.equal(boundedTimeline.tracks[0].clips[0].start, 1110);
+  assert.equal(boundedTimeline.durationSeconds, 1200);
+});
+
+test("keeps standard landscape projects capped at three minutes", () => {
+  const scenes = Array.from({ length: 10 }, (_, index) => ({
+    heading: "Scene " + index,
+    voiceover: "A clear explanation for this scene.",
+    onScreenText: "Point " + index,
+    durationSeconds: 30
+  }));
+  const project = normalizeMediaProject({
+    title: "Standard landscape",
+    brief,
+    format: "landscape-explainer",
+    scenes
+  });
+  assert.equal(MEDIA_FORMATS["landscape-explainer"].maxDurationSeconds, 180);
+  assert.equal(project.durationSeconds, 180);
+  assert.ok(project.scenes.every((scene) => scene.durationSeconds <= 18));
+});
+
 test("edits a draft without mutating the original and rejects edits after approval", async () => {
   const project = await makeDraft();
   const firstScene = { ...project.scenes[0], heading: "Updated hook", voiceover: "A clearer opening sentence." };
