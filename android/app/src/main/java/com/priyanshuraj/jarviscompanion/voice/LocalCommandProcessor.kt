@@ -115,7 +115,7 @@ object LocalCommandProcessor {
      * app-launch parser and are unnecessarily sent to remote planning.
      */
     internal fun normalizeCommand(message: String): String =
-        message.trim().replace(Regex("""(?i)^jarvis[\\s,:;-]+"""), "").trim()
+        message.trim().replace(Regex("""(?i)^jarvis[\s,:;-]+"""), "").trim()
 
     fun handle(context: Context, message: String, allowUiActions: Boolean): String? {
         val original = normalizeCommand(message)
