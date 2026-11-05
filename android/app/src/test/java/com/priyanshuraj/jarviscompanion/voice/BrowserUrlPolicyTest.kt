@@ -32,4 +32,23 @@ class BrowserUrlPolicyTest {
         assertNull(BrowserUrlPolicy.normalize("https://example.com/\nadmin"))
         assertNull(BrowserUrlPolicy.normalize("a".repeat(2049)))
     }
+
+    @Test
+    fun rejectsAdditionalPrivateAndReservedNetworkAddresses() {
+        listOf(
+            "http://0.0.0.0/",
+            "http://169.254.169.254/",
+            "http://100.64.0.1/",
+            "http://172.16.0.1/",
+            "http://192.0.0.1/",
+            "http://198.18.0.1/",
+            "http://203.0.113.10/",
+            "http://0177.0.0.1/",
+            "http://[::1]/",
+            "http://printer.local/",
+            "https://router.internal/",
+            "https://device.test/"
+        ).forEach { assertNull(it, BrowserUrlPolicy.normalize(it)) }
+    }
+
 }
