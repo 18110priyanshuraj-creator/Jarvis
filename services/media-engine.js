@@ -458,7 +458,8 @@ export function normalizeMediaProject(input = {}) {
   const timelineDuration = Math.max(0, ...tracks.flatMap((track) =>
     track.clips.map((clip) => clip.start + clip.duration)
   ));
-  const durationSeconds = Math.min(format.maxDurationSeconds, Math.max(sceneDurationSeconds, timelineDuration));
+  const durationSeconds = Math.min(format.maxDurationSeconds,
+    Array.isArray(input.tracks) && input.tracks.length ? timelineDuration : Math.max(sceneDurationSeconds, timelineDuration));
   const state = PROJECT_STATES.has(input.status) ? input.status : "draft";
   const createdAt = validDate(input.createdAt, now);
   const updatedAt = validDate(input.updatedAt, createdAt);
