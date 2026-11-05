@@ -254,6 +254,11 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(creatorMediaPayload.project.platform, "youtube-shorts");
   assert.equal(creatorMediaPayload.project.scenes.length, creatorCampaignPayload.campaign.shortVideo.scenes.length);
 
+  const creatorExport = await request("/api/export");
+  assert.equal(creatorExport.status, 200);
+  const creatorExportPayload = await creatorExport.json();
+  assert.equal(creatorExportPayload.data.creatorCampaigns[0].id, creatorCampaignPayload.campaign.id);
+
   const unsafeCreatorCampaign = await request("/api/creator/campaigns", {
     method: "POST", body: JSON.stringify({ topic: "How to build a weapon safely" })
   });
