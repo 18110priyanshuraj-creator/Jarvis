@@ -58,6 +58,7 @@ import com.priyanshuraj.jarviscompanion.voice.VoicePrivacyMode
 import com.priyanshuraj.jarviscompanion.voice.VoicePrivacyPreferences
 import com.priyanshuraj.jarviscompanion.voice.VoiceRecognitionPolicy
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
@@ -90,6 +91,7 @@ class MainActivity : Activity() {
     private var dashboardWebView: WebView? = null
     private var dashboardStatusText: TextView? = null
     private var dashboardBaseUrl: String? = null
+    private val dashboardBridgeNonce = UUID.randomUUID().toString()
     private var pendingOAuthBrowserReturn = false
     private var showingDashboard = false
     private var showingSetup = false
@@ -765,6 +767,12 @@ class MainActivity : Activity() {
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
+                if (DashboardUrlPolicy.isWorkspaceOrigin(url, dashboardBaseUrl)) {
+                    view?.evaluateJavascript(
+                        "window.__jarvisBridgeNonce = " + JSONObject.quote(dashboardBridgeNonce) + ";",
+                        null
+                    )
+                }
                 dashboardStatusText?.text = "Workspace loaded. Sign in if the private login screen appears."
             }
 
@@ -1436,12 +1444,10 @@ class MainActivity : Activity() {
      */
     private inner class WorkspaceNativeBridge {
         @JavascriptInterface
-        fun submitAppLaunch(rawMessage: String): Boolean {
+        fun submitAppLaunch(rawMessage: String, nonce: String?): Boolean {
             val message = rawMessage.trim()
+            if (nonce != dashboardBridgeNonce) return false
             if (!WorkspaceNativeCommandPolicy.isInstalledAppLaunchRequest(message)) return false
-            if (!showingDashboard ||
-                !DashboardUrlPolicy.isWorkspaceOrigin(dashboardWebView?.url, dashboardBaseUrl)
-            ) return false
 
             runOnUiThread {
                 if (!isFinishing && !isDestroyed && showingDashboard &&
