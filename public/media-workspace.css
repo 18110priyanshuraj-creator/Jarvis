@@ -526,3 +526,25 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+.timeline-clip-block {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.timeline-clip-block.dragging { z-index: 5; opacity: .92; cursor: grabbing; }
+.timeline-clip-handle {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  display: block;
+  background: rgba(231, 241, 248, .22);
+  border-inline: 1px solid rgba(235, 244, 250, .5);
+  cursor: ew-resize;
+  touch-action: none;
+}
+.timeline-clip-handle.left { left: 0; border-radius: 6px 0 0 6px; }
+.timeline-clip-handle.right { right: 0; border-radius: 0 6px 6px 0; }
+.timeline-clip-block strong, .timeline-clip-block .timeline-clip-time,
+.timeline-clip-block small { pointer-events: none; }
