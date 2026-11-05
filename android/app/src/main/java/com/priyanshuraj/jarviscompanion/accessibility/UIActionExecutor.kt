@@ -648,6 +648,7 @@ object UIActionExecutor {
             UiActionPolicyCode.FIELD_NOT_EDITABLE -> UiActionCode.FIELD_NOT_EDITABLE
             UiActionPolicyCode.TARGET_NOT_VISIBLE -> UiActionCode.TARGET_NOT_FOUND
             UiActionPolicyCode.TARGET_NOT_CLICKABLE -> UiActionCode.ACTION_REJECTED
+            UiActionPolicyCode.TARGET_NOT_DRAGGABLE -> UiActionCode.DRAG_ACTION_UNAVAILABLE
             UiActionPolicyCode.ALLOWED -> UiActionCode.SUCCESS
         }
         return UiActionResult(false, decision.explanation, code, retryable = false)
