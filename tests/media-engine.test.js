@@ -344,8 +344,23 @@ test("does not label a short AI response as a complete long-form script", async 
   });
   assert.equal(project.generationSource, "ai-assisted");
   assert.equal(project.durationSeconds, 24);
-  assert.match(project.generationNote, /shorter outline/i);
-  assert.match(project.generationNote, /not a complete 15-20 minute script/i);
+  assert.match(project.generationNote, /below the 15-20 minute script target/i);
+  assert.match(project.generationNote, /24 seconds of timeline/i);
+});
+
+test("does not mark a long timeline with very little narration as a complete script", async () => {
+  const scenes = Array.from({ length: 10 }, (_, index) => ({
+    heading: "Chapter " + (index + 1),
+    voiceover: "A short note.",
+    onScreenText: "Chapter " + (index + 1),
+    durationSeconds: 120
+  }));
+  const project = await makeDraft({ format: "long-form" }, {
+    generate: async () => ({ title: "Long silent outline", scenes })
+  });
+  assert.equal(project.durationSeconds, 1200);
+  assert.match(project.generationNote, /240 narration words/i);
+  assert.match(project.generationNote, /below the 15-20 minute script target/i);
 });
 
 test("explains when the local fallback is only a long-form outline", async () => {
