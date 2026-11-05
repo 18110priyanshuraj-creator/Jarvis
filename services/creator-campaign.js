@@ -25,6 +25,15 @@ function slug(value) {
   return clean(value, 120).normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
     .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "creator-topic";
 }
+function normalizeBrandKit(value = {}) {
+  const color = (candidate, fallback) => /^#[0-9a-f]{6}$/i.test(candidate || "") ? candidate.toLowerCase() : fallback;
+  return {
+    brandName: clean(value?.brandName, 60),
+    accentColor: color(value?.accentColor, "#1fc7d4"),
+    backgroundColor: color(value?.backgroundColor, "#071a24"),
+    textColor: color(value?.textColor, "#f2fbff")
+  };
+}
 function stringList(value, maxItems, maxLength) {
   return Array.isArray(value) ? [...new Set(value.map(item => clean(item, maxLength)).filter(Boolean))].slice(0, maxItems) : [];
 }
@@ -76,7 +85,8 @@ function localPack(input) {
       publicReplyDraft: "Thanks for asking. Here is the resource: [add your reviewed resource link].",
       manualReplyDraft: "Here is the guide you requested: [add your reviewed resource link]. Hope it helps!",
       followUpRule: "Send a reply only when someone chooses to comment or asks for the resource. Do not send repeated unsolicited follow-ups."
-    }
+    },
+    brandKit: normalizeBrandKit(input.brandKit)
   };
 }
 function normalizePack(rawInput, input, options = {}) {
@@ -138,7 +148,13 @@ function normalizePack(rawInput, input, options = {}) {
     ? { status: "ready", windowHours: 24, searchedAt: options.trendResult.searchedAt || new Date().toISOString(), summary: clean(options.trendResult.answer, 3600), sources: (options.trendResult.sources || []).slice(0, CREATOR_CAMPAIGN_LIMITS.sources).map((item, i) => ({ index: i + 1, title: clean(item?.title, 180), url: clean(item?.url, 1000), publishedAt: clean(item?.publishedAt, 80), snippet: clean(item?.snippet, 500) })) }
     : { status: options.trendRequested ? "unavailable" : "not-requested", windowHours: 24, searchedAt: null, summary: options.trendRequested ? "No usable 24-hour report was returned. No trend was inferred." : "Trend Radar was not requested.", sources: [] };
   const now = new Date().toISOString();
-  return { id: clean(raw.id, 80) || crypto.randomUUID(), topic: input.topic, audience: input.audience, language: input.language, title: clean(raw.title, 90) || input.topic, ideas: ideas.slice(0, CREATOR_CAMPAIGN_LIMITS.ideas), trendRadar, shortVideo, carousel, seoPage, socialDrafts, leadMagnet, leadMachine, engine: options.engine || "ai-assisted", status: "draft", createdAt: now, updatedAt: now, generationNote: clean(raw.generationNote, 300) || "Review facts, source rights and all copy before publishing." };
+  const revision = Number.isInteger(raw.revision) ? Math.max(1, Math.min(1000, raw.revision)) : 1;
+  const revisionHistory = (Array.isArray(raw.revisionHistory) ? raw.revisionHistory : []).slice(-5).map(item => ({
+    revision: Number.isInteger(item?.revision) ? Math.max(1, item.revision) : 1,
+    updatedAt: clean(item?.updatedAt, 80),
+    title: clean(item?.title, 90)
+  }));
+  return { id: clean(raw.id, 80) || crypto.randomUUID(), topic: input.topic, audience: input.audience, language: input.language, title: clean(raw.title, 90) || input.topic, ideas: ideas.slice(0, CREATOR_CAMPAIGN_LIMITS.ideas), trendRadar, shortVideo, carousel, seoPage, socialDrafts, leadMagnet, leadMachine, brandKit: normalizeBrandKit(raw.brandKit || input.brandKit), revision, revisionHistory, engine: options.engine || "ai-assisted", status: "draft", createdAt: clean(raw.createdAt, 80) || now, updatedAt: clean(raw.updatedAt, 80) || now, generationNote: clean(raw.generationNote, 300) || "Review facts, source rights and all copy before publishing." };
 }
 
 export function normalizeCreatorCampaign(input) {
@@ -148,10 +164,35 @@ export function normalizeCreatorCampaign(input) {
   assertSafe(topic + "\n" + audience, "Campaign metadata");
   if (topic.length < 8) throw new TypeError("A creator campaign needs a specific topic.");
   const trend = input?.trendRadar;
-  return normalizePack(input, { topic, audience, language }, {
+  return normalizePack(input, { topic, audience, language, brandKit: normalizeBrandKit(input?.brandKit) }, {
     engine: input?.engine === "local-template" ? "local-template" : "ai-assisted",
     trendRequested: trend?.status !== "not-requested",
     trendResult: trend?.status === "ready" ? { answer: trend.summary, searchedAt: trend.searchedAt, sources: trend.sources } : null
+  });
+}
+
+export function updateCreatorCampaign(existing, updates = {}) {
+  if (!existing || existing.status !== "draft") throw new TypeError("Only draft campaigns can be edited.");
+  if (!updates || typeof updates !== "object" || Array.isArray(updates)) throw new TypeError("Campaign edits must be an object.");
+  const allowed = new Set(["title", "shortVideo", "carousel", "seoPage", "socialDrafts", "leadMagnet", "leadMachine", "ideas", "brandKit"]);
+  if (Object.keys(updates).some(key => !allowed.has(key))) throw new TypeError("The campaign edit contains an unsupported field.");
+  const now = new Date().toISOString();
+  const snapshot = { revision: existing.revision || 1, updatedAt: existing.updatedAt || existing.createdAt || now, title: existing.title || existing.topic };
+  return normalizeCreatorCampaign({
+    ...existing,
+    title: updates.title ?? existing.title,
+    shortVideo: updates.shortVideo ? { ...existing.shortVideo, ...updates.shortVideo } : existing.shortVideo,
+    carousel: updates.carousel ? { ...existing.carousel, ...updates.carousel } : existing.carousel,
+    seoPage: updates.seoPage ? { ...existing.seoPage, ...updates.seoPage } : existing.seoPage,
+    socialDrafts: updates.socialDrafts ?? existing.socialDrafts,
+    leadMagnet: updates.leadMagnet ? { ...existing.leadMagnet, ...updates.leadMagnet } : existing.leadMagnet,
+    leadMachine: updates.leadMachine ? { ...existing.leadMachine, ...updates.leadMachine } : existing.leadMachine,
+    ideas: updates.ideas ?? existing.ideas,
+    brandKit: updates.brandKit ? { ...existing.brandKit, ...updates.brandKit } : existing.brandKit,
+    revision: (existing.revision || 1) + 1,
+    revisionHistory: [...(existing.revisionHistory || []), snapshot].slice(-5),
+    updatedAt: now,
+    status: "draft"
   });
 }
 
@@ -163,7 +204,8 @@ export async function createCreatorCampaignPack(input = {}, options = {}) {
   const includeTrendRadar = input.includeTrendRadar === true;
   if (topic.length < 8) throw new TypeError("Enter a specific creator topic or question (at least eight characters).");
   assertSafe(topic + "\n" + audience + "\n" + sourceText);
-  const normalized = { topic, audience, sourceText, language };
+  const brandKit = normalizeBrandKit(input.brandKit);
+  const normalized = { topic, audience, sourceText, language, brandKit };
   let trendResult = null;
   if (includeTrendRadar) {
     try { trendResult = await (options.search || createWebResearch)(topic, { timeRange: "day" }); } catch { trendResult = null; }
@@ -180,7 +222,8 @@ export async function createCreatorCampaignPack(input = {}, options = {}) {
     seoPage: { slug: "string", metaTitle: "60 chars", metaDescription: "155 chars", h1: "string", sections: [{ heading: "string", summary: "string" }], faqs: [{ question: "string", answer: "string" }] },
     socialDrafts: ["instagram", "youtube-shorts", "facebook"].map(platform => ({ platform, caption: "string", cta: "string", hashtags: ["string"] })),
     leadMagnet: { title: "string", promise: "string", sections: ["string"], cta: "string" },
-    leadMachine: { commentKeyword: "GUIDE", publicReplyDraft: "string", manualReplyDraft: "string", followUpRule: "string" }
+    leadMachine: { commentKeyword: "GUIDE", publicReplyDraft: "string", manualReplyDraft: "string", followUpRule: "string" },
+    brandKit: { brandName: "string", accentColor: "#1fc7d4", backgroundColor: "#071a24", textColor: "#f2fbff" }
   };
   const system = [
     "You are JARVIS Creator Campaign Studio. Return one JSON object matching the output shape.",
@@ -195,7 +238,7 @@ export async function createCreatorCampaignPack(input = {}, options = {}) {
   try {
     const result = await (options.aiCompletion || createChatCompletion)([
       { role: "system", content: system },
-      { role: "user", content: JSON.stringify({ topic, audience, language, sourceNotes: sourceText, trendEvidence: evidence, outputShape }) }
+      { role: "user", content: JSON.stringify({ topic, audience, language, sourceNotes: sourceText, brandKit, trendEvidence: evidence, outputShape }) }
     ], { temperature: 0.35, maxTokens: 3800, responseFormat: { type: "json_object" } });
     return normalizePack(result?.content, normalized, { trendResult, trendRequested: includeTrendRadar, engine: "ai-assisted" });
   } catch {
