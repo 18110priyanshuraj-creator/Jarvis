@@ -11,7 +11,7 @@ import java.util.Locale
 object BrowserUrlPolicy {
     private fun isPrivateOrReservedIpv4(host: String): Boolean {
         val parts = host.split(".")
-        if (parts.size != 4 || parts.any { it.isEmpty() || !it.all(Char::isDigit) }) return false
+        if (parts.size != 4 || parts.any { it.isEmpty() || !it.all { character -> character in '0'..'9' } }) return false
 
         // Reject ambiguous octal-looking address forms rather than relying on how a
         // particular browser parses leading-zero IPv4 components.
