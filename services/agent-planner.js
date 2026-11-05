@@ -58,8 +58,8 @@ function extractGoogleSearchQuery(input) {
  */
 function extractCanvaDragIntent(input) {
   const patterns = [
-    /^(?:please\\s+)?(?:open|launch|start)\\s+canva\\s+(?:and|then)\\s+(?:drag|move)\\s+["“'](.+?)["”']\\s+(?:to|into|onto)\\s+["“'](.+?)["”']$/i,
-    /^canva\\s+(?:kholo|khol do)\\s+(?:aur|phir)\\s+["“'](.+?)["”']\\s+ko\\s+["“'](.+?)["”']\\s+(?:mein|me|par)\\s+(?:drag|move|shift|rakh(?:o|\\s+do))$/i
+    /^(?:please\s+)?(?:open|launch|start)\s+canva\s+(?:and|then)\s+(?:drag|move)\s+["“'](.+?)["”']\s+(?:to|into|onto)\s+["“'](.+?)["”']$/i,
+    /^canva\s+(?:kholo|khol do)\s+(?:aur|phir)\s+["“'](.+?)["”']\s+ko\s+["“'](.+?)["”']\s+(?:mein|me|par)\s+(?:drag|move|shift|rakh(?:o|\s+do))$/i
   ];
   for (const pattern of patterns) {
     const match = input.match(pattern);
