@@ -570,8 +570,12 @@ export function createMediaWorkspace({ api, toast }) {
       canvas.height = 960;
       canvas.width = Math.round(canvas.height * size.width / size.height);
     }
+    let startMs = 0;
+    for (let cursor = 0; cursor < Math.min(index, project.scenes.length); cursor++) {
+      startMs += project.scenes[cursor].durationSeconds * 1000;
+    }
     const ctx = canvas.getContext("2d");
-    if (ctx) drawScene(ctx, canvas.width, canvas.height, project, Math.min(index, project.scenes.length - 1), 0);
+    if (ctx) drawTimelineFrame(ctx, canvas.width, canvas.height, project, startMs + 1);
   }
 
   function stopPreview() {
@@ -591,13 +595,13 @@ export function createMediaWorkspace({ api, toast }) {
     previewing = true;
     previewStartedAt = performance.now();
     byId("media-preview-button").textContent = "Stop preview";
+    const totalMs = currentProject.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
     const tick = (now) => {
       if (!previewing || !currentProject) return;
-      const index = Math.floor((now - previewStartedAt) / 2200) % currentProject.scenes.length;
-      const progress = ((now - previewStartedAt) % 2200) / 2200;
+      const elapsed = (now - previewStartedAt) % totalMs;
       const canvas = byId("media-preview-canvas");
       const ctx = canvas?.getContext("2d");
-      if (ctx) drawScene(ctx, canvas.width, canvas.height, currentProject, index, progress);
+      if (ctx) drawTimelineFrame(ctx, canvas.width, canvas.height, currentProject, elapsed);
       previewFrame = requestAnimationFrame(tick);
     };
     previewFrame = requestAnimationFrame(tick);
@@ -791,7 +795,7 @@ export function createMediaWorkspace({ api, toast }) {
   async function exportWebm() {
     const project = approvedProject();
     if (typeof MediaRecorder === "undefined" || typeof HTMLCanvasElement.prototype.captureStream !== "function") {
-      throw new Error("WebM export is not supported by this browser. Export the storyboard, script, captions or slide PNGs instead.");
+      throw new Error("WebM export is not supported by this browser. Export the storyboard, script, captions or scene PNGs instead.");
     }
     const size = FORMATS[project.format] || FORMATS["vertical-short"];
     const canvas = document.createElement("canvas");
@@ -799,51 +803,72 @@ export function createMediaWorkspace({ api, toast }) {
     canvas.height = Math.round(canvas.width * size.height / size.width);
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("The browser could not create a video canvas.");
-    const stream = canvas.captureStream(15);
-    const mimeTypes = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
-    const mimeType = mimeTypes.find((candidate) => MediaRecorder.isTypeSupported(candidate));
-    const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-    const chunks = [];
-    let animation = 0;
-    const totalMs = project.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
-    const sceneStarts = [];
-    let running = 0;
-    project.scenes.forEach((scene) => {
-      sceneStarts.push(running);
-      running += scene.durationSeconds * 1000;
-    });
 
-    setExportBusy(true, "Rendering a silent WebM at real time. Keep this tab open until the export finishes.");
-    const finished = new Promise((resolve, reject) => {
-      recorder.addEventListener("dataavailable", (event) => {
-        if (event.data?.size) chunks.push(event.data);
-      });
-      recorder.addEventListener("error", () => reject(new Error("The browser stopped the video export unexpectedly.")), { once: true });
-      recorder.addEventListener("stop", () => {
-        stream.getTracks().forEach((track) => track.stop());
-        resolve(new Blob(chunks, { type: recorder.mimeType || "video/webm" }));
-      }, { once: true });
-    });
+    let audioContext = null;
+    let audioSource = null;
+    let audioDestination = null;
+    let canvasStream = null;
+    let stream = null;
+    let animation = 0;
+    let recorder = null;
+    const totalMs = project.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
+    const chunks = [];
+
+    setExportBusy(true, audioFile
+      ? "Preparing the local audio track and rendering the video. Keep this tab open until export finishes."
+      : "Rendering motion graphics without an audio track. Add a local audio file above to include voiceover or music.");
 
     try {
+      canvasStream = canvas.captureStream(20);
+      let audioTracks = [];
+      if (audioFile) {
+        const AudioContextType = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextType || typeof MediaStream === "undefined") {
+          throw new Error("This browser cannot mix a local audio track into WebM. Remove the audio file and export silent motion graphics.");
+        }
+        audioContext = new AudioContextType();
+        await audioContext.resume();
+        const decoded = await audioContext.decodeAudioData(await audioFile.arrayBuffer());
+        audioDestination = audioContext.createMediaStreamDestination();
+        audioSource = audioContext.createBufferSource();
+        audioSource.buffer = decoded;
+        const gain = audioContext.createGain();
+        gain.gain.value = Math.max(0, Math.min(1.5, Number(byId("media-audio-volume")?.value || 1)));
+        audioSource.connect(gain);
+        gain.connect(audioDestination);
+        audioTracks = audioDestination.stream.getAudioTracks();
+      }
+      stream = typeof MediaStream !== "undefined"
+        ? new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks])
+        : canvasStream;
+      const mimeTypes = audioFile
+        ? ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]
+        : ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+      const mimeType = mimeTypes.find((candidate) => MediaRecorder.isTypeSupported(candidate));
+      recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+
+      const finished = new Promise((resolve, reject) => {
+        recorder.addEventListener("dataavailable", (event) => {
+          if (event.data?.size) chunks.push(event.data);
+        });
+        recorder.addEventListener("error", () => reject(new Error("The browser stopped the video export unexpectedly.")), { once: true });
+        recorder.addEventListener("stop", () => {
+          resolve(new Blob(chunks, { type: recorder.mimeType || "video/webm" }));
+        }, { once: true });
+      });
+
       const startedAt = performance.now();
       recorder.start(500);
+      if (audioSource) audioSource.start();
       await new Promise((resolve) => {
         const frame = (now) => {
           const elapsed = Math.min(totalMs, now - startedAt);
-          let index = project.scenes.length - 1;
-          for (let i = 0; i < sceneStarts.length; i++) {
-            if (elapsed < sceneStarts[i] + project.scenes[i].durationSeconds * 1000) {
-              index = i;
-              break;
-            }
-          }
-          const sceneElapsed = elapsed - sceneStarts[index];
-          const sceneProgress = sceneElapsed / (project.scenes[index].durationSeconds * 1000);
-          drawScene(ctx, canvas.width, canvas.height, project, index, sceneProgress);
-          setExportStatus("Rendering scene " + (index + 1) + " of " + project.scenes.length + "…");
+          drawTimelineFrame(ctx, canvas.width, canvas.height, project, elapsed);
+          const current = sceneAtTime(project, elapsed);
+          setExportStatus("Rendering scene " + (current.index + 1) + " of " + project.scenes.length +
+            (audioFile ? " · audio mixed locally" : " · no audio track") + "…");
           if (elapsed >= totalMs) {
-            recorder.stop();
+            if (recorder?.state !== "inactive") recorder.stop();
             resolve();
             return;
           }
@@ -852,12 +877,19 @@ export function createMediaWorkspace({ api, toast }) {
         animation = requestAnimationFrame(frame);
       });
       const blob = await finished;
-      downloadBlob(cleanFileName(project.title) + ".webm", blob);
-      setExportStatus("WebM export finished. This file contains motion graphics and no audio track; use the script or SRT captions for voiceover editing.");
+      const suffix = audioFile ? "-with-audio.webm" : ".webm";
+      downloadBlob(cleanFileName(project.title) + suffix, blob);
+      setExportStatus(audioFile
+        ? "Video export finished with the selected local audio track. Preview the downloaded file before using it."
+        : "Silent video export finished. Add a local voiceover or music track to export a version with audio.");
     } finally {
       if (animation) cancelAnimationFrame(animation);
-      if (recorder.state !== "inactive") recorder.stop();
-      stream.getTracks().forEach((track) => track.stop());
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+      for (const mediaStream of [stream, canvasStream, audioDestination?.stream]) {
+        mediaStream?.getTracks().forEach((track) => track.stop());
+      }
+      try { audioSource?.stop(); } catch { /* source may already have ended */ }
+      if (audioContext && audioContext.state !== "closed") await audioContext.close().catch(() => {});
       setExportBusy(false);
     }
   }
