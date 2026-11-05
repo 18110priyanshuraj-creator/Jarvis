@@ -19,6 +19,7 @@ import { createPageReadToken, createWebPageRead, getWebPageReadStatus, verifyPag
 import { createSourceBasedAnswer, SOURCE_ANSWER_LIMITS } from "./services/source-answer.js";
 import { createChatCompletion, getAIProviderStatus } from "./services/ai-provider.js";
 import { approveMediaProject, createMediaDraft, MEDIA_FORMATS, MEDIA_LIMITS, normalizeMediaProject, updateMediaProject } from "./services/media-engine.js";
+import { createCreatorCampaignPack, CREATOR_CAMPAIGN_LIMITS, normalizeCreatorCampaign } from "./services/creator-campaign.js";
 import {
   completeYouTubePublication,
   createYouTubePublishPreview,
@@ -206,7 +207,7 @@ const oauthLaunchLimiter = rateLimit({
 
 app.use("/api", apiLimiter);
 
-let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], skillPrograms: [], autoHeal: createDefaultAutoHealState(), workflows: [], workflowRuns: [], workflowStepEffects: [], workerRuns: [], schedules: [], scheduleEvents: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [], knowledgeDocuments: [], mediaProjects: [], youtubePublications: [] };
+let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], skillPrograms: [], autoHeal: createDefaultAutoHealState(), workflows: [], workflowRuns: [], workflowStepEffects: [], workerRuns: [], schedules: [], scheduleEvents: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [], knowledgeDocuments: [], mediaProjects: [], creatorCampaigns: [], youtubePublications: [] };
 let writeQueue = Promise.resolve();
 let neonSql;
 let databaseRevision = null;
@@ -400,6 +401,11 @@ function normalizeStore(parsed = {}) {
     mediaProjects: Array.isArray(parsed.mediaProjects)
       ? parsed.mediaProjects.slice(-MEDIA_LIMITS.projects).flatMap((item) => {
           try { return [normalizeMediaProject(item)]; } catch { return []; }
+        })
+      : [],
+    creatorCampaigns: Array.isArray(parsed.creatorCampaigns)
+      ? parsed.creatorCampaigns.slice(-CREATOR_CAMPAIGN_LIMITS.campaigns).flatMap((item) => {
+          try { return [normalizeCreatorCampaign(item)]; } catch { return []; }
         })
       : [],
     youtubePublications: Array.isArray(parsed.youtubePublications)
@@ -3166,6 +3172,40 @@ app.delete("/api/knowledge/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+
+app.get("/api/creator/campaigns", requireAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ campaigns: store.creatorCampaigns.slice().reverse(), limits: CREATOR_CAMPAIGN_LIMITS });
+});
+
+app.post("/api/creator/campaigns", requireAuth, mediaGenerationLimiter, async (req, res) => {
+  if (store.creatorCampaigns.length >= CREATOR_CAMPAIGN_LIMITS.campaigns) {
+    return res.status(409).json({ error: "Creator campaign limit reached. Delete an older campaign first." });
+  }
+  try {
+    const campaign = await createCreatorCampaignPack({
+      topic: req.body?.topic,
+      audience: req.body?.audience,
+      language: req.body?.language,
+      sourceText: req.body?.sourceText,
+      includeTrendRadar: req.body?.includeTrendRadar === true
+    });
+    store.creatorCampaigns.push(campaign);
+    await saveStore();
+    res.status(201).json({ campaign });
+  } catch (error) {
+    const status = error?.code === "CREATOR_PRIVATE_CONTENT" || error?.code === "CREATOR_RESTRICTED_CONTENT" ? 400 : 400;
+    res.status(status).json({ error: error?.message || "The creator campaign could not be generated." });
+  }
+});
+
+app.delete("/api/creator/campaigns/:id", requireAuth, async (req, res) => {
+  const before = store.creatorCampaigns.length;
+  store.creatorCampaigns = store.creatorCampaigns.filter(item => item.id !== req.params.id);
+  if (store.creatorCampaigns.length === before) return res.status(404).json({ error: "Creator campaign not found." });
+  await saveStore();
+  res.json({ ok: true });
+});
 
 app.get("/api/media/projects", requireAuth, (_req, res) => {
   res.json({
