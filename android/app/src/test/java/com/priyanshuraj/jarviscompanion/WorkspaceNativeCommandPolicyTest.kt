@@ -13,6 +13,8 @@ class WorkspaceNativeCommandPolicyTest {
         assertTrue(WorkspaceNativeCommandPolicy.isNativeAppTaskRequest("Canva khol do"))
         assertTrue(WorkspaceNativeCommandPolicy.isNativeAppTaskRequest("mujhe Canva chalao"))
         assertTrue(WorkspaceNativeCommandPolicy.isNativeAppTaskRequest("take me to CapCut"))
+        assertTrue(WorkspaceNativeCommandPolicy.isNativeAppTaskRequest("Can you open Canva for me?"))
+        assertTrue(WorkspaceNativeCommandPolicy.isNativeAppTaskRequest("Canva chalu karo"))
     }
 
     @Test
