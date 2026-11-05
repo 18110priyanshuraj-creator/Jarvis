@@ -66,15 +66,16 @@ jobs:
           gradle-version: "9.8.2"
 
       - name: Build Android Companion
-        run: gradle -p android --no-daemon --stacktrace testDebugUnitTest assembleDebug
+        run: gradle -p android --no-daemon --stacktrace testDebugUnitTest assembleDebug assembleRelease
 
       - name: Verify APK and generate release metadata
         shell: bash
         run: |
           set -euo pipefail
           apk_path="android/app/build/outputs/apk/debug/app-debug.apk"
-          release_apk_path="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          release_apk_path="$(find android/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | sort | head -n 1)"
           test -s "$apk_path"
+          test -n "$release_apk_path"
           test -s "$release_apk_path"
           unzip -t "$apk_path" >/dev/null
           unzip -t "$release_apk_path" >/dev/null
