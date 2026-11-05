@@ -854,6 +854,7 @@ export function createMediaWorkspace({ api, toast }) {
     if (!window.confirm("Delete this media project from your JARVIS workspace?")) return;
     await api("/api/media/projects/" + encodeURIComponent(id), { method: "DELETE" });
     projects = projects.filter((item) => item.id !== id);
+    releaseProjectAssets(id);
     if (currentProject?.id === id) {
       currentProject = null;
       selectedProjectId = null;
