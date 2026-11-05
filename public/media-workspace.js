@@ -2590,7 +2590,7 @@ export function createMediaWorkspace({ api, toast }) {
       voiceover: "Add your narration for this scene.",
       onScreenText: "New idea",
       visualPrompt: "Describe a simple visual that supports the narration.",
-      durationSeconds: Math.min(8, sceneDurationLimit(currentProject), projectDurationLimit(currentProject) - currentProject.durationSeconds),
+      durationSeconds: Math.min(currentProject.format === "long-form" ? 40 : 8, sceneDurationLimit(currentProject), projectDurationLimit(currentProject) - currentProject.durationSeconds),
       visualType: byId("media-editor-visual-style").value === "stick-figure-story" ? "stick-figure" : "auto",
       figurePose: "walk",
       animation: "walk",
