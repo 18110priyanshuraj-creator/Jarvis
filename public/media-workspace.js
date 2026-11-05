@@ -640,6 +640,15 @@ export function createMediaWorkspace({ api, toast }) {
     ctx.save();
     ctx.translate(width / 2 + offsetX * width, height / 2 + offsetY * height);
     ctx.scale(zoom, zoom);
+    ctx.translate(-width / 2, -height / 2);
+
+    const grade = scene.grade || {};
+    const brightness = Math.max(50, Math.min(150, Number(grade.brightness ?? 100)));
+    const contrast = Math.max(50, Math.min(150, Number(grade.contrast ?? 100)));
+    const saturation = Math.max(0, Math.min(180, Number(grade.saturation ?? 100)));
+    const blur = Math.max(0, Math.min(12, Number(grade.blur ?? 0)));
+    ctx.filter = "brightness(" + brightness + "%) contrast(" + contrast + "%) saturate(" +
+      saturation + "%) blur(" + blur + "px)";
 
     const asset = sceneAssets.get(scene.id);
     const assetElement = asset?.element;
@@ -649,17 +658,8 @@ export function createMediaWorkspace({ api, toast }) {
       const coverScale = Math.max(width / assetWidth, height / assetHeight);
       const drawWidth = assetWidth * coverScale;
       const drawHeight = assetHeight * coverScale;
-      const grade = scene.grade || {};
-      const brightness = Math.max(50, Math.min(150, Number(grade.brightness ?? 100)));
-      const contrast = Math.max(50, Math.min(150, Number(grade.contrast ?? 100)));
-      const saturation = Math.max(0, Math.min(180, Number(grade.saturation ?? 100)));
-      const blur = Math.max(0, Math.min(12, Number(grade.blur ?? 0)));
-      ctx.save();
       ctx.globalAlpha = opacity * 0.52;
-      ctx.filter = "brightness(" + brightness + "%) contrast(" + contrast + "%) saturate(" +
-        saturation + "%) blur(" + blur + "px)";
       ctx.drawImage(assetElement, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
-      ctx.restore();
       ctx.globalAlpha = opacity * 0.48;
       ctx.fillStyle = scene.background === "paper" ? "#f5ead6" : "#06101f";
       ctx.fillRect(0, 0, width, height);
