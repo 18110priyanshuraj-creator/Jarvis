@@ -154,7 +154,7 @@ function normalizePack(rawInput, input, options = {}) {
     updatedAt: clean(item?.updatedAt, 80),
     title: clean(item?.title, 90)
   }));
-  return { id: clean(raw.id, 80) || crypto.randomUUID(), topic: input.topic, audience: input.audience, language: input.language, title: clean(raw.title, 90) || input.topic, ideas: ideas.slice(0, CREATOR_CAMPAIGN_LIMITS.ideas), trendRadar, shortVideo, carousel, seoPage, socialDrafts, leadMagnet, leadMachine, brandKit: normalizeBrandKit(raw.brandKit || input.brandKit), revision, revisionHistory, engine: options.engine || "ai-assisted", status: "draft", createdAt: clean(raw.createdAt, 80) || now, updatedAt: clean(raw.updatedAt, 80) || now, generationNote: clean(raw.generationNote, 300) || "Review facts, source rights and all copy before publishing." };
+  return { id: clean(raw.id, 80) || crypto.randomUUID(), topic: input.topic, audience: input.audience, language: input.language, title: clean(raw.title, 90) || input.topic, sourceNotesProvided: Boolean(input.sourceText || raw.sourceNotesProvided), ideas: ideas.slice(0, CREATOR_CAMPAIGN_LIMITS.ideas), trendRadar, shortVideo, carousel, seoPage, socialDrafts, leadMagnet, leadMachine, brandKit: normalizeBrandKit(raw.brandKit || input.brandKit), revision, revisionHistory, engine: options.engine || "ai-assisted", status: "draft", createdAt: clean(raw.createdAt, 80) || now, updatedAt: clean(raw.updatedAt, 80) || now, generationNote: clean(raw.generationNote, 300) || "Review facts, source rights and all copy before publishing." };
 }
 
 export function normalizeCreatorCampaign(input) {
