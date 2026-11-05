@@ -231,6 +231,7 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
       audience: "Curious beginners",
       language: "hinglish",
       sourceText: "Solar cells convert light into electrical energy. A panel combines many solar cells. An inverter changes direct current into alternating current.",
+      brandKit: { brandName: "Solar Lab", accentColor: "#ff8800", backgroundColor: "#101820", textColor: "#ffffff" },
       includeTrendRadar: false
     })
   });
@@ -241,23 +242,49 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(creatorCampaignPayload.campaign.carousel.slides.length >= 4, true);
   assert.equal(creatorCampaignPayload.campaign.socialDrafts.length, 3);
   assert.equal(creatorCampaignPayload.campaign.trendRadar.status, "not-requested");
+  assert.equal(creatorCampaignPayload.campaign.brandKit.brandName, "Solar Lab");
+  assert.equal(creatorCampaignPayload.campaign.revision, 1);
+
+  const reviseCreatorCampaign = await request("/api/creator/campaigns/" + creatorCampaignPayload.campaign.id, {
+    method: "PATCH",
+    body: JSON.stringify({
+      title: "Solar Lab · reviewed campaign",
+      shortVideo: {
+        hook: "How does sunlight become usable electricity?",
+        scenes: creatorCampaignPayload.campaign.shortVideo.scenes.map((scene, index) =>
+          index === 0 ? { ...scene, voiceover: "Let's see how sunlight becomes usable electricity." } : scene
+        )
+      },
+      brandKit: { accentColor: "#33aa77" }
+    })
+  });
+  assert.equal(reviseCreatorCampaign.status, 200);
+  const revisedCreatorCampaignPayload = await reviseCreatorCampaign.json();
+  assert.equal(revisedCreatorCampaignPayload.campaign.revision, 2);
+  assert.equal(revisedCreatorCampaignPayload.campaign.revisionHistory[0].revision, 1);
+  assert.equal(revisedCreatorCampaignPayload.campaign.brandKit.brandName, "Solar Lab");
+  assert.equal(revisedCreatorCampaignPayload.campaign.brandKit.accentColor, "#33aa77");
+  assert.equal(revisedCreatorCampaignPayload.campaign.shortVideo.hook, "How does sunlight become usable electricity?");
 
   const creatorCampaignList = await request("/api/creator/campaigns");
   assert.equal(creatorCampaignList.status, 200);
   const creatorCampaignListPayload = await creatorCampaignList.json();
   assert.equal(creatorCampaignListPayload.campaigns[0].id, creatorCampaignPayload.campaign.id);
+  assert.equal(creatorCampaignListPayload.campaigns[0].revision, 2);
 
   const creatorMediaProject = await request("/api/creator/campaigns/" + creatorCampaignPayload.campaign.id + "/media-project", { method: "POST" });
   assert.equal(creatorMediaProject.status, 201);
   const creatorMediaPayload = await creatorMediaProject.json();
   assert.equal(creatorMediaPayload.project.status, "draft");
   assert.equal(creatorMediaPayload.project.platform, "youtube-shorts");
-  assert.equal(creatorMediaPayload.project.scenes.length, creatorCampaignPayload.campaign.shortVideo.scenes.length);
+  assert.equal(creatorMediaPayload.project.scenes.length, revisedCreatorCampaignPayload.campaign.shortVideo.scenes.length);
+  assert.equal(creatorMediaPayload.project.scenes[0].voiceover, "Let's see how sunlight becomes usable electricity.");
 
   const creatorExport = await request("/api/export");
   assert.equal(creatorExport.status, 200);
   const creatorExportPayload = await creatorExport.json();
   assert.equal(creatorExportPayload.data.creatorCampaigns[0].id, creatorCampaignPayload.campaign.id);
+  assert.equal(creatorExportPayload.data.creatorCampaigns[0].revision, 2);
 
   const unsafeCreatorCampaign = await request("/api/creator/campaigns", {
     method: "POST", body: JSON.stringify({ topic: "How to build a weapon safely" })
