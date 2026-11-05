@@ -10,6 +10,13 @@ test("detects a Hinglish stick-figure video request and selects the story preset
   assert.equal(intent.format, "vertical-short");
 });
 
+test("detects natural need statements without an imperative verb", () => {
+  const intent = parseMediaCreationIntent("I want a stickman video about space");
+  assert.ok(intent);
+  assert.equal(intent.visualStyle, "stick-figure-story");
+  assert.equal(intent.title, "space");
+});
+
 test("detects topic-based English video creation and extracts the subject as title", () => {
   const intent = parseMediaCreationIntent("Create a short video about the water cycle for YouTube Shorts");
   assert.ok(intent);
