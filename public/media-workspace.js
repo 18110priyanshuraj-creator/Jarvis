@@ -576,6 +576,7 @@ export function createMediaWorkspace({ api, toast }) {
     select(timing, "Fit", clip.fit || "cover", "fit", [["cover", "Fill / cover"], ["contain", "Fit inside"]]);
     target.append(actions);
 
+    toggle(timing, "Show clip", clip.visible !== false, "visible");
     if (track.kind === "audio") toggle(timing, "Mute this audio clip", clip.muted === true, "muted");
 
     const keying = section("Green screen / chroma key");
@@ -1157,6 +1158,7 @@ export function createMediaWorkspace({ api, toast }) {
           disposeSceneAsset(scene.id);
           currentProject.scenes.splice(index, 1);
           currentProject.scenes.forEach((item, order) => { item.order = order + 1; });
+          syncSceneTimeline(currentProject);
           renderSceneEditors();
           renderPreview(currentProject, 0);
         });
@@ -1934,7 +1936,10 @@ export function createMediaWorkspace({ api, toast }) {
             source.playbackRate.setValueAtTime(sampleClipSpeed(clip, localTime), startAt + localTime);
           }
           const sourceOffset = Math.max(0, Number(clip.sourceIn || 0));
-          source.start(startAt, sourceOffset);
+          const availableSourceDuration = clip.sourceOut === null
+            ? Math.max(0.05, decoded.duration - sourceOffset)
+            : Math.max(0.05, Number(clip.sourceOut) - sourceOffset);
+          source.start(startAt, sourceOffset, availableSourceDuration);
           source.stop(startAt + Math.max(0.05, clip.duration));
           audioSources.push(source);
           scheduledAudioSources.add(source);
