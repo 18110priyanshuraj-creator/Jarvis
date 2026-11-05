@@ -597,6 +597,13 @@
                 <option value="square-carousel">Square carousel · 1:1</option>
               </select>
             </label>
+            <label class="field-label" for="media-visual-style">Visual style
+              <select id="media-visual-style">
+                <option value="cinematic-motion">Cinematic motion graphics</option>
+                <option value="stick-figure-story">Animated stick-figure story</option>
+                <option value="minimal-editorial">Minimal editorial</option>
+              </select>
+            </label>
             <label class="field-label" for="media-platform">Target platform
               <select id="media-platform">
                 <option value="general">General export</option>
@@ -637,7 +644,7 @@
 
         <div class="media-workflow-note">
           <strong>Review and export controls</strong>
-          <p>Projects remain in your private JARVIS workspace. Edit each scene, check all claims and approve the storyboard before exporting. PNG cards and silent WebM motion graphics are rendered in this browser. Voiceover text and SRT captions are separate exports; audio, stock footage and social publishing are not generated here.</p>
+          <p>Projects remain in your private JARVIS workspace. Edit scenes, choose visual styles and stick-figure poses, set motion and transitions, add a local audio track, then review and approve before export. Video rendering happens in this browser; optional audio is mixed locally. No media is uploaded or published by exporting.</p>
         </div>
 
         <div class="list-heading"><h2>Your media projects</h2><span class="muted small">Drafts and approved exports</span></div>
@@ -656,6 +663,13 @@
             <div class="media-editor-fields">
               <label class="media-field"><span>Project title</span><input id="media-editor-project-title" class="media-scene-input" maxlength="90"></label>
               <label class="media-field"><span>Audience</span><input id="media-editor-audience" class="media-scene-input" maxlength="140"></label>
+              <label class="media-field"><span>Overall visual style</span>
+                <select id="media-editor-visual-style" class="media-scene-input">
+                  <option value="cinematic-motion">Cinematic motion graphics</option>
+                  <option value="stick-figure-story">Animated stick-figure story</option>
+                  <option value="minimal-editorial">Minimal editorial</option>
+                </select>
+              </label>
               <label class="media-field"><span>Tone</span>
                 <select id="media-editor-tone" class="media-scene-input">
                   <option value="clear">Clear</option>
@@ -687,9 +701,19 @@
               <button type="button" class="item-action" id="media-export-script">Script TXT</button>
               <button type="button" class="item-action" id="media-export-captions">Captions SRT</button>
               <button type="button" class="item-action" id="media-export-png">Scene PNGs</button>
-              <button type="button" class="primary media-wide" id="media-export-webm">Silent WebM</button>
+              <button type="button" class="primary media-wide" id="media-export-webm">Export video (WebM)</button>
             </div>
-            <p class="media-limits-note">WebM includes browser-rendered motion graphics without an audio track. It is rendered in real time, so keep this tab open until it completes.</p>
+            <div class="media-audio-panel">
+              <label class="media-field" for="media-audio-file"><span>Optional voiceover or music track</span>
+                <input id="media-audio-file" class="media-scene-input" type="file" accept="audio/*">
+              </label>
+              <label class="media-field" for="media-audio-volume"><span>Audio volume</span>
+                <input id="media-audio-volume" type="range" min="0" max="1.5" step="0.05" value="1">
+              </label>
+              <audio id="media-audio-preview" class="media-audio-preview hidden" controls preload="metadata"></audio>
+              <p class="media-limits-note">Audio is read locally on this device and mixed into the exported WebM. It is not uploaded or saved to the JARVIS server.</p>
+            </div>
+            <p class="media-limits-note">Video is rendered in this browser with animated scenes, transitions and an optional audio track. Keep this tab open until export completes.</p>
           </aside>
         </section>
 
@@ -776,7 +800,7 @@
 
         <div class="creator-notice">
           <strong>No guaranteed reach</strong>
-          <p>This workspace helps improve the parts you can control: topic clarity, truthful packaging, story structure, visual consistency and learning from your own analytics. Nobody can promise 100% reach or viral views.</p>
+          <p>This workspace helps improve the parts you can control: topic clarity, truthful packaging, story structure, visual consistency and learning from your own analytics. Nobody can promise guaranteed reach or viral views.</p>
         </div>
 
         <form id="creator-form" class="form-card creator-brief">
