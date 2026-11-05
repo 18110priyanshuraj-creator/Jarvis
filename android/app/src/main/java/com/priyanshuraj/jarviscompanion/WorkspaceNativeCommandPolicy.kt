@@ -29,7 +29,7 @@ internal object WorkspaceNativeCommandPolicy {
      * planner. The planner still validates and previews device actions before use.
      */
     fun isNativeAppTaskRequest(message: String): Boolean {
-        val command = message.trim()
+        val command = message.trim().trimEnd('.', '!', '?', '।', '॥')
         if (command.length !in 1..1000) return false
         if (directOpenPrefix.matches(command) || directOpenSuffix.matches(command)) return true
         if (helpQuestion.containsMatchIn(command)) return false
