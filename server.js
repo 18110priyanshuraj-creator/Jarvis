@@ -3207,6 +3207,45 @@ app.delete("/api/creator/campaigns/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post("/api/creator/campaigns/:id/media-project", requireAuth, async (req, res) => {
+  const campaign = store.creatorCampaigns.find(item => item.id === req.params.id);
+  if (!campaign) return res.status(404).json({ error: "Creator campaign not found." });
+  if (store.mediaProjects.length >= MEDIA_LIMITS.projects) {
+    return res.status(409).json({ error: "Media project limit reached. Delete an older project first." });
+  }
+  try {
+    const project = normalizeMediaProject({
+      title: campaign.shortVideo.title,
+      brief: campaign.topic,
+      format: "vertical-short",
+      platform: "youtube-shorts",
+      language: campaign.language,
+      tone: "friendly",
+      audience: campaign.audience,
+      visualStyle: "cinematic-motion",
+      scenes: campaign.shortVideo.scenes.map(scene => ({
+        heading: scene.heading,
+        voiceover: scene.voiceover,
+        onScreenText: scene.onScreenText,
+        visualPrompt: scene.visualPrompt,
+        durationSeconds: scene.durationSeconds,
+        visualType: "auto",
+        transition: "cut",
+        animation: "fade",
+        cameraMotion: "static"
+      })),
+      status: "draft",
+      generationSource: "ai-assisted",
+      generationNote: "Created from a reviewed Creator Campaign Pack. Check source facts and media assets before export."
+    });
+    store.mediaProjects.push(project);
+    await saveStore();
+    res.status(201).json({ project });
+  } catch (error) {
+    res.status(400).json({ error: error?.message || "The short-video scenes could not be added to Media Studio." });
+  }
+});
+
 app.get("/api/media/projects", requireAuth, (_req, res) => {
   res.json({
     projects: store.mediaProjects.slice().reverse(),
