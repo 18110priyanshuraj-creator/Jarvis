@@ -899,6 +899,51 @@
           </div>
         </section>
 
+        <section class="creator-panel creator-campaign-studio" id="creator-campaign-studio">
+          <p class="eyebrow">TREND RADAR · ONE BRIEF, MULTIPLE DRAFTS</p>
+          <h2>4 · Creator Campaign Pack</h2>
+          <p>Use one topic and your source notes to prepare a short video, carousel, SEO page, social captions, a simple lead-magnet outline and follow-up ideas. Optional Trend Radar searches the last 24 hours through your configured research service.</p>
+          <form id="creator-campaign-form" class="creator-campaign-form">
+            <label for="creator-campaign-topic">Campaign topic or question</label>
+            <textarea id="creator-campaign-topic" rows="2" maxlength="180" required placeholder="Example: How do solar panels turn sunlight into electricity?"></textarea>
+            <div class="creator-form-grid">
+              <label for="creator-campaign-audience">Audience
+                <input id="creator-campaign-audience" maxlength="140" placeholder="Beginners, students, curious viewers">
+              </label>
+              <label for="creator-campaign-language">Draft language
+                <select id="creator-campaign-language">
+                  <option value="hi-IN" selected>Hindi</option>
+                  <option value="hinglish">Hinglish</option>
+                  <option value="en-IN">English</option>
+                </select>
+              </label>
+            </div>
+            <label for="creator-campaign-sources">Source notes (optional, up to 8,000 characters)</label>
+            <textarea id="creator-campaign-sources" rows="5" maxlength="8000" placeholder="Paste your own notes or reviewed research here. JARVIS will use these as the factual basis for the drafts."></textarea>
+            <label class="creator-campaign-toggle" for="creator-campaign-trends">
+              <input type="checkbox" id="creator-campaign-trends">
+              <span>Include Trend Radar · search public sources from the last 24 hours</span>
+            </label>
+            <div class="form-row">
+              <span class="small muted">Creates drafts only. It does not post or contact anyone.</span>
+              <button type="submit" class="primary" id="creator-campaign-generate">Build campaign pack</button>
+            </div>
+          </form>
+          <p id="creator-campaign-status" class="creator-status" role="status" aria-live="polite">Create a campaign pack to see all output drafts.</p>
+          <div class="creator-campaign-actions hidden" id="creator-campaign-actions">
+            <button type="button" class="item-action" id="creator-campaign-export-json" disabled>Export JSON</button>
+            <button type="button" class="item-action" id="creator-campaign-export-md" disabled>Export Markdown</button>
+            <button type="button" class="primary" id="creator-campaign-to-media" disabled>Send short video to Media Studio</button>
+          </div>
+          <div id="creator-campaign-results-wrap" class="hidden">
+            <div id="creator-campaign-results" class="creator-campaign-results"></div>
+          </div>
+          <div class="creator-campaign-history-wrap">
+            <h3>Saved campaign drafts</h3>
+            <div id="creator-campaign-history" class="creator-campaign-history"></div>
+          </div>
+        </section>
+
         <section class="creator-panel creator-character-panel">
           <div class="creator-panel-heading">
             <div><p class="eyebrow">REUSABLE VECTOR CHARACTER</p><h2>4 · Stick-figure builder</h2><p class="small muted">Choose a pose and export an SVG. Upload it to Canva, duplicate it, and adjust animation/timing there.</p></div>
