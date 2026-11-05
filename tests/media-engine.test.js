@@ -165,7 +165,7 @@ test("bounds excessive timeline counts and clamps invalid speed/key values", () 
   const tracks = normalizeTimelineTracks(Array.from({ length: 20 }, (_, index) => ({
     id: "track-" + index,
     kind: "video",
-    clips: Array.from({ length: 80 }, (_, clipIndex) => ({
+    clips: Array.from({ length: 220 }, (_, clipIndex) => ({
       id: "clip-" + index + "-" + clipIndex,
       duration: 999,
       start: 999,
@@ -175,7 +175,7 @@ test("bounds excessive timeline counts and clamps invalid speed/key values", () 
     }))
   })));
   assert.equal(tracks.length, 8);
-  assert.equal(tracks[0].clips.length, 48);
+  assert.equal(tracks[0].clips.length, 160);
   assert.equal(tracks[0].clips[0].duration, 180);
   assert.equal(tracks[0].clips[0].start, 0);
   assert.equal(tracks[0].clips[0].speed, 4);
