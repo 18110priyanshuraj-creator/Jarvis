@@ -7,6 +7,8 @@ class LocalCommandProcessorParsingTest {
     @Test
     fun stripsWakeWordBeforeMatchingLocalCommands() {
         assertEquals("open Canva", LocalCommandProcessor.normalizeCommand("Jarvis, open Canva"))
+        assertEquals("open Canva", LocalCommandProcessor.normalizeCommand("Hey Jarvis, open Canva"))
+        assertEquals("open Canva", LocalCommandProcessor.normalizeCommand("Okay JARVIS open Canva"))
         assertEquals("open Chrome", LocalCommandProcessor.normalizeCommand("  JARVIS: open Chrome  "))
         assertEquals("open Canva", LocalCommandProcessor.normalizeCommand("open Canva"))
     }
