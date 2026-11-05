@@ -2,7 +2,8 @@ import crypto from "node:crypto";
 
 const MAX_BRIEF = 1800;
 const MAX_TITLE = 90;
-const MAX_SCENES = 12;
+const MAX_SCENES = 80;
+const MAX_PROJECT_DURATION_SECONDS = 20 * 60;
 const MIN_SCENES = 2;
 const MAX_SCENE_TEXT = 900;
 const MAX_VISUAL_PROMPT = 360;
@@ -15,9 +16,10 @@ const TIMELINE_EASINGS = new Set(["linear", "ease-in", "ease-out", "ease-in-out"
 const TIMELINE_ASSET_TYPES = new Set(["scene", "image", "video", "audio"]);
 
 const FORMATS = Object.freeze({
-  "vertical-short": Object.freeze({ label: "Vertical short", width: 720, height: 1280, maxDurationSeconds: 90 }),
-  "landscape-explainer": Object.freeze({ label: "Landscape explainer", width: 1280, height: 720, maxDurationSeconds: 180 }),
-  "square-carousel": Object.freeze({ label: "Square carousel", width: 1080, height: 1080, maxDurationSeconds: 60 })
+  "vertical-short": Object.freeze({ label: "Vertical short", width: 720, height: 1280, maxDurationSeconds: 90, maxSceneDurationSeconds: 30 }),
+  "landscape-explainer": Object.freeze({ label: "Landscape explainer", width: 1280, height: 720, maxDurationSeconds: MAX_PROJECT_DURATION_SECONDS, maxSceneDurationSeconds: 30 }),
+  "long-form": Object.freeze({ label: "Long-form video (up to 20 minutes)", width: 1280, height: 720, maxDurationSeconds: MAX_PROJECT_DURATION_SECONDS, maxSceneDurationSeconds: 120 }),
+  "square-carousel": Object.freeze({ label: "Square carousel", width: 1080, height: 1080, maxDurationSeconds: 60, maxSceneDurationSeconds: 5 })
 });
 const PLATFORMS = new Set(["youtube-shorts", "youtube", "instagram-reels", "instagram-carousel", "tiktok", "general"]);
 const LANGUAGES = new Set(["en-IN", "hi-IN", "hinglish"]);
@@ -43,10 +45,10 @@ function validDate(value, fallback) {
   return parsed && Number.isFinite(parsed.getTime()) ? parsed.toISOString() : fallback;
 }
 
-function boundedDuration(value, fallback = 8) {
+function boundedDuration(value, fallback = 8, maximum = 30) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(30, Math.max(3, Math.round(parsed)));
+  return Math.min(maximum, Math.max(3, Math.round(parsed)));
 }
 function boundedNumber(value, fallback, min, max) {
   if (value === undefined || value === null || value === "") return fallback;
@@ -111,9 +113,9 @@ function normalizeSpeedRamp(value, durationSeconds, fallbackSpeed = 1) {
   return points.slice(0, MAX_SPEED_POINTS);
 }
 
-function normalizeTimelineClip(clip, index, trackKind) {
-  const duration = boundedNumber(clip?.duration, 6, 0.25, 180);
-  const start = boundedNumber(clip?.start, 0, 0, Math.max(0, 180 - duration));
+function normalizeTimelineClip(clip, index, trackKind, maxDurationSeconds = MAX_PROJECT_DURATION_SECONDS) {
+  const duration = boundedNumber(clip?.duration, 6, 0.25, maxDurationSeconds);
+  const start = boundedNumber(clip?.start, 0, 0, Math.max(0, maxDurationSeconds - duration));
   const speed = boundedNumber(clip?.speed, 1, 0.25, 4);
   const assetType = TIMELINE_ASSET_TYPES.has(clip?.assetType)
     ? clip.assetType
@@ -167,7 +169,7 @@ function normalizeTimelineClip(clip, index, trackKind) {
   };
 }
 
-export function normalizeTimelineTracks(value, scenes = []) {
+export function normalizeTimelineTracks(value, scenes = [], maxDurationSeconds = MAX_PROJECT_DURATION_SECONDS) {
   const source = Array.isArray(value) ? value.slice(0, MAX_TIMELINE_TRACKS) : [];
   const fallback = [{
     id: "track-main-video",
@@ -194,7 +196,7 @@ export function normalizeTimelineTracks(value, scenes = []) {
       kind,
       visible: track?.visible !== false,
       muted: track?.muted === true,
-      clips: clips.map((clip, clipIndex) => normalizeTimelineClip(clip, clipIndex, kind))
+      clips: clips.map((clip, clipIndex) => normalizeTimelineClip(clip, clipIndex, kind, maxDurationSeconds))
     };
   });
   return tracks;
@@ -227,8 +229,8 @@ function easedProgress(t, easing, curve) {
 }
 
 export function sampleTimelineKeyframes(clip, timeSeconds) {
-  const points = normalizeKeyframes(clip?.keyframes, boundedNumber(clip?.duration, 6, 0.25, 180));
-  const time = boundedNumber(timeSeconds, 0, 0, 180);
+  const points = normalizeKeyframes(clip?.keyframes, boundedNumber(clip?.duration, 6, 0.25, MAX_PROJECT_DURATION_SECONDS));
+  const time = boundedNumber(timeSeconds, 0, 0, MAX_PROJECT_DURATION_SECONDS);
   let rightIndex = points.findIndex((point) => point.time >= time);
   if (rightIndex <= 0) return { ...points[0] };
   if (rightIndex < 0) return { ...points.at(-1) };
@@ -418,7 +420,7 @@ function normalizeScene(scene, index, format, now, visualStyle) {
       saturation: boundedNumber(scene?.grade?.saturation, 100, 0, 180),
       blur: boundedNumber(scene?.grade?.blur, 0, 0, 12)
     },
-    durationSeconds: format === "square-carousel" ? 5 : boundedDuration(scene?.durationSeconds),
+    durationSeconds: format === "square-carousel" ? 5 : boundedDuration(scene?.durationSeconds, 8, FORMATS[format]?.maxSceneDurationSeconds || 30),
     order: index + 1,
     createdAt: validDate(scene?.createdAt, now)
   };
@@ -454,7 +456,7 @@ export function normalizeMediaProject(input = {}) {
   const maxPerScene = Math.max(3, Math.floor(format.maxDurationSeconds / scenes.length));
   scenes = scenes.map((scene) => ({ ...scene, durationSeconds: Math.min(scene.durationSeconds, maxPerScene) }));
   const sceneDurationSeconds = scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0);
-  const tracks = normalizeTimelineTracks(input.tracks, scenes);
+  const tracks = normalizeTimelineTracks(input.tracks, scenes, format.maxDurationSeconds);
   const timelineDuration = Math.max(0, ...tracks.flatMap((track) =>
     track.clips.map((clip) => clip.start + clip.duration)
   ));
