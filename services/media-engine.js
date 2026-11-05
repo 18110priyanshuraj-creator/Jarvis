@@ -42,6 +42,7 @@ function boundedDuration(value, fallback = 8) {
   return Math.min(30, Math.max(3, Math.round(parsed)));
 }
 function boundedNumber(value, fallback, min, max) {
+  if (value === undefined || value === null || value === "") return fallback;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, parsed));
