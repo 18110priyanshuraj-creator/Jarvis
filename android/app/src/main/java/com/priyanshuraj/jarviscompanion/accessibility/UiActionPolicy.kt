@@ -16,7 +16,8 @@ enum class UiActionPolicyCode {
     FIELD_NOT_VISIBLE,
     FIELD_DISABLED,
     FIELD_NOT_EDITABLE,
-    PASSWORD_FIELD
+    PASSWORD_FIELD,
+    TARGET_NOT_DRAGGABLE
 }
 
 data class UiActionPolicyDecision(
@@ -143,6 +144,40 @@ object UiActionPolicy {
         if (!visible) return blocked(UiActionPolicyCode.TARGET_NOT_VISIBLE, "The scroll area is not visible.")
         if (!enabled) return blocked(UiActionPolicyCode.TARGET_DISABLED, "The scroll area is disabled.")
         if (!scrollable) return blocked(UiActionPolicyCode.TARGET_NOT_CLICKABLE, "The target is not a scrollable area.")
+        return allowed()
+    }
+
+    /**
+     * Allow only an explicitly named, visible drag source or drop target that the app
+     * exposes through Android's semantic accessibility drag actions.
+     */
+    fun validateDragTarget(
+        requestedLabel: String,
+        contextLabels: Iterable<String>,
+        visible: Boolean,
+        enabled: Boolean,
+        dragActionAvailable: Boolean
+    ): UiActionPolicyDecision {
+        if (normalizeLabel(requestedLabel).isBlank()) {
+            return blocked(UiActionPolicyCode.EMPTY_TARGET, "An exact visible label is required for the drag target.")
+        }
+        if (isProtectedControl(requestedLabel) || contextLabels.any { isProtectedControl(it) }) {
+            return blocked(
+                UiActionPolicyCode.PROTECTED_CONTROL,
+                "This item is inside a protected or consequential control. Move it manually."
+            )
+        }
+        if (isProtectedScreen(contextLabels)) {
+            return blocked(UiActionPolicyCode.PROTECTED_SCREEN, "This screen may contain credentials or verification details.")
+        }
+        if (!visible) return blocked(UiActionPolicyCode.TARGET_NOT_VISIBLE, "The drag target is not visible.")
+        if (!enabled) return blocked(UiActionPolicyCode.TARGET_DISABLED, "The drag target is disabled.")
+        if (!dragActionAvailable) {
+            return blocked(
+                UiActionPolicyCode.TARGET_NOT_DRAGGABLE,
+                "This app does not expose a semantic accessibility drag action for that item."
+            )
+        }
         return allowed()
     }
 
