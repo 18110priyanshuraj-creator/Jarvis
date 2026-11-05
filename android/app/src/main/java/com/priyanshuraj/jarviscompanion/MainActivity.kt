@@ -1444,10 +1444,10 @@ class MainActivity : Activity() {
      */
     private inner class WorkspaceNativeBridge {
         @JavascriptInterface
-        fun submitAppLaunch(rawMessage: String, nonce: String?): Boolean {
+        fun submitNativeCommand(rawMessage: String, nonce: String?): Boolean {
             val message = rawMessage.trim()
             if (nonce != dashboardBridgeNonce) return false
-            if (!WorkspaceNativeCommandPolicy.isInstalledAppLaunchRequest(message)) return false
+            if (!WorkspaceNativeCommandPolicy.isNativeAppTaskRequest(message)) return false
 
             runOnUiThread {
                 if (!isFinishing && !isDestroyed && showingDashboard &&
