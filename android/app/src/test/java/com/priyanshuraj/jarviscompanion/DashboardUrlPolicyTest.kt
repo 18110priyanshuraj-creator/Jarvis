@@ -72,4 +72,11 @@ class DashboardUrlPolicyTest {
         assertFalse(DashboardUrlPolicy.isSafeExternalHttpsUrl("https://user@example.org/"))
         assertFalse(DashboardUrlPolicy.isSafeExternalHttpsUrl("https://example.org:9443/"))
     }
+
+    @Test
+    fun deployedVercelWorkspaceIsAValidDefaultOrigin() {
+        assertEquals(DEFAULT_WORKSPACE_URL, DashboardUrlPolicy.normalizeBaseUrl(DEFAULT_WORKSPACE_URL))
+        assertTrue(DashboardUrlPolicy.allowsInAppNavigation("$DEFAULT_WORKSPACE_URL/", DEFAULT_WORKSPACE_URL))
+        assertFalse(DashboardUrlPolicy.allowsInAppNavigation("https://example.com/", DEFAULT_WORKSPACE_URL))
+    }
 }
