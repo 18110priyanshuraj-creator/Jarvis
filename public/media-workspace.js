@@ -716,10 +716,81 @@ export function createMediaWorkspace({ api, toast }) {
         button.dataset.clipId = clip.id;
         button.style.left = (clip.start / total * 100) + "%";
         button.style.width = Math.max(1.2, clip.duration / total * 100) + "%";
+        button.style.touchAction = "none";
+        const leftHandle = makeElement("span", "timeline-clip-handle left");
+        leftHandle.dataset.dragEdge = "left";
+        leftHandle.setAttribute("aria-label", "Trim clip start");
+        const rightHandle = makeElement("span", "timeline-clip-handle right");
+        rightHandle.dataset.dragEdge = "right";
+        rightHandle.setAttribute("aria-label", "Trim clip end");
+        button.append(leftHandle);
         const asset = timelineAssets.get(clip.id);
         button.append(makeElement("strong", "", clip.label || asset?.name || "Clip"));
-        button.append(makeElement("span", "", Number(clip.start).toFixed(1) + "s · " + Number(clip.duration).toFixed(1) + "s"));
+        const timeLabel = makeElement("span", "timeline-clip-time",
+          Number(clip.start).toFixed(1) + "s · " + Number(clip.duration).toFixed(1) + "s");
+        button.append(timeLabel);
         if (clip.assetId && !asset) button.append(makeElement("small", "", "Re-attach media"));
+        button.append(rightHandle);
+        button.addEventListener("pointerdown", (event) => {
+          if (currentProject.status !== "draft" || event.button > 0) return;
+          event.preventDefault();
+          selectedTimelineClipId = clip.id;
+          const edge = event.target?.closest?.("[data-drag-edge]")?.dataset?.dragEdge || "move";
+          const rect = lane.getBoundingClientRect();
+          if (!rect.width) return;
+          const pointerId = event.pointerId;
+          const startX = event.clientX;
+          const initial = {
+            start: clip.start,
+            duration: clip.duration,
+            sourceIn: clip.sourceIn || 0,
+            sourceOut: clip.sourceOut,
+            speed: clip.speed || 1
+          };
+          button.setPointerCapture(pointerId);
+          button.classList.add("dragging");
+          const onMove = (moveEvent) => {
+            if (moveEvent.pointerId !== pointerId) return;
+            const delta = (moveEvent.clientX - startX) / rect.width * total;
+            if (edge === "move") {
+              clip.start = Math.max(0, Math.min(180 - initial.duration, initial.start + delta));
+            } else if (edge === "left") {
+              const boundedDelta = Math.max(-initial.sourceIn, Math.min(initial.duration - 0.25, delta));
+              clip.start = Math.max(0, initial.start + boundedDelta);
+              clip.duration = Math.max(0.25, initial.duration - boundedDelta);
+              clip.sourceIn = Math.max(0, initial.sourceIn + (boundedDelta >= 0
+                ? integrateClipSpeed({ ...clip, duration: initial.duration }, boundedDelta)
+                : -integrateClipSpeed({ ...clip, duration: initial.duration }, -boundedDelta)));
+              if (initial.sourceOut !== null && initial.sourceOut !== undefined) clip.sourceOut = initial.sourceOut;
+            } else if (edge === "right") {
+              clip.duration = Math.max(0.25, Math.min(180 - initial.start, initial.duration + delta));
+              if (initial.sourceOut !== null && initial.sourceOut !== undefined) {
+                clip.sourceOut = initial.sourceIn + integrateClipSpeed({ ...clip, duration: initial.duration }, clip.duration);
+              }
+            }
+            clip.keyframes = clip.keyframes.map((point) => ({ ...point, time: Math.max(0, Math.min(clip.duration, point.time)) }));
+            clip.speedRamp = clip.speedRamp.map((point) => ({ ...point, time: Math.max(0, Math.min(clip.duration, point.time)) }));
+            button.style.left = (clip.start / total * 100) + "%";
+            button.style.width = Math.max(1.2, clip.duration / total * 100) + "%";
+            timeLabel.textContent = Number(clip.start).toFixed(1) + "s · " + Number(clip.duration).toFixed(1) + "s";
+            currentProject.durationSeconds = Math.min(180, Math.max(
+              currentProject.scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0),
+              ...currentProject.tracks.flatMap((item) => item.clips.map((candidate) => candidate.start + candidate.duration))
+            ));
+          };
+          const onEnd = (endEvent) => {
+            if (endEvent.pointerId !== pointerId) return;
+            button.classList.remove("dragging");
+            button.removeEventListener("pointermove", onMove);
+            button.removeEventListener("pointerup", onEnd);
+            button.removeEventListener("pointercancel", onEnd);
+            renderTimelineEditor();
+            renderPreviewAtTime(clip.start * 1000);
+          };
+          button.addEventListener("pointermove", onMove);
+          button.addEventListener("pointerup", onEnd);
+          button.addEventListener("pointercancel", onEnd);
+        });
         button.addEventListener("click", () => {
           selectedTimelineClipId = clip.id;
           renderTimelineEditor();
