@@ -115,12 +115,12 @@ function normalizePack(rawInput, input, options = {}) {
   const leadMagnet = { title: clean(lead.title, 120), promise: clean(lead.promise, 300), sections: stringList(lead.sections, 8, 120), cta: clean(lead.cta, 360) };
   if (!leadMagnet.title || !leadMagnet.promise || leadMagnet.sections.length < 2 || !leadMagnet.cta) throw new TypeError("The lead-magnet outline is incomplete.");
   assertSafe(JSON.stringify(leadMagnet), "Lead magnet");
-  const lead = raw.leadMachine || {};
+  const leadReply = raw.leadMachine || {};
   const leadMachine = {
-    commentKeyword: clean(lead.commentKeyword, 24).replace(/[^a-z0-9_-]/gi, "").toUpperCase() || "GUIDE",
-    publicReplyDraft: clean(lead.publicReplyDraft, 360) || "Thanks for asking. Here is the resource: [add your reviewed resource link].",
-    manualReplyDraft: clean(lead.manualReplyDraft, 500) || "Here is the guide you requested: [add your reviewed resource link].",
-    followUpRule: clean(lead.followUpRule, 360) || "Reply only to people who ask for the resource. Do not send repeated unsolicited follow-ups."
+    commentKeyword: clean(leadReply.commentKeyword, 24).replace(/[^a-z0-9_-]/gi, "").toUpperCase() || "GUIDE",
+    publicReplyDraft: clean(leadReply.publicReplyDraft, 360) || "Thanks for asking. Here is the resource: [add your reviewed resource link].",
+    manualReplyDraft: clean(leadReply.manualReplyDraft, 500) || "Here is the guide you requested: [add your reviewed resource link].",
+    followUpRule: clean(leadReply.followUpRule, 360) || "Reply only to people who ask for the resource. Do not send repeated unsolicited follow-ups."
   };
   assertSafe(JSON.stringify(leadMachine), "Lead reply drafts");
   const seoPage = { slug: slug(raw.seoPage?.slug || input.topic), metaTitle: clean(raw.seoPage?.metaTitle, 60), metaDescription: clean(raw.seoPage?.metaDescription, 155), h1: clean(raw.seoPage?.h1, 120), sections, faqs };
