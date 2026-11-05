@@ -25,6 +25,8 @@ test("detects long-form landscape explainer requests", () => {
 
 test("does not turn how-to questions or third-party app commands into Media Studio drafts", () => {
   assert.equal(parseMediaCreationIntent("How do I make an animation?"), null);
+  assert.equal(parseMediaCreationIntent("Can you explain how to create a video?"), null);
+  assert.equal(parseMediaCreationIntent("Teach me how to edit a video"), null);
   assert.equal(parseMediaCreationIntent("Canva mein stick figure animation banao"), null);
   assert.equal(parseMediaCreationIntent("Open CapCut"), null);
   assert.equal(parseMediaCreationIntent("Hello Jarvis"), null);
