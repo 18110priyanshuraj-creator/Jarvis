@@ -23,5 +23,8 @@ class LocalCommandProcessorParsingTest {
         assertEquals("Canva", LocalCommandProcessor.appLaunchTarget("mujhe Canva khol do"))
         assertEquals("Canva", LocalCommandProcessor.appLaunchTarget("Canva open karo"))
         assertEquals("Chrome", LocalCommandProcessor.appLaunchTarget("please launch Chrome"))
+        assertEquals("Canva", LocalCommandProcessor.appLaunchTarget("Can you open Canva for me?"))
+        assertEquals("Canva", LocalCommandProcessor.appLaunchTarget("open Canva to edit a video"))
+        assertEquals("Google Photos", LocalCommandProcessor.appLaunchTarget("open Google Photos"))
     }
 }
