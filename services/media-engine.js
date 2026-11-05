@@ -6,6 +6,13 @@ const MAX_SCENES = 12;
 const MIN_SCENES = 2;
 const MAX_SCENE_TEXT = 900;
 const MAX_VISUAL_PROMPT = 360;
+const MAX_TIMELINE_TRACKS = 8;
+const MAX_TIMELINE_CLIPS = 48;
+const MAX_KEYFRAMES = 16;
+const MAX_SPEED_POINTS = 8;
+const TIMELINE_TRACK_KINDS = new Set(["video", "overlay", "audio"]);
+const TIMELINE_EASINGS = new Set(["linear", "ease-in", "ease-out", "ease-in-out", "hold", "cubic-bezier"]);
+const TIMELINE_ASSET_TYPES = new Set(["scene", "image", "video", "audio"]);
 
 const FORMATS = Object.freeze({
   "vertical-short": Object.freeze({ label: "Vertical short", width: 720, height: 1280, maxDurationSeconds: 90 }),
@@ -46,6 +53,239 @@ function boundedNumber(value, fallback, min, max) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, parsed));
+}
+
+
+function normalizeCurve(value) {
+  return {
+    x1: boundedNumber(value?.x1, 0.25, 0, 1),
+    y1: boundedNumber(value?.y1, 0.1, 0, 1),
+    x2: boundedNumber(value?.x2, 0.25, 0, 1),
+    y2: boundedNumber(value?.y2, 1, 0, 1)
+  };
+}
+
+function normalizeEasing(value) {
+  return TIMELINE_EASINGS.has(value) ? value : "linear";
+}
+
+function normalizeKeyframes(value, durationSeconds) {
+  const source = Array.isArray(value) ? value.slice(0, MAX_KEYFRAMES) : [];
+  const points = source.map((point) => ({
+    time: boundedNumber(point?.time, 0, 0, durationSeconds),
+    x: boundedNumber(point?.x, 0, -2, 2),
+    y: boundedNumber(point?.y, 0, -2, 2),
+    scale: boundedNumber(point?.scale, 1, 0.1, 4),
+    opacity: boundedNumber(point?.opacity, 1, 0, 1),
+    rotation: boundedNumber(point?.rotation, 0, -360, 360),
+    easing: normalizeEasing(point?.easing),
+    curve: normalizeCurve(point?.curve)
+  })).sort((a, b) => a.time - b.time);
+  if (!points.length) {
+    return [
+      { time: 0, x: 0, y: 0, scale: 1, opacity: 1, rotation: 0, easing: "linear", curve: normalizeCurve() },
+      { time: durationSeconds, x: 0, y: 0, scale: 1, opacity: 1, rotation: 0, easing: "linear", curve: normalizeCurve() }
+    ];
+  }
+  if (points[0].time > 0) points.unshift({ ...points[0], time: 0 });
+  if (points.at(-1).time < durationSeconds) points.push({ ...points.at(-1), time: durationSeconds });
+  return points.slice(0, MAX_KEYFRAMES);
+}
+
+function normalizeSpeedRamp(value, durationSeconds, fallbackSpeed = 1) {
+  const source = Array.isArray(value) ? value.slice(0, MAX_SPEED_POINTS) : [];
+  const points = source.map((point) => ({
+    time: boundedNumber(point?.time, 0, 0, durationSeconds),
+    speed: boundedNumber(point?.speed, fallbackSpeed, 0.25, 4),
+    easing: normalizeEasing(point?.easing),
+    curve: normalizeCurve(point?.curve)
+  })).sort((a, b) => a.time - b.time);
+  if (!points.length) {
+    return [
+      { time: 0, speed: fallbackSpeed, easing: "linear", curve: normalizeCurve() },
+      { time: durationSeconds, speed: fallbackSpeed, easing: "linear", curve: normalizeCurve() }
+    ];
+  }
+  if (points[0].time > 0) points.unshift({ ...points[0], time: 0 });
+  if (points.at(-1).time < durationSeconds) points.push({ ...points.at(-1), time: durationSeconds });
+  return points.slice(0, MAX_SPEED_POINTS);
+}
+
+function normalizeTimelineClip(clip, index, trackKind) {
+  const duration = boundedNumber(clip?.duration, 6, 0.25, 180);
+  const speed = boundedNumber(clip?.speed, 1, 0.25, 4);
+  const assetType = TIMELINE_ASSET_TYPES.has(clip?.assetType)
+    ? clip.assetType
+    : trackKind === "audio" ? "audio" : "video";
+  const sourceIn = boundedNumber(clip?.sourceIn, 0, 0, 36000);
+  const sourceOut = clip?.sourceOut === null || clip?.sourceOut === undefined || clip?.sourceOut === ""
+    ? null
+    : boundedNumber(clip.sourceOut, sourceIn + duration * speed, sourceIn + 0.05, 36000);
+  const key = clip?.chromaKey || {};
+  const color = typeof key.color === "string" && /^#[0-9a-f]{6}$/i.test(key.color) ? key.color.toLowerCase() : "#00ff00";
+  return {
+    id: cleanText(clip?.id, 80) || crypto.randomUUID(),
+    sceneId: cleanText(clip?.sceneId, 80) || null,
+    assetId: cleanText(clip?.assetId, 100) || null,
+    assetName: cleanText(clip?.assetName, 140),
+    assetType,
+    label: cleanText(clip?.label, 80) || "Clip " + (index + 1),
+    start: boundedNumber(clip?.start, 0, 0, 180),
+    duration,
+    sourceIn,
+    sourceOut,
+    speed,
+    fit: clip?.fit === "contain" ? "contain" : "cover",
+    transform: {
+      x: boundedNumber(clip?.transform?.x, 0, -2, 2),
+      y: boundedNumber(clip?.transform?.y, 0, -2, 2),
+      scale: boundedNumber(clip?.transform?.scale, 1, 0.1, 4),
+      opacity: boundedNumber(clip?.transform?.opacity, 1, 0, 1),
+      rotation: boundedNumber(clip?.transform?.rotation, 0, -360, 360)
+    },
+    keyframes: normalizeKeyframes(clip?.keyframes, duration),
+    speedRamp: normalizeSpeedRamp(clip?.speedRamp, duration, speed),
+    chromaKey: {
+      enabled: key.enabled === true,
+      color,
+      similarity: boundedNumber(key.similarity, 0.34, 0.01, 1),
+      softness: boundedNumber(key.softness, 0.12, 0, 1)
+    },
+    visible: clip?.visible !== false,
+    muted: clip?.muted === true
+  };
+}
+
+export function normalizeTimelineTracks(value, scenes = []) {
+  const source = Array.isArray(value) ? value.slice(0, MAX_TIMELINE_TRACKS) : [];
+  const fallback = [{
+    id: "track-main-video",
+    name: "Main video",
+    kind: "video",
+    visible: true,
+    muted: false,
+    clips: scenes.map((scene, index) => ({
+      id: "clip-" + scene.id,
+      sceneId: scene.id,
+      assetType: "scene",
+      label: scene.heading || "Scene " + (index + 1),
+      start: scenes.slice(0, index).reduce((sum, item) => sum + item.durationSeconds, 0),
+      duration: scene.durationSeconds,
+      speed: 1
+    }))
+  }];
+  const tracks = (source.length ? source : fallback).map((track, index) => {
+    const kind = TIMELINE_TRACK_KINDS.has(track?.kind) ? track.kind : "video";
+    const clips = Array.isArray(track?.clips) ? track.clips.slice(0, MAX_TIMELINE_CLIPS) : [];
+    return {
+      id: cleanText(track?.id, 80) || "track-" + (index + 1),
+      name: cleanText(track?.name, 60) || (kind === "video" ? "Video" : kind === "overlay" ? "Overlay" : "Audio") + " " + (index + 1),
+      kind,
+      visible: track?.visible !== false,
+      muted: track?.muted === true,
+      clips: clips.map((clip, clipIndex) => normalizeTimelineClip(clip, clipIndex, kind))
+    };
+  });
+  return tracks;
+}
+
+function cubicBezierProgress(t, curve) {
+  const { x1, y1, x2, y2 } = normalizeCurve(curve);
+  const sample = (a, b, p) => 3 * a * (1 - p) ** 2 * p + 3 * b * (1 - p) * p ** 2 + p ** 3;
+  let low = 0;
+  let high = 1;
+  let parameter = Math.max(0, Math.min(1, t));
+  for (let i = 0; i < 12; i++) {
+    const x = sample(x1, x2, parameter);
+    if (Math.abs(x - t) < 0.0005) break;
+    if (x < t) low = parameter;
+    else high = parameter;
+    parameter = (low + high) / 2;
+  }
+  return sample(y1, y2, parameter);
+}
+
+function easedProgress(t, easing, curve) {
+  const bounded = Math.max(0, Math.min(1, t));
+  if (easing === "hold") return bounded < 1 ? 0 : 1;
+  if (easing === "ease-in") return bounded * bounded;
+  if (easing === "ease-out") return 1 - (1 - bounded) ** 2;
+  if (easing === "ease-in-out") return bounded < 0.5 ? 2 * bounded * bounded : 1 - ((-2 * bounded + 2) ** 2) / 2;
+  if (easing === "cubic-bezier") return cubicBezierProgress(bounded, curve);
+  return bounded;
+}
+
+export function sampleTimelineKeyframes(clip, timeSeconds) {
+  const points = normalizeKeyframes(clip?.keyframes, boundedNumber(clip?.duration, 6, 0.25, 180));
+  const time = boundedNumber(timeSeconds, 0, 0, 180);
+  let rightIndex = points.findIndex((point) => point.time >= time);
+  if (rightIndex <= 0) return { ...points[0] };
+  if (rightIndex < 0) return { ...points.at(-1) };
+  const left = points[rightIndex - 1];
+  const right = points[rightIndex];
+  const span = Math.max(0.0001, right.time - left.time);
+  const progress = easedProgress((time - left.time) / span, left.easing, left.curve);
+  return {
+    time,
+    x: left.x + (right.x - left.x) * progress,
+    y: left.y + (right.y - left.y) * progress,
+    scale: left.scale + (right.scale - left.scale) * progress,
+    opacity: left.opacity + (right.opacity - left.opacity) * progress,
+    rotation: left.rotation + (right.rotation - left.rotation) * progress
+  };
+}
+
+export function sampleTimelineSpeed(clip, timeSeconds) {
+  const points = normalizeSpeedRamp(clip?.speedRamp, boundedNumber(clip?.duration, 6, 0.25, 180), boundedNumber(clip?.speed, 1, 0.25, 4));
+  const time = boundedNumber(timeSeconds, 0, 0, 180);
+  const rightIndex = points.findIndex((point) => point.time >= time);
+  if (rightIndex <= 0) return points[0].speed;
+  if (rightIndex < 0) return points.at(-1).speed;
+  const left = points[rightIndex - 1];
+  const right = points[rightIndex];
+  const progress = easedProgress((time - left.time) / Math.max(0.0001, right.time - left.time), left.easing, left.curve);
+  return left.speed + (right.speed - left.speed) * progress;
+}
+
+export function splitTimelineClip(clip, splitAtSeconds) {
+  const splitAt = Number(splitAtSeconds);
+  if (!Number.isFinite(splitAt) || splitAt <= 0.25 || splitAt >= Number(clip?.duration) - 0.25) {
+    throw new TypeError("Choose a split point at least 0.25 seconds from either clip edge.");
+  }
+  const firstDuration = splitAt;
+  const secondDuration = Number(clip.duration) - splitAt;
+  const splitSpeed = sampleTimelineSpeed(clip, splitAt);
+  const splitSource = Number(clip.sourceIn || 0) + splitAt * splitSpeed;
+  const first = {
+    ...clip,
+    duration: firstDuration,
+    sourceOut: splitSource,
+    keyframes: normalizeKeyframes(clip.keyframes, clip.duration)
+      .filter((point) => point.time <= splitAt)
+      .map((point) => ({ ...point, time: Math.min(point.time, firstDuration) })),
+    speedRamp: normalizeSpeedRamp(clip.speedRamp, clip.duration, clip.speed)
+      .filter((point) => point.time <= splitAt)
+      .map((point) => ({ ...point, time: Math.min(point.time, firstDuration) }))
+  };
+  const second = {
+    ...clip,
+    id: crypto.randomUUID(),
+    label: (clip.label || "Clip") + " · B",
+    start: Number(clip.start || 0) + splitAt,
+    duration: secondDuration,
+    sourceIn: splitSource,
+    sourceOut: clip.sourceOut,
+    keyframes: normalizeKeyframes(clip.keyframes, clip.duration)
+      .filter((point) => point.time >= splitAt)
+      .map((point) => ({ ...point, time: point.time - splitAt })),
+    speedRamp: normalizeSpeedRamp(clip.speedRamp, clip.duration, clip.speed)
+      .filter((point) => point.time >= splitAt)
+      .map((point) => ({ ...point, time: point.time - splitAt }))
+  };
+  return [
+    normalizeTimelineClip(first, 0, "video"),
+    normalizeTimelineClip(second, 1, "video")
+  ];
 }
 
 function formatKey(value) {
@@ -187,7 +427,12 @@ export function normalizeMediaProject(input = {}) {
   scenes = scenes.slice(0, maxCount);
   const maxPerScene = Math.max(3, Math.floor(format.maxDurationSeconds / scenes.length));
   scenes = scenes.map((scene) => ({ ...scene, durationSeconds: Math.min(scene.durationSeconds, maxPerScene) }));
-  const durationSeconds = scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0);
+  const sceneDurationSeconds = scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0);
+  const tracks = normalizeTimelineTracks(input.tracks, scenes);
+  const timelineDuration = Math.max(0, ...tracks.flatMap((track) =>
+    track.clips.map((clip) => clip.start + clip.duration)
+  ));
+  const durationSeconds = Math.min(format.maxDurationSeconds, Math.max(sceneDurationSeconds, timelineDuration));
   const state = PROJECT_STATES.has(input.status) ? input.status : "draft";
   const createdAt = validDate(input.createdAt, now);
   const updatedAt = validDate(input.updatedAt, createdAt);
@@ -205,6 +450,7 @@ export function normalizeMediaProject(input = {}) {
     audience,
     visualStyle,
     scenes,
+    tracks,
     durationSeconds,
     status: state,
     generationSource: input.generationSource === "ai-assisted" ? "ai-assisted" : "local-template",
@@ -291,6 +537,7 @@ export function updateMediaProject(existing, updates = {}) {
     tone: updates.tone ?? existing.tone,
     visualStyle: updates.visualStyle ?? existing.visualStyle,
     scenes: updates.scenes ?? existing.scenes,
+    tracks: updates.tracks ?? existing.tracks,
     updatedAt: new Date().toISOString(),
     status: "draft",
     approvedAt: null
