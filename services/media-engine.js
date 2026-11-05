@@ -112,8 +112,8 @@ function normalizeSpeedRamp(value, durationSeconds, fallbackSpeed = 1) {
 }
 
 function normalizeTimelineClip(clip, index, trackKind) {
-  const start = boundedNumber(clip?.start, 0, 0, 180);
-  const duration = Math.min(180 - start, boundedNumber(clip?.duration, 6, 0.25, 180));
+  const duration = boundedNumber(clip?.duration, 6, 0.25, 180);
+  const start = boundedNumber(clip?.start, 0, 0, Math.max(0, 180 - duration));
   const speed = boundedNumber(clip?.speed, 1, 0.25, 4);
   const assetType = TIMELINE_ASSET_TYPES.has(clip?.assetType)
     ? clip.assetType
