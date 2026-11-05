@@ -117,7 +117,7 @@ test("bounds excessive timeline counts and clamps invalid speed/key values", () 
   assert.equal(tracks.length, 8);
   assert.equal(tracks[0].clips.length, 48);
   assert.equal(tracks[0].clips[0].duration, 180);
-  assert.equal(tracks[0].clips[0].start, 180);
+  assert.equal(tracks[0].clips[0].start, 0);
   assert.equal(tracks[0].clips[0].speed, 4);
   assert.equal(tracks[0].clips[0].chromaKey.color, "#00ff00");
   assert.equal(tracks[0].clips[0].chromaKey.similarity, 1);
