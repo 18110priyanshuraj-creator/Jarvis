@@ -277,6 +277,58 @@ class AgentPlanRunnerTest {
         assertFalse(AgentPlanExecutionGate.isBusy())
     }
 
+    @Test
+    fun validatesAndPreviewsOnlyVerifiedCanvaDragAndDrop() {
+        val plan = JSONObject(
+            """{"mode":"device_action","reply":"I will move the selected clip in Canva and check the screen.","actions":[
+                {"type":"open_app","value":"Canva","purpose":"Open Canva."},
+                {"type":"verify_app_foreground","value":"Canva","purpose":"Confirm Canva is foregrounded."},
+                {"type":"drag_label_to_label","value":"Canva","sourceLabel":"Presenter clip 1","targetLabel":"Video track 2","purpose":"Move the named clip to the named track."},
+                {"type":"verify_screen_text","value":"Video track 2","purpose":"Check the expected destination is visible."},
+                {"type":"ask_user","value":"Please review the timeline before making more edits.","purpose":"Keep final review with the user."}
+            ]}"""
+        )
+        val actions = AgentPlanRunner.validate(plan)
+        assertEquals(5, actions.length())
+        assertTrue(AgentPlanRunner.requiresAccessibility(plan))
+        assertTrue(AgentPlanRunner.describe(plan).contains("Move Presenter clip 1 to Video track 2 in Canva"))
+        assertEquals(
+            "open app → verify app → drag clip → verify screen → ask user",
+            AgentPlanRunner.actionKinds(plan)
+        )
+    }
+
+    @Test
+    fun rejectsCanvaDragWithoutExactLabelsCanvaVerificationOrImmediateResultCheck() {
+        val missingLabels = JSONObject(
+            """{"mode":"device_action","actions":[
+                {"type":"open_app","value":"Canva"},
+                {"type":"verify_app_foreground","value":"Canva"},
+                {"type":"drag_label_to_label","value":"Canva","sourceLabel":"Clip 1","targetLabel":""},
+                {"type":"verify_screen_text","value":"Track 2"}
+            ]}"""
+        )
+        val wrongApp = JSONObject(
+            """{"mode":"device_action","actions":[
+                {"type":"open_app","value":"Chrome"},
+                {"type":"verify_app_foreground","value":"Chrome"},
+                {"type":"drag_label_to_label","value":"Chrome","sourceLabel":"Clip 1","targetLabel":"Track 2"},
+                {"type":"verify_screen_text","value":"Track 2"}
+            ]}"""
+        )
+        val missingResultCheck = JSONObject(
+            """{"mode":"device_action","actions":[
+                {"type":"open_app","value":"Canva"},
+                {"type":"verify_app_foreground","value":"Canva"},
+                {"type":"drag_label_to_label","value":"Canva","sourceLabel":"Clip 1","targetLabel":"Track 2"},
+                {"type":"ask_user","value":"Review the edit."}
+            ]}"""
+        )
+        expectIllegalArgument { AgentPlanRunner.validate(missingLabels) }
+        expectIllegalArgument { AgentPlanRunner.validate(wrongApp) }
+        expectIllegalArgument { AgentPlanRunner.validate(missingResultCheck) }
+    }
+
     private fun expectIllegalArgument(block: () -> Unit) {
         try {
             block()

@@ -47,7 +47,7 @@ object AgentPlanExecutionGate {
 object AgentPlanRunner {
     private val allowed = setOf(
         "open_app", "verify_app_foreground", "open_web_search", "verify_browser_foreground", "read_screen", "tap_label", "type_text",
-        "scroll_down", "scroll_up", "back", "home", "verify_screen_text", "ask_user", "finish"
+        "scroll_down", "scroll_up", "drag_label_to_label", "back", "home", "verify_screen_text", "ask_user", "finish"
     )
 
     /**
@@ -83,7 +83,7 @@ object AgentPlanRunner {
         val actions = validate(plan)
         val accessibilityActions = setOf(
             "verify_app_foreground", "verify_browser_foreground", "read_screen", "tap_label", "type_text",
-            "scroll_down", "scroll_up", "back", "home", "verify_screen_text"
+            "scroll_down", "scroll_up", "drag_label_to_label", "back", "home", "verify_screen_text"
         )
         return (0 until actions.length()).any { index ->
             actions.getJSONObject(index).optString("type") in accessibilityActions
@@ -110,6 +110,8 @@ object AgentPlanRunner {
                 ?: throw IllegalArgumentException("The plan contains an invalid action.")
             val type = action.optString("type")
             val value = action.optString("value").trim()
+            val sourceLabel = action.optString("sourceLabel").trim()
+            val targetLabel = action.optString("targetLabel").trim()
             if (type !in allowed || value.length > 180) {
                 throw IllegalArgumentException("The plan contains an unsupported action.")
             }
@@ -118,6 +120,17 @@ object AgentPlanRunner {
             }
             if (type == "tap_label" && UiActionPolicy.isProtectedControl(value)) {
                 throw IllegalArgumentException("The plan contains a protected screen control.")
+            }
+            if (type == "drag_label_to_label") {
+                if (UiActionPolicy.normalizeLabel(value) != "canva" ||
+                    sourceLabel.isBlank() || targetLabel.isBlank() ||
+                    sourceLabel.length > 100 || targetLabel.length > 100 ||
+                    UiActionPolicy.normalizeLabel(sourceLabel) == UiActionPolicy.normalizeLabel(targetLabel) ||
+                    UiActionPolicy.isProtectedControl(sourceLabel) ||
+                    UiActionPolicy.isProtectedControl(targetLabel)
+                ) {
+                    throw IllegalArgumentException("A Canva drag needs two different, safe, exact visible labels and the verified Canva app name.")
+                }
             }
             if (type == "type_text" && !UiActionPolicy.validateTextPayload(value, 160).allowed) {
                 throw IllegalArgumentException("The requested text is outside the safe typing policy.")
@@ -192,10 +205,31 @@ object AgentPlanRunner {
             }
         }
 
+        // A semantic drag must stay inside the verified Canva app and be checked immediately.
+        for (index in 0 until actions.length()) {
+            val action = actions.getJSONObject(index)
+            if (action.optString("type") != "drag_label_to_label") continue
+            val appCheck = actions.optJSONObject(index - 1)
+            val appLaunch = actions.optJSONObject(index - 2)
+            val resultCheck = actions.optJSONObject(index + 1)
+            if (appLaunch?.optString("type") != "open_app" ||
+                UiActionPolicy.normalizeLabel(appLaunch.optString("value")) != "canva" ||
+                appCheck?.optString("type") != "verify_app_foreground" ||
+                UiActionPolicy.normalizeLabel(appCheck.optString("value")) != "canva"
+            ) {
+                throw IllegalArgumentException("A Canva drag must follow an explicit Canva launch and foreground verification.")
+            }
+            if (resultCheck?.optString("type") != "verify_screen_text" ||
+                resultCheck.optString("value").isBlank()
+            ) {
+                throw IllegalArgumentException("A Canva drag must be followed immediately by visible-result verification.")
+            }
+        }
+
         // UI mutations need an explicit expected visible result after the last mutation.
         val lastUiMutation = (0 until actions.length()).lastOrNull { index ->
             actions.getJSONObject(index).optString("type") in setOf(
-                "tap_label", "type_text", "scroll_down", "scroll_up", "back", "home"
+                "tap_label", "type_text", "scroll_down", "scroll_up", "drag_label_to_label", "back", "home"
             )
         } ?: -1
         if (lastUiMutation >= 0) {
@@ -229,6 +263,7 @@ object AgentPlanRunner {
                 "scroll_up" -> "Scroll up"
                 "back" -> "Go back"
                 "home" -> "Go to the home screen"
+                "drag_label_to_label" -> "Move " + action.optString("sourceLabel").take(45) + " to " + action.optString("targetLabel").take(45) + " in Canva"
                 "verify_screen_text" -> "Verify that this text is visible: " + value.take(100)
                 "ask_user" -> "Ask you: " + value.take(60)
                 "finish" -> "Finish"
@@ -258,6 +293,7 @@ object AgentPlanRunner {
                     "type_text" -> "type text"
                     "scroll_down" -> "scroll down"
                     "scroll_up" -> "scroll up"
+                    "drag_label_to_label" -> "drag clip"
                     "back" -> "back"
                     "home" -> "home"
                     "verify_screen_text" -> "verify screen"
@@ -325,7 +361,9 @@ object AgentPlanRunner {
                 } else {
                     val type = action.optString("type")
                     val value = action.optString("value")
-                    val result = LocalCommandProcessor.executePlannedAction(context, type, value)
+                    val sourceLabel = action.optString("sourceLabel")
+                    val targetLabel = action.optString("targetLabel")
+                    val result = LocalCommandProcessor.executePlannedAction(context, type, value, sourceLabel, targetLabel)
                     TaskStepResult(result.success, result.shouldStop, result.message)
                 }
             },
@@ -334,6 +372,7 @@ object AgentPlanRunner {
                     "open_app" -> 1400L
                     "open_web_search" -> 1800L
                     "tap_label" -> 600L
+                    "drag_label_to_label" -> 900L
                     "back", "home" -> 700L
                     else -> 300L
                 }

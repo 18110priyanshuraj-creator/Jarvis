@@ -18,13 +18,13 @@
 - Export options include JSON, script, captions, PNG frames and silent WebM output. Creator Studio also exports 1280 × 720 thumbnail PNGs, single-pose and pose-sheet SVGs, a short silent WebM stick-figure motion sample, long-form chapter CSV, Markdown script draft and YouTube description template.
 - Formats are vertical short (up to 90 seconds), landscape explainer (up to 180 seconds) and square carousel (up to 60 seconds).
 - YouTube Publisher has a saved preview and explicit confirmation step; it is not an automatic posting tool. Its upload permission is separate from the read-only YouTube Analytics permission.
-- Android Companion can launch installed apps and perform bounded accessibility-label actions, scrolling, Back/Home, and focused-field text entry.
+- Android Companion can launch installed apps and perform bounded accessibility-label actions, scrolling, Back/Home, and focused-field text entry. On Android 12L/API 32+, it also has a narrow semantic drag action for two exact accessible labels; it never uses raw screen coordinates.
 
 ## Capabilities not present / not claimed
 
-- Canva's client credentials are not configured in this repo or Vercel. The integration code is present, but a real Canva connection still needs the owner's registered Canva developer app, OAuth client ID/secret and exact callback URL entered as private server environment variables. No Canva account has been connected or tested here.
+- The existing optional Canva Connect feature is only for uploading a PNG and creating a flat thumbnail design. It still uses a separately registered Canva developer app and private OAuth settings, but those credentials are not required to open the installed Canva app or use Android's on-device accessibility controls. This branch adds no new Canva client-secret dependency.
 - The first Canva handoff creates a new custom 16:9 design containing a single flat thumbnail PNG. It does not create separately editable headline/shape layers or a video timeline.
-- Reliable drag-and-drop or arbitrary touch-coordinate control of Canva.
+- General-purpose Canva drag-and-drop, precise timeline editing, trimming, splitting, keyframes or arbitrary touch-coordinate control. JARVIS can attempt only an Android semantic drag when the exact source and destination labels expose ACTION_DRAG_START/ACTION_DRAG_DROP; Canva's actual mobile UI has not yet been tested for those actions.
 - Full multi-track timeline editing, precise clip timing, keyframe/rig animation or automated audio mastering.
 - Native voiceover recording/generation in Media Studio.
 - A full long-form video renderer beyond the current 180-second landscape Media Studio renderer limit. Creator Studio makes a 4–20 minute plan and narration draft, not a finished video file.
@@ -37,13 +37,13 @@
 2. **Editable video handoff:** add a documented asset bundle with script, scene images, captions and audio notes; preserve a manual import/edit step in Canva.
 3. **Long-form render pipeline:** design a separate renderer with voiceover/audio support and explicit processing/storage limits; do not extend the current 180-second Media Studio renderer without tests.
 4. **YouTube analytics validation:** connect an account using the separate read-only permission, verify report eligibility, and compare top-video metrics / retention with the manual CTR worksheet. Keep API data separate from manually entered values.
-5. **Android validation:** test Canva on the target tablet. Record which controls are actually exposed by Accessibility; keep unsupported drag/drop steps manual.
+5. **Android validation:** test Canva on the target tablet. Confirm whether the selected clip and destination expose semantic accessibility drag actions; keep every unsupported drag, trim, split and timeline operation manual.
 6. **Skill activation:** Creator Coach drafts must be validated and explicitly approved by the workspace owner.
 
 ## Acceptance criteria for future device-control work
 
 - JARVIS must distinguish a requested app launch from a completed edit.
-- Every visible tap requires a unique accessible label and a fresh screen observation.
-- Unsupported gestures must fail honestly and ask the user to perform the step.
+- Every visible tap requires a unique accessible label; every drag requires different unique source/destination labels and a verified Canva foreground.
+- Unsupported semantic drag actions must fail honestly and ask the user to perform the step manually; never fall back to coordinate gestures.
 - No auto-publish, file deletion, permission grant or credential entry.
 - Test on the physical Android device before claiming Canva workflow support.

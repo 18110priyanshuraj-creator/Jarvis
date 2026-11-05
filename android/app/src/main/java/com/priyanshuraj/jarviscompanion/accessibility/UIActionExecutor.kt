@@ -1,6 +1,7 @@
 package com.priyanshuraj.jarviscompanion.accessibility
 
 import android.graphics.Rect
+import android.os.Build
 import android.os.Bundle
 import android.text.InputType
 import android.view.accessibility.AccessibilityNodeInfo
@@ -24,7 +25,13 @@ enum class UiActionCode {
     FIELD_NOT_EDITABLE,
     SCROLL_AREA_NOT_FOUND,
     SYSTEM_ACTION_REJECTED,
-    EXPECTED_TEXT_NOT_FOUND
+    EXPECTED_TEXT_NOT_FOUND,
+    DRAG_NOT_SUPPORTED,
+    DRAG_SOURCE_NOT_FOUND,
+    DRAG_TARGET_NOT_FOUND,
+    DRAG_AMBIGUOUS_TARGET,
+    DRAG_ACTION_UNAVAILABLE,
+    DRAG_ACTION_REJECTED
 }
 
 data class UiActionResult(
@@ -224,6 +231,205 @@ object UIActionExecutor {
         } finally {
             runCatching { root.recycle() }
         }
+    }
+
+    /**
+     * Moves one explicitly named item to one explicitly named drop target using only
+     * Android's semantic accessibility drag actions. No coordinates or raw gestures.
+     *
+     * Android 12L (API 32) or newer is required, and the target app must expose both
+     * ACTION_DRAG_START and ACTION_DRAG_DROP for the matching accessible nodes.
+     */
+    fun dragExactLabels(
+        service: JarvisAccessibilityService,
+        requestedSourceLabel: String,
+        requestedTargetLabel: String
+    ): UiActionResult {
+        val sourceLabel = requestedSourceLabel.trim().trim('"', '\'')
+        val targetLabel = requestedTargetLabel.trim().trim('"', '\'')
+        if (sourceLabel.isBlank() || targetLabel.isBlank() ||
+            UiActionPolicy.normalizeLabel(sourceLabel) == UiActionPolicy.normalizeLabel(targetLabel)
+        ) {
+            return failure(
+                UiActionCode.DRAG_SOURCE_NOT_FOUND,
+                "Tell me two different exact visible labels: the item to move and its destination."
+            )
+        }
+        if (Build.VERSION.SDK_INT < 32) {
+            return failure(
+                UiActionCode.DRAG_NOT_SUPPORTED,
+                "Semantic drag-and-drop needs Android 12L (API 32) or newer. No gesture was attempted."
+            )
+        }
+
+        val startActionId = AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_START.id
+        val dropActionId = AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_DROP.id
+        val cancelActionId = AccessibilityNodeInfo.AccessibilityAction.ACTION_DRAG_CANCEL.id
+        var source: AccessibilityNodeInfo? = null
+
+        val sourceRoot = service.rootInActiveWindow
+            ?: return failure(UiActionCode.NO_ACCESSIBLE_WINDOW, "The current app did not expose an accessible screen.", true)
+        try {
+            val tree = collectVisibleTree(sourceRoot)
+            try {
+                if (UiActionPolicy.isProtectedScreen(tree.labels)) {
+                    return failure(
+                        UiActionCode.PROTECTED_SCREEN,
+                        "This screen may contain credentials or verification details. Move items manually."
+                    )
+                }
+                val lookup = findUniqueActionTarget(tree.nodes, sourceLabel, startActionId)
+                if (lookup.protected) {
+                    return failure(UiActionCode.PROTECTED_CONTROL, "The requested source is inside a protected control. Move it manually.")
+                }
+                if (lookup.ambiguous) {
+                    return failure(UiActionCode.DRAG_AMBIGUOUS_TARGET, "More than one draggable item is labelled " + sourceLabel + ". Use a unique label.")
+                }
+                val sourceNode = lookup.target ?: return failure(
+                    if (lookup.labelFound) UiActionCode.DRAG_ACTION_UNAVAILABLE else UiActionCode.DRAG_SOURCE_NOT_FOUND,
+                    if (lookup.labelFound) "The source is visible, but this app does not expose its semantic drag-start action."
+                    else "I could not find a visible item with the exact label " + sourceLabel + "."
+                )
+                source = sourceNode
+                if (!sourceNode.performAction(startActionId)) {
+                    runCatching { sourceNode.recycle() }
+                    source = null
+                    return failure(UiActionCode.DRAG_ACTION_REJECTED, "Android rejected the drag-start request. No drop was attempted.")
+                }
+            } finally {
+                tree.recycleNodes()
+            }
+        } finally {
+            runCatching { sourceRoot.recycle() }
+        }
+
+        val activeSource = source ?: return failure(
+            UiActionCode.DRAG_ACTION_REJECTED,
+            "The drag source could not be retained safely. No drop was attempted."
+        )
+        try {
+            val targetRoot = service.rootInActiveWindow
+                ?: run {
+                    runCatching { activeSource.performAction(cancelActionId) }
+                    return failure(UiActionCode.NO_ACCESSIBLE_WINDOW, "The screen changed after drag-start; the drag was cancelled.", true)
+                }
+            try {
+                val tree = collectVisibleTree(targetRoot)
+                try {
+                    if (UiActionPolicy.isProtectedScreen(tree.labels)) {
+                        runCatching { activeSource.performAction(cancelActionId) }
+                        return failure(UiActionCode.PROTECTED_SCREEN, "The destination screen may contain credentials. The drag was cancelled.")
+                    }
+                    val lookup = findUniqueActionTarget(tree.nodes, targetLabel, dropActionId)
+                    if (lookup.protected) {
+                        runCatching { activeSource.performAction(cancelActionId) }
+                        return failure(UiActionCode.PROTECTED_CONTROL, "The requested destination is inside a protected control. The drag was cancelled.")
+                    }
+                    if (lookup.ambiguous) {
+                        runCatching { activeSource.performAction(cancelActionId) }
+                        return failure(UiActionCode.DRAG_AMBIGUOUS_TARGET, "More than one drop target is labelled " + targetLabel + ". The drag was cancelled.")
+                    }
+                    val target = lookup.target
+                        ?: run {
+                            runCatching { activeSource.performAction(cancelActionId) }
+                            return failure(
+                                if (lookup.labelFound) UiActionCode.DRAG_ACTION_UNAVAILABLE else UiActionCode.DRAG_TARGET_NOT_FOUND,
+                                if (lookup.labelFound) "The destination is visible, but the app did not expose its semantic drop action. The drag was cancelled."
+                                else "I could not find a visible drop target with the exact label " + targetLabel + ". The drag was cancelled."
+                            )
+                        }
+                    try {
+                        if (targetKey(target) == targetKey(activeSource)) {
+                            runCatching { activeSource.performAction(cancelActionId) }
+                            return failure(UiActionCode.DRAG_AMBIGUOUS_TARGET, "The source and destination resolve to the same UI item. The drag was cancelled.")
+                        }
+                        if (!target.performAction(dropActionId)) {
+                            runCatching { activeSource.performAction(cancelActionId) }
+                            return failure(UiActionCode.DRAG_ACTION_REJECTED, "Android rejected the drop request. The result must be checked manually.")
+                        }
+                        return success(
+                            "Android accepted the semantic drag request from " + sourceLabel + " to " + targetLabel +
+                                ". Check the visible timeline result before continuing."
+                        )
+                    } finally {
+                        runCatching { target.recycle() }
+                    }
+                } finally {
+                    tree.recycleNodes()
+                }
+            } finally {
+                runCatching { targetRoot.recycle() }
+            }
+        } finally {
+            runCatching { source?.recycle() }
+        }
+    }
+
+    private data class ActionTargetLookup(
+        val target: AccessibilityNodeInfo?,
+        val labelFound: Boolean,
+        val ambiguous: Boolean,
+        val protected: Boolean
+    )
+
+    private fun findUniqueActionTarget(
+        nodes: List<AccessibilityNodeInfo>,
+        requestedLabel: String,
+        actionId: Int
+    ): ActionTargetLookup {
+        val matches = LinkedHashMap<String, AccessibilityNodeInfo>()
+        val matchingKeys = linkedSetOf<String>()
+        var labelFound = false
+        var protected = false
+        for (node in nodes) {
+            if (node.isPassword || !UiActionPolicy.matchesExactLabel(
+                    node.text?.toString(),
+                    node.contentDescription?.toString(),
+                    requestedLabel
+                )
+            ) continue
+            labelFound = true
+            val candidate = nearestActionCopy(node, actionId) ?: continue
+            val context = ancestorLabels(candidate)
+            val decision = UiActionPolicy.validateDragTarget(
+                requestedLabel = requestedLabel,
+                contextLabels = context,
+                visible = candidate.isVisibleToUser,
+                enabled = candidate.isEnabled,
+                dragActionAvailable = candidate.actionList.any { it.id == actionId }
+            )
+            val key = targetKey(candidate)
+            matchingKeys += key
+            if (!decision.allowed) {
+                if (decision.code == UiActionPolicyCode.PROTECTED_CONTROL ||
+                    decision.code == UiActionPolicyCode.PROTECTED_SCREEN
+                ) protected = true
+                candidate.recycle()
+                continue
+            }
+            val previous = matches.putIfAbsent(key, candidate)
+            if (previous != null) candidate.recycle()
+        }
+        if (protected || matchingKeys.size > 1 || matches.size != 1) {
+            matches.values.forEach { runCatching { it.recycle() } }
+            return ActionTargetLookup(null, labelFound, matchingKeys.size > 1, protected)
+        }
+        return ActionTargetLookup(matches.values.first(), labelFound, false, false)
+    }
+
+    private fun nearestActionCopy(start: AccessibilityNodeInfo, actionId: Int): AccessibilityNodeInfo? {
+        var current: AccessibilityNodeInfo? = AccessibilityNodeInfo.obtain(start)
+        var depth = 0
+        while (current != null && depth <= MAX_CONTEXT_DEPTH) {
+            if (current.actionList.any { it.id == actionId }) return current
+            val item = current
+            val parent = item.parent
+            runCatching { item.recycle() }
+            current = parent
+            depth++
+        }
+        current?.recycle()
+        return null
     }
 
     fun scroll(service: JarvisAccessibilityService, forward: Boolean): UiActionResult {
@@ -442,6 +648,7 @@ object UIActionExecutor {
             UiActionPolicyCode.FIELD_NOT_EDITABLE -> UiActionCode.FIELD_NOT_EDITABLE
             UiActionPolicyCode.TARGET_NOT_VISIBLE -> UiActionCode.TARGET_NOT_FOUND
             UiActionPolicyCode.TARGET_NOT_CLICKABLE -> UiActionCode.ACTION_REJECTED
+            UiActionPolicyCode.TARGET_NOT_DRAGGABLE -> UiActionCode.DRAG_ACTION_UNAVAILABLE
             UiActionPolicyCode.ALLOWED -> UiActionCode.SUCCESS
         }
         return UiActionResult(false, decision.explanation, code, retryable = false)

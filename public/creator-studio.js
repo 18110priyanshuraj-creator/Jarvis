@@ -504,7 +504,7 @@ export function createCreatorStudio({ api, toast }) {
         method: "POST",
         body: JSON.stringify({
           name: "Creator Studio — Canva & YouTube",
-          instructions: "Help plan and improve original educational or general-audience videos. Start with audience, specific viewer question, promise, platform, language and duration. Create truthful hooks, clear title and thumbnail concepts, long-form chapter outline, natural narration, shot list, on-screen text, captions and a storyboard. For stick figures, use a consistent circle head, torso and separate limb lines, with a reusable pose library. Explain how to build the design in Canva using its timeline, tracks, audio, captions, transitions and export, but do not claim to control unsupported drag-and-drop or detailed timeline controls. Use Creator Studio exports for scripts, storyboard CSV, YouTube description and SVG character assets. Suggest reviewing YouTube Analytics (impressions, CTR, first 30-second retention, average view duration and dips) against the channel's own comparable videos. Never promise viral views or 100% reach; never fabricate stats or sources. Keep the owner in control of media rights, final file selection, privacy/audience declarations and publishing. Device control is limited to the exact accessible app actions already supported by Android Companion.",
+          instructions: "Help plan and improve original educational or general-audience videos. Start with audience, specific viewer question, promise, platform, language and duration. Create truthful hooks, clear title and thumbnail concepts, long-form chapter outline, natural narration, shot list, on-screen text, captions and a storyboard. For stick figures, use a consistent circle head, torso and separate limb lines, with a reusable pose library. Explain how to build the design in Canva using its timeline, tracks, audio, captions, transitions and export. On Android 12L/API 32+, JARVIS may attempt one semantic drag only when the user supplies two different exact accessible labels, Canva is foreground-verified, and the app exposes ACTION_DRAG_START and ACTION_DRAG_DROP; verify the visible result immediately. Do not claim precision trimming, splitting, keyframes or unsupported timeline controls. Use Creator Studio exports for scripts, storyboard CSV, YouTube description and SVG character assets. Suggest reviewing YouTube Analytics (impressions, CTR, first 30-second retention, average view duration and dips) against the channel's own comparable videos. Never promise viral views or 100% reach; never fabricate stats or sources. Keep the owner in control of media rights, final file selection, privacy/audience declarations and publishing. Device control includes exact accessible app actions and the narrowly scoped Canva semantic drag action only when the target app exposes it; unsupported steps remain manual.",
           applicationIds: ["*"],
           triggers: ["stick figure", "Canva", "long YouTube", "video editing"],
           testCases: [
@@ -731,16 +731,16 @@ export function createCreatorStudio({ api, toast }) {
       const disconnect = $("creator-disconnect-canva");
       const create = $("creator-create-canva-thumbnail");
       if (connect) {
-        connect.textContent = canvaStatus.connected ? "Canva connected" : "Connect Canva account";
+        connect.textContent = canvaStatus.connected ? "Thumbnail export connected" : "Connect thumbnail export (optional)";
         connect.disabled = !canvaStatus.canConnect || canvaStatus.connected;
       }
       if (disconnect) disconnect.classList.toggle("hidden", !canvaStatus.connected);
       if (create) create.disabled = !canvaStatus.connected;
       setCanvaStatus(canvaStatus.connected
-        ? "Canva is connected. JARVIS can upload your approved thumbnail PNG and create a new 16:9 design."
+        ? "Optional Canva thumbnail export is connected. It uploads a flat PNG to create a new 16:9 design; it does not edit the video timeline. Opening Canva on Android and using JARVIS Accessibility does not require this connection."
         : canvaStatus.canConnect
-          ? "Canva credentials are configured. Connect your Canva account to create the thumbnail design."
-          : "Canva Connect needs a registered developer integration, client ID, client secret, callback URL and the JARVIS encrypted-token key on the server.");
+          ? "Optional thumbnail export is configured. Connect it only to upload a flat thumbnail PNG; it is not needed for Canva app control on Android."
+          : "Optional Canva thumbnail export is not configured. You can still open Canva on Android and use JARVIS screen controls without adding Canva client credentials.");
       return canvaStatus;
     } catch (error) {
       setCanvaStatus(error.message || "Canva connection status is unavailable.", true);
