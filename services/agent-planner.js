@@ -93,8 +93,11 @@ function normalizePublicBrowserUrl(value) {
   if (!["http:", "https:"].includes(parsed.protocol) || !parsed.hostname ||
     parsed.username || parsed.password) return "";
   const host = parsed.hostname.toLowerCase();
-  if (host.includes(":") || host === "localhost" || host.endsWith(".localhost") ||
-    host.endsWith(".local") || host.endsWith(".internal")) return "";
+  const reservedSuffixes = [
+    ".localhost", ".local", ".internal", ".test", ".example", ".invalid", ".home.arpa", ".onion"
+  ];
+  if (host.includes(":") || host === "localhost" ||
+    reservedSuffixes.some((suffix) => host === suffix.slice(1) || host.endsWith(suffix))) return "";
   if (!host.includes(".")) return "";
   const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (ipv4) {
@@ -103,7 +106,10 @@ function normalizePublicBrowserUrl(value) {
     const privateOrReserved = a === 0 || a === 10 || a === 127 || a >= 224 ||
       (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
       (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) ||
-      (a === 192 && b === 0) || (a === 198 && (b === 18 || b === 19));
+      (a === 192 && b === 0) || (a === 192 && b === 88 && c === 99) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      (a === 198 && b === 51 && c === 100) ||
+      (a === 203 && b === 0 && c === 113);
     if (privateOrReserved) return "";
   }
   const sensitiveQueryKey = /^(?:token|access_token|refresh_token|auth|authorization|password|passwd|pin|otp|code|session|sessionid|api[_-]?key)$/i;
