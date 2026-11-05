@@ -249,6 +249,21 @@ export function sampleTimelineSpeed(clip, timeSeconds) {
   return left.speed + (right.speed - left.speed) * progress;
 }
 
+export function integrateTimelineSpeed(clip, fromSeconds = 0, toSeconds = Number(clip?.duration || 0)) {
+  const from = Math.max(0, Number(fromSeconds) || 0);
+  const to = Math.max(from, Math.min(Number(clip?.duration || 0), Number(toSeconds) || 0));
+  if (to <= from) return 0;
+  const steps = Math.max(8, Math.ceil((to - from) * 20));
+  const step = (to - from) / steps;
+  let area = 0;
+  for (let index = 0; index < steps; index++) {
+    const left = sampleTimelineSpeed(clip, from + index * step);
+    const right = sampleTimelineSpeed(clip, from + (index + 1) * step);
+    area += (left + right) * 0.5 * step;
+  }
+  return area;
+}
+
 export function splitTimelineClip(clip, splitAtSeconds) {
   const splitAt = Number(splitAtSeconds);
   if (!Number.isFinite(splitAt) || splitAt <= 0.25 || splitAt >= Number(clip?.duration) - 0.25) {
@@ -257,7 +272,7 @@ export function splitTimelineClip(clip, splitAtSeconds) {
   const firstDuration = splitAt;
   const secondDuration = Number(clip.duration) - splitAt;
   const splitSpeed = sampleTimelineSpeed(clip, splitAt);
-  const splitSource = Number(clip.sourceIn || 0) + splitAt * splitSpeed;
+  const splitSource = Number(clip.sourceIn || 0) + integrateTimelineSpeed(clip, 0, splitAt);
   const first = {
     ...clip,
     duration: firstDuration,
