@@ -83,7 +83,7 @@ object LocalCommandProcessor {
         RegexOption.IGNORE_CASE
     )
     private val openSuffix = Regex(
-        """^(?:mujhe\s+)?(.+?)\s+(?:ko\s+)?(?:kholo|khol do|open karo|launch karo|chalao|start karo|shuru karo)$""",
+        """^(?:mujhe\s+)?(.+?)\s+(?:ko\s+)?(?:kholo|khol do|open karo|launch karo|chalao|start karo|shuru karo|chalu karo)$""",
         RegexOption.IGNORE_CASE
     )
     private val tapPrefix = Regex("""^(?:tap|click|press|select|dabao)\s+(.+)$""", RegexOption.IGNORE_CASE)
@@ -129,8 +129,16 @@ object LocalCommandProcessor {
     /** Return the app target for common English and Hindi launch phrasings. */
     internal fun appLaunchTarget(message: String): String? {
         val input = normalizeCommand(message)
-        return openPrefix.find(input)?.groupValues?.getOrNull(1)?.trim()
-            ?: openSuffix.find(input)?.groupValues?.getOrNull(1)?.trim()
+        val rawTarget = openPrefix.find(input)?.groupValues?.getOrNull(1)
+            ?: openSuffix.find(input)?.groupValues?.getOrNull(1)
+            ?: return null
+        // Remove polite/context clauses so "open Canva to edit a video" still
+        // resolves to the app name rather than searching for a fictitious app.
+        return rawTarget
+            .replace(Regex("""(?i)\s+(?:to|for|and|then|because|so|please)\b.*$"""), "")
+            .trim()
+            .trimEnd('.', '!', '?', '।', '॥')
+            .ifBlank { null }
     }
 
     fun handle(context: Context, message: String, allowUiActions: Boolean): String? {
