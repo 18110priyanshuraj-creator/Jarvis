@@ -1741,63 +1741,104 @@ export function createMediaWorkspace({ api, toast }) {
   }
 
   function sceneAtTime(project, elapsedMs) {
+    const totalMs = Math.max(0, (project.durationSeconds || 0) * 1000);
+    const bounded = Math.max(0, Math.min(totalMs, elapsedMs));
+    const mainTrack = project.tracks?.find((track) => track.id === "track-main-video");
+    if (mainTrack) {
+      if (mainTrack.visible === false) return { index: -1, previousIndex: -1, sceneElapsedMs: 0, progress: 0, totalMs };
+      const time = bounded / 1000;
+      const clips = mainTrack.clips
+        .filter((clip) => clip.sceneId && clip.visible !== false)
+        .slice()
+        .sort((a, b) => a.start - b.start);
+      const activeIndex = clips.findIndex((clip) => time >= clip.start && time < clip.start + clip.duration);
+      if (activeIndex < 0) return { index: -1, previousIndex: -1, sceneElapsedMs: 0, progress: 0, totalMs };
+      const clip = clips[activeIndex];
+      const index = project.scenes.findIndex((scene) => scene.id === clip.sceneId);
+      if (index < 0) return { index: -1, previousIndex: -1, sceneElapsedMs: 0, progress: 0, totalMs };
+      const scene = project.scenes[index];
+      const localTime = Math.max(0, time - clip.start);
+      const sourceTime = Math.max(0, Number(clip.sourceIn || 0) + integrateClipSpeed(clip, localTime));
+      const sceneElapsedMs = Math.min(scene.durationSeconds * 1000, sourceTime * 1000);
+      let previousIndex = -1;
+      for (let cursor = activeIndex - 1; cursor >= 0; cursor--) {
+        const previous = project.scenes.findIndex((item) => item.id === clips[cursor].sceneId);
+        if (previous >= 0 && previous !== index) {
+          previousIndex = previous;
+          break;
+        }
+      }
+      return {
+        index,
+        previousIndex,
+        sceneElapsedMs,
+        progress: Math.min(1, sceneElapsedMs / Math.max(1, scene.durationSeconds * 1000)),
+        totalMs
+      };
+    }
+
     const sceneDurationMs = project.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
-    const totalMs = Math.max(sceneDurationMs, (project.durationSeconds || 0) * 1000);
-    const bounded = Math.max(0, Math.min(sceneDurationMs, elapsedMs));
+    const legacyTime = Math.max(0, Math.min(sceneDurationMs, bounded));
     let cursor = 0;
     for (let index = 0; index < project.scenes.length; index++) {
       const durationMs = project.scenes[index].durationSeconds * 1000;
-      if (bounded < cursor + durationMs || index === project.scenes.length - 1) {
-        return { index, sceneElapsedMs: Math.min(durationMs, Math.max(0, bounded - cursor)), progress: Math.min(1, Math.max(0, (bounded - cursor) / durationMs)), totalMs };
+      if (legacyTime < cursor + durationMs || index === project.scenes.length - 1) {
+        return {
+          index,
+          previousIndex: index - 1,
+          sceneElapsedMs: Math.min(durationMs, Math.max(0, legacyTime - cursor)),
+          progress: Math.min(1, Math.max(0, (legacyTime - cursor) / durationMs)),
+          totalMs
+        };
       }
       cursor += durationMs;
     }
-    return { index: 0, sceneElapsedMs: 0, progress: 0, totalMs };
+    return { index: -1, previousIndex: -1, sceneElapsedMs: 0, progress: 0, totalMs };
   }
 
   function drawTimelineFrame(ctx, width, height, project, elapsedMs) {
     const frame = sceneAtTime(project, elapsedMs);
-    const { index, sceneElapsedMs, progress } = frame;
-    const scene = project.scenes[index];
+    const { index, previousIndex, sceneElapsedMs, progress } = frame;
+    const scene = index >= 0 ? project.scenes[index] : null;
     const transitionMs = 650;
     const transitionProgress = Math.min(1, sceneElapsedMs / transitionMs);
-    const transition = scene.transition || "fade";
+    const transition = scene?.transition || "cut";
     ctx.clearRect(0, 0, width, height);
-    if (index === 0 || sceneElapsedMs >= transitionMs || transition === "cut") {
+    if (!scene) {
+      ctx.fillStyle = "#06101f";
+      ctx.fillRect(0, 0, width, height);
+    } else if (previousIndex < 0 || sceneElapsedMs >= transitionMs || transition === "cut") {
       drawScene(ctx, width, height, project, index, progress);
+    } else if (transition === "fade") {
+      drawScene(ctx, width, height, project, previousIndex, 1, 1 - transitionProgress);
+      drawScene(ctx, width, height, project, index, progress, transitionProgress);
+    } else if (transition === "slide") {
+      ctx.save();
+      ctx.translate(-width * transitionProgress, 0);
+      drawScene(ctx, width, height, project, previousIndex, 1);
+      ctx.restore();
+      ctx.save();
+      ctx.translate(width * (1 - transitionProgress), 0);
+      drawScene(ctx, width, height, project, index, progress);
+      ctx.restore();
+    } else if (transition === "wipe") {
+      drawScene(ctx, width, height, project, previousIndex, 1);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, width * transitionProgress, height);
+      ctx.clip();
+      drawScene(ctx, width, height, project, index, progress);
+      ctx.restore();
+    } else if (transition === "zoom") {
+      drawScene(ctx, width, height, project, previousIndex, 1);
+      ctx.save();
+      ctx.translate(width / 2, height / 2);
+      ctx.scale(0.88 + transitionProgress * 0.12, 0.88 + transitionProgress * 0.12);
+      ctx.translate(-width / 2, -height / 2);
+      drawScene(ctx, width, height, project, index, progress);
+      ctx.restore();
     } else {
-      const previousIndex = index - 1;
-      if (transition === "fade") {
-        drawScene(ctx, width, height, project, previousIndex, 1, 1 - transitionProgress);
-        drawScene(ctx, width, height, project, index, progress, transitionProgress);
-      } else if (transition === "slide") {
-        ctx.save();
-        ctx.translate(-width * transitionProgress, 0);
-        drawScene(ctx, width, height, project, previousIndex, 1);
-        ctx.restore();
-        ctx.save();
-        ctx.translate(width * (1 - transitionProgress), 0);
-        drawScene(ctx, width, height, project, index, progress);
-        ctx.restore();
-      } else if (transition === "wipe") {
-        drawScene(ctx, width, height, project, previousIndex, 1);
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(0, 0, width * transitionProgress, height);
-        ctx.clip();
-        drawScene(ctx, width, height, project, index, progress);
-        ctx.restore();
-      } else if (transition === "zoom") {
-        drawScene(ctx, width, height, project, previousIndex, 1);
-        ctx.save();
-        ctx.translate(width / 2, height / 2);
-        ctx.scale(0.88 + transitionProgress * 0.12, 0.88 + transitionProgress * 0.12);
-        ctx.translate(-width / 2, -height / 2);
-        drawScene(ctx, width, height, project, index, progress);
-        ctx.restore();
-      } else {
-        drawScene(ctx, width, height, project, index, progress);
-      }
+      drawScene(ctx, width, height, project, index, progress);
     }
     drawTimelineOverlays(ctx, width, height, project, elapsedMs);
   }
