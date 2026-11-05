@@ -303,6 +303,13 @@ test("built-in planner opens normalized public websites without accepting local 
     "Open http://127.0.0.1/",
     "Open http://192.168.1.1/",
     "Open http://169.254.169.254/",
+    "Open http://203.0.113.10/",
+    "Open http://198.51.100.4/",
+    "Open http://100.64.0.1/",
+    "Open http://0177.0.0.1/",
+    "Open https://device.test/",
+    "Open https://router.home.arpa/",
+    "Open https://example.invalid/",
     "Open https://example.com/?access_token=secret",
     "Open https://example.com/?code=123456",
     "Open javascript:alert(1)"
