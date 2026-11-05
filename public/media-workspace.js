@@ -991,30 +991,35 @@ export function createMediaWorkspace({ api, toast }) {
 
   function applyTimelineMask(asset, source, mask) {
     if (!mask || mask.shape === "none") return source;
-    const sourceWidth = source.width || source.videoWidth || source.naturalWidth || 0;
-    const sourceHeight = source.height || source.videoHeight || source.naturalHeight || 0;
-    if (!sourceWidth || !sourceHeight) return source;
+    const originalWidth = source.width || source.videoWidth || source.naturalWidth || 0;
+    const originalHeight = source.height || source.videoHeight || source.naturalHeight || 0;
+    if (!originalWidth || !originalHeight) return source;
+    const scale = Math.min(1, 480 / originalWidth);
+    const width = Math.max(1, Math.round(originalWidth * scale));
+    const height = Math.max(1, Math.round(originalHeight * scale));
     const maskCanvas = asset.maskCanvas || document.createElement("canvas");
     asset.maskCanvas = maskCanvas;
-    maskCanvas.width = sourceWidth;
-    maskCanvas.height = sourceHeight;
+    maskCanvas.width = width;
+    maskCanvas.height = height;
     const maskContext = maskCanvas.getContext("2d");
     if (!maskContext) return source;
-    maskContext.clearRect(0, 0, sourceWidth, sourceHeight);
-    maskContext.fillStyle = mask.invert ? "#fff" : "#000";
-    if (mask.invert) maskContext.fillRect(0, 0, sourceWidth, sourceHeight);
-    const centerX = sourceWidth * (0.5 + Number(mask.x || 0) * 0.5);
-    const centerY = sourceHeight * (0.5 + Number(mask.y || 0) * 0.5);
-    const maskWidth = sourceWidth * Math.max(0.05, Math.min(2, Number(mask.width || 1)));
-    const maskHeight = sourceHeight * Math.max(0.05, Math.min(2, Number(mask.height || 1)));
+    maskContext.clearRect(0, 0, width, height);
+    if (mask.invert) {
+      maskContext.fillStyle = "#fff";
+      maskContext.fillRect(0, 0, width, height);
+      maskContext.globalCompositeOperation = "destination-out";
+    }
+    const centerX = width * (0.5 + Number(mask.x || 0) * 0.5);
+    const centerY = height * (0.5 + Number(mask.y || 0) * 0.5);
+    const maskWidth = width * Math.max(0.05, Math.min(2, Number(mask.width || 1)));
+    const maskHeight = height * Math.max(0.05, Math.min(2, Number(mask.height || 1)));
     const left = centerX - maskWidth / 2;
     const top = centerY - maskHeight / 2;
-    const featherPx = Math.max(0, Math.min(0.5, Number(mask.feather || 0))) * Math.min(sourceWidth, sourceHeight);
-    const shapeColor = mask.invert ? "#000" : "#fff";
+    const featherPx = Math.max(0, Math.min(0.5, Number(mask.feather || 0))) * Math.min(width, height);
     maskContext.save();
-    maskContext.fillStyle = shapeColor;
+    maskContext.fillStyle = "#fff";
     if (featherPx > 0) {
-      maskContext.shadowColor = shapeColor;
+      maskContext.shadowColor = "#fff";
       maskContext.shadowBlur = featherPx;
     }
     maskContext.beginPath();
@@ -1027,15 +1032,16 @@ export function createMediaWorkspace({ api, toast }) {
     }
     maskContext.fill();
     maskContext.restore();
+    maskContext.globalCompositeOperation = "source-over";
 
     const output = asset.compositeCanvas || document.createElement("canvas");
     asset.compositeCanvas = output;
-    output.width = sourceWidth;
-    output.height = sourceHeight;
+    output.width = width;
+    output.height = height;
     const outputContext = output.getContext("2d");
     if (!outputContext) return source;
-    outputContext.clearRect(0, 0, sourceWidth, sourceHeight);
-    outputContext.drawImage(source, 0, 0, sourceWidth, sourceHeight);
+    outputContext.clearRect(0, 0, width, height);
+    outputContext.drawImage(source, 0, 0, width, height);
     outputContext.globalCompositeOperation = "destination-in";
     outputContext.drawImage(maskCanvas, 0, 0);
     outputContext.globalCompositeOperation = "source-over";
