@@ -18,13 +18,13 @@ Reject topics that are only broad labels (for example, “science”). Narrow th
 
 ## 2. Canva video workflow
 
-Canva's current video editor uses a multi-track timeline for new video designs. On mobile, a template-first flow may be available depending on the Canva app/version and account rollout.
+Canva's current video editor uses a multi-track timeline for new video designs. On mobile, a template-first flow may be available depending on the Canva app/version and account rollout. JARVIS's Android Companion can attempt a narrowly scoped drag only when the user provides two exact visible labels and Canva exposes Android's semantic accessibility drag/drop actions (API 32+). This does not provide general-purpose timeline editing.
 
 1. Open Canva and choose **Video**. For a normal YouTube video, choose a landscape 16:9 canvas; for a Short, choose vertical 9:16.
 2. Start blank when the story needs custom pacing, or choose a template only as a layout starting point. Replace its media, colours, type and wording; do not leave template filler text.
 3. Upload recorded footage, voiceover, screenshots and original graphics using **Uploads**. Use only media you own, have permission to use, or are licensed to use.
 4. Put the primary video clips on the main/bottom track. Place captions, titles, diagrams, images and supporting footage on upper tracks.
-5. Trim by dragging a clip's edges. Move the playhead to inspect cuts. Split a clip at the required point when a new segment or transition is needed.
+5. Trim by dragging a clip's edges. Move the playhead to inspect cuts. Split a clip at the required point when a new segment or transition is needed. These precision trims/splits remain manual in Canva; JARVIS's semantic drag action moves a uniquely named accessible item only when the app exposes both drag-start and drop actions.
 6. Add a transition between clips on the main track only when it helps communicate a change. Prefer clean cuts for explanations; avoid an effect on every cut.
 7. Add voiceover/audio on its own track. Keep speech clear above music; reduce or remove background music under important dialogue. Use music and sound effects only when the licence permits the intended use.
 8. Add readable captions. Check names, technical words, Hindi/English transliteration and punctuation manually; automatic captions can be wrong.
