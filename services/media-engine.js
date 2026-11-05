@@ -490,6 +490,14 @@ export function normalizeMediaProject(input = {}) {
   };
 }
 
+function formatDurationLabel(totalSeconds) {
+  const seconds = Math.max(0, Math.round(Number(totalSeconds) || 0));
+  if (seconds < 60) return seconds + " seconds";
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return minutes + " minutes" + (remainder ? " " + remainder + " seconds" : "");
+}
+
 export async function createMediaDraft(input = {}, options = {}) {
   const brief = cleanText(input.brief, MAX_BRIEF);
   if (!brief) throw new TypeError("Describe what the media should be about.");
@@ -565,9 +573,12 @@ export async function createMediaDraft(input = {}, options = {}) {
       createdAt: base.createdAt,
       updatedAt: new Date().toISOString()
     });
-    if (isLongForm && normalized.durationSeconds < 600) {
-      normalized.generationNote = "The AI provider returned a shorter outline (" +
-        normalized.durationSeconds + " seconds), not a complete 15-20 minute script. Expand the narration and chapters before treating this as long-form.";
+    const narrationWordCount = normalized.scenes.reduce((total, scene) =>
+      total + scene.voiceover.trim().split(/\s+/u).filter(Boolean).length, 0
+    );
+    if (isLongForm && (normalized.durationSeconds < 900 || narrationWordCount < 2100)) {
+      normalized.generationNote = "The AI provider returned about " + formatDurationLabel(normalized.durationSeconds) +
+        " of timeline and " + narrationWordCount + " narration words, below the 15-20 minute script target. Expand the narration and chapters before treating this as long-form.";
     }
     return normalized;
   } catch {
