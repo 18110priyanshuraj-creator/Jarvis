@@ -285,15 +285,15 @@ object UIActionExecutor {
                 if (lookup.ambiguous) {
                     return failure(UiActionCode.DRAG_AMBIGUOUS_TARGET, "More than one draggable item is labelled " + sourceLabel + ". Use a unique label.")
                 }
-                source = lookup.target
-                if (source == null) {
-                    return failure(
-                        if (lookup.labelFound) UiActionCode.DRAG_ACTION_UNAVAILABLE else UiActionCode.DRAG_SOURCE_NOT_FOUND,
-                        if (lookup.labelFound) "The source is visible, but this app does not expose its semantic drag-start action."
-                        else "I could not find a visible item with the exact label " + sourceLabel + "."
-                    )
-                }
-                if (!source.performAction(startActionId)) {
+                val sourceNode = lookup.target ?: return failure(
+                    if (lookup.labelFound) UiActionCode.DRAG_ACTION_UNAVAILABLE else UiActionCode.DRAG_SOURCE_NOT_FOUND,
+                    if (lookup.labelFound) "The source is visible, but this app does not expose its semantic drag-start action."
+                    else "I could not find a visible item with the exact label " + sourceLabel + "."
+                )
+                source = sourceNode
+                if (!sourceNode.performAction(startActionId)) {
+                    runCatching { sourceNode.recycle() }
+                    source = null
                     return failure(UiActionCode.DRAG_ACTION_REJECTED, "Android rejected the drag-start request. No drop was attempted.")
                 }
             } finally {
@@ -303,17 +303,21 @@ object UIActionExecutor {
             runCatching { sourceRoot.recycle() }
         }
 
+        val activeSource = source ?: return failure(
+            UiActionCode.DRAG_ACTION_REJECTED,
+            "The drag source could not be retained safely. No drop was attempted."
+        )
         try {
             val targetRoot = service.rootInActiveWindow
                 ?: run {
-                    runCatching { source?.performAction(cancelActionId) }
+                    runCatching { activeSource.performAction(cancelActionId) }
                     return failure(UiActionCode.NO_ACCESSIBLE_WINDOW, "The screen changed after drag-start; the drag was cancelled.", true)
                 }
             try {
                 val tree = collectVisibleTree(targetRoot)
                 try {
                     if (UiActionPolicy.isProtectedScreen(tree.labels)) {
-                        runCatching { source?.performAction(cancelActionId) }
+                        runCatching { activeSource.performAction(cancelActionId) }
                         return failure(UiActionCode.PROTECTED_SCREEN, "The destination screen may contain credentials. The drag was cancelled.")
                     }
                     val lookup = findUniqueActionTarget(tree.nodes, targetLabel, dropActionId)
@@ -335,7 +339,7 @@ object UIActionExecutor {
                             )
                         }
                     try {
-                        if (targetKey(target) == source?.let(::targetKey)) {
+                        if (targetKey(target) == targetKey(activeSource)) {
                             runCatching { source?.performAction(cancelActionId) }
                             return failure(UiActionCode.DRAG_AMBIGUOUS_TARGET, "The source and destination resolve to the same UI item. The drag was cancelled.")
                         }
