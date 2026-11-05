@@ -22,6 +22,7 @@ const FIGURE_POSES = new Set(["idle", "walk", "point", "think", "celebrate"]);
 const SCENE_ANIMATIONS = new Set(["fade", "rise", "bounce", "walk", "gesture"]);
 const SCENE_BACKGROUNDS = new Set(["midnight", "sunset", "paper", "mint", "violet"]);
 const SCENE_TRANSITIONS = new Set(["cut", "fade", "slide", "wipe", "zoom"]);
+const SCENE_CAMERA_MOTIONS = new Set(["static", "ken-burns", "push-in", "pull-out", "pan-left", "pan-right", "drift-up"]);
 const SECRET_PATTERN = /(?:\b|_)(?:api[_ -]?key|access[_ -]?token|password|passcode|one[- ]time code|otp|private key)\b\s*[:=]\s*\S+/i;
 const TOKEN_PATTERN = /\bBearer\s+[A-Za-z0-9._~+/-]{24,}/i;
 const RESTRICTED_MEDIA_PATTERN = /(?:\b(?:porn(?:ography|ographic)?|erotic|masturbat(?:e|ion)|explicit sexual|nude|suicid(?:e|al)|self[- ]harm|cutting tutorial|weapon construction|build (?:a )?(?:bomb|gun|weapon|knife|sword|taser)|make (?:a )?(?:bomb|explosive|weapon|gun)|explosive device|drug synthesis|how to (?:hide|use) (?:drugs|a weapon)|how to vape\b|how to (?:use|refill) (?:a )?(?:vape|e-cigarette)|how to (?:smoke|vape|drink|take|use|dose) (?:weed|marijuana|cannabis|cocaine|meth|heroin|ecstasy|mdma|alcohol|nicotine|tobacco|vapes?)|how to (?:use|carry|fight with) (?:a )?(?:gun|knife|sword|weapon|taser)|vape tricks|nicotine challenge)\b|आत्महत्या|खुदकुशी|खुद\s+को\s+नुकसान|बम\s+बनाना|बंदूक\s+बनाना|हथियार\s+बनाना|विस्फोटक\s+बनाना|ज़हर\s+बनाना|जहर\s+बनाना|शराब\s+(?:कैसे\s+)?(?:पीएं|पिएं)|सिगरेट\s+(?:कैसे\s+)?(?:पीएं|पिएं)|नशा\s+कैसे\s+करें|\b(?:khudkushi|aatmahatya|bomb|bam|bandook|hathiyar|zehar|zahar)\s+(?:kaise|banana|banaye|banane)\b|\b(?:daru|sharab|nasha|ganja|weed|cannabis)\s+(?:kaise|use|piye|peeye|le)\b)/iu;
@@ -39,6 +40,11 @@ function boundedDuration(value, fallback = 8) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(30, Math.max(3, Math.round(parsed)));
+}
+function boundedNumber(value, fallback, min, max) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
 }
 
 function formatKey(value) {
@@ -138,6 +144,13 @@ function normalizeScene(scene, index, format, now, visualStyle) {
     transition: SCENE_TRANSITIONS.has(scene?.transition)
       ? scene.transition
       : index === 0 ? "fade" : ["fade", "slide", "wipe", "zoom"][index % 4],
+    cameraMotion: SCENE_CAMERA_MOTIONS.has(scene?.cameraMotion) ? scene.cameraMotion : "static",
+    grade: {
+      brightness: boundedNumber(scene?.grade?.brightness, 100, 50, 150),
+      contrast: boundedNumber(scene?.grade?.contrast, 100, 50, 150),
+      saturation: boundedNumber(scene?.grade?.saturation, 100, 0, 180),
+      blur: boundedNumber(scene?.grade?.blur, 0, 0, 12)
+    },
     durationSeconds: format === "square-carousel" ? 5 : boundedDuration(scene?.durationSeconds),
     order: index + 1,
     createdAt: validDate(scene?.createdAt, now)
