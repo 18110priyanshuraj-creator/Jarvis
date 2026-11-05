@@ -17,6 +17,8 @@ export function createMediaWorkspace({ api, toast }) {
   let exporting = false;
   let audioFile = null;
   let audioObjectUrl = null;
+  let musicFile = null;
+  let musicObjectUrl = null;
   const sceneAssets = new Map();
   let activeVideoSceneId = null;
 
@@ -417,12 +419,12 @@ export function createMediaWorkspace({ api, toast }) {
       const element = byId(id);
       if (element) element.disabled = !approved || exporting;
     }
-    const audioInput = byId("media-audio-file");
-    if (audioInput) audioInput.disabled = exporting;
-    const volume = byId("media-audio-volume");
-    if (volume) volume.disabled = exporting;
+    for (const id of ["media-audio-file", "media-music-file", "media-audio-volume", "media-music-volume"]) {
+      const element = byId(id);
+      if (element) element.disabled = exporting;
+    }
     const exportButton = byId("media-export-webm");
-    if (exportButton) exportButton.textContent = audioFile ? "Export video + audio" : "Export video (silent)";
+    if (exportButton) exportButton.textContent = audioFile || musicFile ? "Export video + mixed audio" : "Export video (silent)";
     const status = byId("media-export-status");
     if (status) status.textContent = approved
       ? "Approved storyboard. Export files are generated locally in this browser."
@@ -892,6 +894,7 @@ export function createMediaWorkspace({ api, toast }) {
         currentProject = null;
         selectedProjectId = null;
         setAudioTrack(null);
+        setMusicTrack(null);
         byId("media-editor").classList.add("hidden");
       }
     }
@@ -1059,7 +1062,7 @@ export function createMediaWorkspace({ api, toast }) {
   async function exportWebm() {
     const project = approvedProject();
     if (typeof MediaRecorder === "undefined" || typeof HTMLCanvasElement.prototype.captureStream !== "function") {
-      throw new Error("WebM export is not supported by this browser. Export the storyboard, script, captions or scene PNGs instead.");
+      throw new Error("Video export is not supported by this browser. Export the storyboard, script, captions or scene PNGs instead.");
     }
     const size = FORMATS[project.format] || FORMATS["vertical-short"];
     const canvas = document.createElement("canvas");
@@ -1069,7 +1072,7 @@ export function createMediaWorkspace({ api, toast }) {
     if (!ctx) throw new Error("The browser could not create a video canvas.");
 
     let audioContext = null;
-    let audioSource = null;
+    const audioSources = [];
     let audioDestination = null;
     let canvasStream = null;
     let stream = null;
@@ -1077,35 +1080,48 @@ export function createMediaWorkspace({ api, toast }) {
     let recorder = null;
     const totalMs = project.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
     const chunks = [];
+    const hasAudio = Boolean(audioFile || musicFile);
 
-    setExportBusy(true, audioFile
-      ? "Preparing the local audio track and rendering the video. Keep this tab open until export finishes."
-      : "Rendering motion graphics without an audio track. Add a local audio file above to include voiceover or music.");
+    setExportBusy(true, hasAudio
+      ? "Preparing voiceover and background music, then rendering locally. Keep this tab open until export finishes."
+      : "Rendering motion graphics without audio. Add voiceover or background music to create a mixed soundtrack.");
 
     try {
       canvasStream = canvas.captureStream(20);
       let audioTracks = [];
-      if (audioFile) {
+      if (hasAudio) {
         const AudioContextType = window.AudioContext || window.webkitAudioContext;
         if (!AudioContextType || typeof MediaStream === "undefined") {
-          throw new Error("This browser cannot mix a local audio track into WebM. Remove the audio file and export silent motion graphics.");
+          throw new Error("This browser cannot mix local audio tracks into video. Remove the audio tracks and export silent motion graphics.");
         }
         audioContext = new AudioContextType();
         await audioContext.resume();
-        const decoded = await audioContext.decodeAudioData(await audioFile.arrayBuffer());
         audioDestination = audioContext.createMediaStreamDestination();
-        audioSource = audioContext.createBufferSource();
-        audioSource.buffer = decoded;
-        const gain = audioContext.createGain();
-        gain.gain.value = Math.max(0, Math.min(1.5, Number(byId("media-audio-volume")?.value || 1)));
-        audioSource.connect(gain);
-        gain.connect(audioDestination);
+        const sources = [
+          { file: audioFile, volumeId: "media-audio-volume", loop: false, role: "voiceover" },
+          { file: musicFile, volumeId: "media-music-volume", loop: true, role: "music" }
+        ].filter((track) => track.file);
+        for (const track of sources) {
+          const decoded = await audioContext.decodeAudioData(await track.file.arrayBuffer());
+          const source = audioContext.createBufferSource();
+          source.buffer = decoded;
+          source.loop = track.loop;
+          const gain = audioContext.createGain();
+          const control = byId(track.volumeId);
+          const requestedVolume = Math.max(0, Math.min(1.5, Number(control?.value ?? 1)));
+          // Keep background music under narration without requiring a separate side-chain compressor.
+          const effectiveVolume = track.role === "music" && audioFile ? requestedVolume * 0.32 : requestedVolume;
+          gain.gain.value = effectiveVolume;
+          source.connect(gain);
+          gain.connect(audioDestination);
+          audioSources.push(source);
+        }
         audioTracks = audioDestination.stream.getAudioTracks();
       }
       stream = typeof MediaStream !== "undefined"
         ? new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks])
         : canvasStream;
-      const mediaTypes = audioFile
+      const mediaTypes = hasAudio
         ? [
             { mime: "video/mp4;codecs=avc1.42E01E,mp4a.40.2", extension: ".mp4" },
             { mime: "video/webm;codecs=vp9,opus", extension: ".webm" },
@@ -1138,7 +1154,7 @@ export function createMediaWorkspace({ api, toast }) {
       activateVideoForScene(project.scenes[0]?.id);
       const startedAt = performance.now();
       recorder.start(500);
-      if (audioSource) audioSource.start();
+      for (const source of audioSources) source.start();
       await new Promise((resolve) => {
         const frame = (now) => {
           const elapsed = Math.min(totalMs, now - startedAt);
@@ -1146,7 +1162,7 @@ export function createMediaWorkspace({ api, toast }) {
           const current = sceneAtTime(project, elapsed);
           activateVideoForScene(project.scenes[current.index]?.id);
           setExportStatus("Rendering scene " + (current.index + 1) + " of " + project.scenes.length +
-            (audioFile ? " · audio mixed locally" : " · no audio track") + "…");
+            (hasAudio ? " · voiceover/music mixed locally" : " · no audio track") + "…");
           if (elapsed >= totalMs) {
             if (recorder?.state !== "inactive") recorder.stop();
             resolve();
@@ -1157,10 +1173,10 @@ export function createMediaWorkspace({ api, toast }) {
         animation = requestAnimationFrame(frame);
       });
       const blob = await finished;
-      const suffix = audioFile ? "-with-audio" + extension : extension;
+      const suffix = hasAudio ? "-mixed-audio" + extension : extension;
       downloadBlob(cleanFileName(project.title) + suffix, blob);
       setExportStatus("Video export finished as " + extension.slice(1).toUpperCase() +
-        (audioFile ? " with the selected local audio track." : " without an audio track.") +
+        (hasAudio ? " with the selected local audio mix." : " without audio.") +
         " Preview the downloaded file before using it.");
     } finally {
       if (animation) cancelAnimationFrame(animation);
@@ -1169,7 +1185,9 @@ export function createMediaWorkspace({ api, toast }) {
       for (const mediaStream of [stream, canvasStream, audioDestination?.stream]) {
         mediaStream?.getTracks().forEach((track) => track.stop());
       }
-      try { audioSource?.stop(); } catch { /* source may already have ended */ }
+      for (const source of audioSources) {
+        try { source.stop(); } catch { /* source may already have ended */ }
+      }
       if (audioContext && audioContext.state !== "closed") await audioContext.close().catch(() => {});
       setExportBusy(false);
     }
@@ -1207,6 +1225,43 @@ export function createMediaWorkspace({ api, toast }) {
       preview.load();
     }
     setExportStatus("Local audio selected: " + file.name + ". It will be mixed into the next WebM export on this device.");
+    setEditorControls();
+  }
+
+  function setMusicTrack(file) {
+    const preview = byId("media-music-preview");
+    if (musicObjectUrl) {
+      URL.revokeObjectURL(musicObjectUrl);
+      musicObjectUrl = null;
+    }
+    musicFile = null;
+    if (!file) {
+      preview?.pause();
+      if (preview) {
+        preview.removeAttribute("src");
+        preview.classList.add("hidden");
+        preview.load();
+      }
+      setExportStatus(audioFile
+        ? "Voiceover track ready. Add background music for a layered audio mix."
+        : "No audio tracks selected. The next video export will be silent.");
+      setEditorControls();
+      return;
+    }
+    if (!String(file.type || "").toLowerCase().startsWith("audio/")) {
+      throw new Error("Choose an audio file such as MP3, WAV, M4A or OGG for background music.");
+    }
+    if (file.size > 60 * 1024 * 1024) {
+      throw new Error("Music files must be 60 MiB or smaller for in-browser export.");
+    }
+    musicFile = file;
+    musicObjectUrl = URL.createObjectURL(file);
+    if (preview) {
+      preview.src = musicObjectUrl;
+      preview.classList.remove("hidden");
+      preview.load();
+    }
+    setExportStatus("Local background music selected: " + file.name + ". It loops to the video duration and is mixed locally.");
     setEditorControls();
   }
 
@@ -1347,11 +1402,25 @@ export function createMediaWorkspace({ api, toast }) {
       catch (error) {
         event.target.value = "";
         setAudioTrack(null);
+        setMusicTrack(null);
         setExportStatus(error.message, true);
       }
     });
     byId("media-audio-volume")?.addEventListener("input", (event) => {
       setExportStatus("Export volume: " + Math.round(Number(event.target.value) * 100) + "%.");
+    });
+    byId("media-music-file")?.addEventListener("change", (event) => {
+      try { setMusicTrack(event.target.files?.[0] || null); }
+      catch (error) {
+        event.target.value = "";
+        setMusicTrack(null);
+        setExportStatus(error.message, true);
+      }
+    });
+    byId("media-music-volume")?.addEventListener("input", (event) => {
+      const requested = Math.round(Number(event.target.value) * 100);
+      const note = audioFile ? " (auto-lowered under voiceover)" : "";
+      setExportStatus("Background music level: " + requested + "%" + note + ".");
     });
   }
 
