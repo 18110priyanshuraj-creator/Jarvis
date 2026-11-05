@@ -70,7 +70,13 @@ function localPack(input) {
       { platform: "youtube-shorts", caption: description, cta: "Watch the full explanation.", hashtags: ["shorts", "education"] },
       { platform: "facebook", caption: description, cta: "Share your question about this topic.", hashtags: ["learning"] }
     ],
-    leadMagnet: { title: "The " + input.topic + " quick-reference checklist", promise: "A short checklist to remember the key ideas.", sections: ["The central question", "Three key points", "One worked example", "Sources to check"], cta: "Use this checklist as a companion to the video." }
+    leadMagnet: { title: "The " + input.topic + " quick-reference checklist", promise: "A short checklist to remember the key ideas.", sections: ["The central question", "Three key points", "One worked example", "Sources to check"], cta: "Use this checklist as a companion to the video." },
+    leadMachine: {
+      commentKeyword: "GUIDE",
+      publicReplyDraft: "Thanks for asking. Here is the resource: [add your reviewed resource link].",
+      manualReplyDraft: "Here is the guide you requested: [add your reviewed resource link]. Hope it helps!",
+      followUpRule: "Send a reply only when someone chooses to comment or asks for the resource. Do not send repeated unsolicited follow-ups."
+    }
   };
 }
 function normalizePack(rawInput, input, options = {}) {
@@ -109,6 +115,14 @@ function normalizePack(rawInput, input, options = {}) {
   const leadMagnet = { title: clean(lead.title, 120), promise: clean(lead.promise, 300), sections: stringList(lead.sections, 8, 120), cta: clean(lead.cta, 360) };
   if (!leadMagnet.title || !leadMagnet.promise || leadMagnet.sections.length < 2 || !leadMagnet.cta) throw new TypeError("The lead-magnet outline is incomplete.");
   assertSafe(JSON.stringify(leadMagnet), "Lead magnet");
+  const lead = raw.leadMachine || {};
+  const leadMachine = {
+    commentKeyword: clean(lead.commentKeyword, 24).replace(/[^a-z0-9_-]/gi, "").toUpperCase() || "GUIDE",
+    publicReplyDraft: clean(lead.publicReplyDraft, 360) || "Thanks for asking. Here is the resource: [add your reviewed resource link].",
+    manualReplyDraft: clean(lead.manualReplyDraft, 500) || "Here is the guide you requested: [add your reviewed resource link].",
+    followUpRule: clean(lead.followUpRule, 360) || "Reply only to people who ask for the resource. Do not send repeated unsolicited follow-ups."
+  };
+  assertSafe(JSON.stringify(leadMachine), "Lead reply drafts");
   const seoPage = { slug: slug(raw.seoPage?.slug || input.topic), metaTitle: clean(raw.seoPage?.metaTitle, 60), metaDescription: clean(raw.seoPage?.metaDescription, 155), h1: clean(raw.seoPage?.h1, 120), sections, faqs };
   if (!seoPage.metaTitle || !seoPage.metaDescription || !seoPage.h1) throw new TypeError("SEO metadata is incomplete.");
   const shortVideo = { title: clean(raw.shortVideo?.title, 90), hook: clean(raw.shortVideo?.hook, 320), caption: clean(raw.shortVideo?.caption, 1500), hashtags: stringList(raw.shortVideo?.hashtags, 8, 36), durationSeconds: Math.min(90, scenes.reduce((sum, item) => sum + item.durationSeconds, 0)), scenes };
@@ -124,7 +138,7 @@ function normalizePack(rawInput, input, options = {}) {
     ? { status: "ready", windowHours: 24, searchedAt: options.trendResult.searchedAt || new Date().toISOString(), summary: clean(options.trendResult.answer, 3600), sources: (options.trendResult.sources || []).slice(0, CREATOR_CAMPAIGN_LIMITS.sources).map((item, i) => ({ index: i + 1, title: clean(item?.title, 180), url: clean(item?.url, 1000), publishedAt: clean(item?.publishedAt, 80), snippet: clean(item?.snippet, 500) })) }
     : { status: options.trendRequested ? "unavailable" : "not-requested", windowHours: 24, searchedAt: null, summary: options.trendRequested ? "No usable 24-hour report was returned. No trend was inferred." : "Trend Radar was not requested.", sources: [] };
   const now = new Date().toISOString();
-  return { id: clean(raw.id, 80) || crypto.randomUUID(), topic: input.topic, audience: input.audience, language: input.language, title: clean(raw.title, 90) || input.topic, ideas: ideas.slice(0, CREATOR_CAMPAIGN_LIMITS.ideas), trendRadar, shortVideo, carousel, seoPage, socialDrafts, leadMagnet, engine: options.engine || "ai-assisted", status: "draft", createdAt: now, updatedAt: now, generationNote: clean(raw.generationNote, 300) || "Review facts, source rights and all copy before publishing." };
+  return { id: clean(raw.id, 80) || crypto.randomUUID(), topic: input.topic, audience: input.audience, language: input.language, title: clean(raw.title, 90) || input.topic, ideas: ideas.slice(0, CREATOR_CAMPAIGN_LIMITS.ideas), trendRadar, shortVideo, carousel, seoPage, socialDrafts, leadMagnet, leadMachine, engine: options.engine || "ai-assisted", status: "draft", createdAt: now, updatedAt: now, generationNote: clean(raw.generationNote, 300) || "Review facts, source rights and all copy before publishing." };
 }
 
 export function normalizeCreatorCampaign(input) {
@@ -165,7 +179,8 @@ export async function createCreatorCampaignPack(input = {}, options = {}) {
     carousel: { title: "string", caption: "string", commentCTA: "string", slides: [{ heading: "string", body: "string", visualPrompt: "string" }] },
     seoPage: { slug: "string", metaTitle: "60 chars", metaDescription: "155 chars", h1: "string", sections: [{ heading: "string", summary: "string" }], faqs: [{ question: "string", answer: "string" }] },
     socialDrafts: ["instagram", "youtube-shorts", "facebook"].map(platform => ({ platform, caption: "string", cta: "string", hashtags: ["string"] })),
-    leadMagnet: { title: "string", promise: "string", sections: ["string"], cta: "string" }
+    leadMagnet: { title: "string", promise: "string", sections: ["string"], cta: "string" },
+    leadMachine: { commentKeyword: "GUIDE", publicReplyDraft: "string", manualReplyDraft: "string", followUpRule: "string" }
   };
   const system = [
     "You are JARVIS Creator Campaign Studio. Return one JSON object matching the output shape.",
@@ -174,7 +189,8 @@ export async function createCreatorCampaignPack(input = {}, options = {}) {
     "For current claims use only supplied 24-hour sources and keep source numbers. If evidence is missing, flag the claim for review.",
     "Create a 3-6 scene vertical video, 4-8 carousel slides, SEO metadata and page outline, three social drafts, a lead-magnet outline and 3-8 original follow-up ideas.",
     "Keep copy original, concise, truthful and suitable for the stated audience. One point per carousel slide. Suggest readable visuals suited to Canva.",
-    "Everything is a draft. Never publish, post, contact leads, collect contact details, upload or schedule an external action."
+    "Everything is a draft. Never publish, post, contact leads, collect contact details, upload or schedule an external action.",
+    "Also provide a permission-based lead reply kit: one optional comment keyword, one public reply draft and one manual resource reply. Keep all replies draft-only. Do not scrape profiles, harvest contact details, automate bulk messages or send repeated unsolicited follow-ups."
   ].join("\n");
   try {
     const result = await (options.aiCompletion || createChatCompletion)([
