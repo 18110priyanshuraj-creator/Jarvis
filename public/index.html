@@ -580,7 +580,7 @@
           <div>
             <p class="eyebrow">MEDIA & CONTENT CREATION</p>
             <h1>Media Studio</h1>
-            <p class="muted">Turn a short brief into an editable storyboard, review it, then export files on this device.</p>
+            <p class="muted">Build an editable storyboard or a long-form 16:9 project, review it, then render locally in this browser.</p>
           </div>
         </div>
         <form id="media-create-form" class="form-card media-create-card">
@@ -593,7 +593,8 @@
             <label class="field-label" for="media-format">Output format
               <select id="media-format">
                 <option value="vertical-short">Vertical short · 9:16</option>
-                <option value="landscape-explainer">Landscape explainer · 16:9</option>
+                <option value="landscape-explainer">Landscape explainer · 16:9 · up to 3 minutes</option>
+                <option value="long-form">Long-form video · 16:9 · up to 20 minutes</option>
                 <option value="square-carousel">Square carousel · 1:1</option>
               </select>
             </label>
@@ -644,7 +645,7 @@
 
         <div class="media-workflow-note">
           <strong>Review and export controls</strong>
-          <p>Projects remain in your private JARVIS workspace. Edit scenes, choose visual styles and stick-figure poses, set motion and transitions, add a local audio track, then review and approve before export. Video rendering happens in this browser; optional audio is mixed locally. No media is uploaded or published by exporting.</p>
+          <p>Projects remain in your private JARVIS workspace. Edit scenes, choose visual styles and stick-figure poses, set motion and transitions, add local video/image/audio tracks, then review and approve before export. Long-form projects support up to 20 minutes and 80 scenes. Rendering is real-time in this browser: keep the tab open, use a desktop browser for long exports, and remember that local media files must be re-attached in a new browser session. No media is uploaded or published by exporting.</p>
         </div>
 
         <div class="list-heading"><h2>Your media projects</h2><span class="muted small">Drafts and approved exports</span></div>
@@ -680,7 +681,7 @@
                   <option value="professional">Professional</option>
                 </select>
               </label>
-              <p id="media-scene-count" class="small muted">0 / 12 scenes</p>
+              <p id="media-scene-count" class="small muted">0 / 80 scenes</p>
             </div>
             <div id="media-editor-scenes" class="media-editor-scenes"></div>
             <section class="media-timeline-panel" aria-label="Multi-track video timeline">
@@ -725,6 +726,7 @@
               <button type="button" class="item-action" id="media-export-captions">Captions SRT</button>
               <button type="button" class="item-action" id="media-export-png">Scene PNGs</button>
               <button type="button" class="primary media-wide" id="media-export-webm">Export video (MP4 / WebM)</button>
+              <button type="button" class="item-action media-wide" id="media-export-cancel" disabled>Cancel export</button>
             </div>
             <div class="media-audio-panel">
               <label class="media-field" for="media-audio-file"><span>Voiceover track</span>
