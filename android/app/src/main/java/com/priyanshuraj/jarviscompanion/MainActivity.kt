@@ -61,6 +61,8 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Executors
 
+internal const val DEFAULT_WORKSPACE_URL = "https://jarvis-personal-assistant-nutriton.vercel.app"
+
 class MainActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -117,7 +119,7 @@ class MainActivity : Activity() {
             hint = "JARVIS HTTPS server URL"
             setSingleLine(true)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
-            setText(prefs.getString("server_url", ""))
+            setText(prefs.getString("server_url", DEFAULT_WORKSPACE_URL))
         }
         pairingCodeInput = EditText(this).apply {
             hint = "Six-digit pairing code"
@@ -284,9 +286,13 @@ class MainActivity : Activity() {
             addView(content)
         }
         showHomeScreen()
-        if (savedInstanceState?.getBoolean(STATE_SHOWING_DASHBOARD, false) == true) {
+        if (savedInstanceState == null) {
+            // First launch opens the deployed JARVIS website directly.
+            // The native Orb and setup screens remain one tap away from Workspace.
+            showDashboardScreen()
+        } else if (savedInstanceState.getBoolean(STATE_SHOWING_DASHBOARD, false)) {
             showDashboardScreen(savedInstanceState.getBundle(STATE_DASHBOARD_WEBVIEW))
-        } else if (savedInstanceState?.getBoolean(STATE_SHOWING_LOCAL_MEMORY, false) == true) {
+        } else if (savedInstanceState.getBoolean(STATE_SHOWING_LOCAL_MEMORY, false)) {
             showLocalMemoryScreen()
         }
 
@@ -581,7 +587,7 @@ class MainActivity : Activity() {
     private fun showDashboardScreen(restoreState: Bundle? = null) {
         val configuredUrl = DashboardUrlPolicy.normalizeBaseUrl(
             getSharedPreferences("jarvis_companion_settings", MODE_PRIVATE)
-                .getString("server_url", null)
+                .getString("server_url", DEFAULT_WORKSPACE_URL)
         )
         if (configuredUrl == null) {
             AlertDialog.Builder(this)
