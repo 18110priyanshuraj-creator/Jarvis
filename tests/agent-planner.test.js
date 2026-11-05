@@ -170,6 +170,59 @@ test("built-in device planner supports Hindi and Hinglish search phrasing", () =
   assert.equal(hinglish.actions[3].value, "mole concept");
 });
 
+test("agent planner validates Canva semantic drag with exact labels and foreground checks", () => {
+  const plan = validateAgentPlan({
+    mode: "device_action",
+    reply: "Move the clip in Canva.",
+    actions: [
+      { type: "open_app", value: "Canva", purpose: "Open Canva" },
+      { type: "verify_app_foreground", value: "Canva", purpose: "Confirm Canva is in front" },
+      {
+        type: "drag_label_to_label",
+        value: "Canva",
+        sourceLabel: "Presenter clip 1",
+        targetLabel: "Video track 2",
+        purpose: "Move the named item to the named destination"
+      },
+      { type: "verify_screen_text", value: "Video track 2", purpose: "Check the expected destination is visible" },
+      { type: "ask_user", value: "Review the timeline before continuing.", purpose: "Manual review" }
+    ]
+  });
+  assert.equal(plan.actions[2].type, "drag_label_to_label");
+  assert.equal(plan.actions[2].sourceLabel, "Presenter clip 1");
+  assert.equal(plan.actions[2].targetLabel, "Video track 2");
+});
+
+test("agent planner rejects ambiguous or unverified Canva drag requests", () => {
+  const base = [
+    { type: "open_app", value: "Canva", purpose: "Open Canva" },
+    { type: "verify_app_foreground", value: "Canva", purpose: "Verify Canva" }
+  ];
+  assert.throws(() => validateAgentPlan({
+    mode: "device_action", reply: "Move it.",
+    actions: [...base,
+      { type: "drag_label_to_label", value: "Canva", sourceLabel: "Clip 1", targetLabel: "Clip 1", purpose: "Move" },
+      { type: "verify_screen_text", value: "Clip 1", purpose: "Check" }]
+  }), /two different.*exact visible labels/i);
+
+  assert.throws(() => validateAgentPlan({
+    mode: "device_action", reply: "Move it.",
+    actions: [
+      { type: "open_app", value: "Chrome", purpose: "Open browser" },
+      { type: "verify_app_foreground", value: "Chrome", purpose: "Verify browser" },
+      { type: "drag_label_to_label", value: "Canva", sourceLabel: "Clip 1", targetLabel: "Track 2", purpose: "Move" },
+      { type: "verify_screen_text", value: "Track 2", purpose: "Check" }
+    ]
+  }), /explicit Canva launch/i);
+
+  assert.throws(() => validateAgentPlan({
+    mode: "device_action", reply: "Move it.",
+    actions: [...base,
+      { type: "drag_label_to_label", value: "Canva", sourceLabel: "Clip 1", targetLabel: "Track 2", purpose: "Move" },
+      { type: "ask_user", value: "Review.", purpose: "Handoff" }]
+  }), /immediately.*visible-result verification/i);
+});
+
 test("agent planner refuses Android plans without matching outcome verification", () => {
   assert.throws(() => validateAgentPlan({
     mode: "device_action",
