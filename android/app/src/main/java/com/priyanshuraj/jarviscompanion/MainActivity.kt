@@ -32,6 +32,7 @@ import android.widget.TextView
 import android.widget.Toast
 import android.net.Uri
 import android.net.http.SslError
+import android.webkit.JavascriptInterface
 import android.webkit.CookieManager
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceError
@@ -684,6 +685,7 @@ class MainActivity : Activity() {
             }
         }
         dashboardWebView = webView
+        webView.addJavascriptInterface(WorkspaceNativeBridge(), "JarvisNative")
         webView.webChromeClient = object : WebChromeClient() {
             override fun onJsAlert(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
                 val callback = result ?: return true
@@ -1426,6 +1428,30 @@ class MainActivity : Activity() {
 
     private fun sendVoiceCommand(message: String) {
         dispatchCoreCommand(message, CoreCommandSource.SPEAK_ONCE)
+    }
+
+    /**
+     * Narrow bridge for explicit installed-app launches from the authenticated
+     * in-app Workspace. It is not exposed to ordinary mobile/desktop browsers.
+     */
+    private inner class WorkspaceNativeBridge {
+        @JavascriptInterface
+        fun submitAppLaunch(rawMessage: String): Boolean {
+            val message = rawMessage.trim()
+            if (!WorkspaceNativeCommandPolicy.isInstalledAppLaunchRequest(message)) return false
+            if (!showingDashboard ||
+                !DashboardUrlPolicy.isWorkspaceOrigin(dashboardWebView?.url, dashboardBaseUrl)
+            ) return false
+
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed && showingDashboard &&
+                    DashboardUrlPolicy.isWorkspaceOrigin(dashboardWebView?.url, dashboardBaseUrl)
+                ) {
+                    dispatchCoreCommand(message, CoreCommandSource.HOME_TEXT)
+                }
+            }
+            return true
+        }
     }
 
     private fun dispatchCoreCommand(message: String, source: CoreCommandSource) {
