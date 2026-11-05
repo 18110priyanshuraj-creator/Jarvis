@@ -3,7 +3,7 @@ package com.priyanshuraj.jarviscompanion
 /** Detects clear Android app tasks without requiring one exact spoken sentence. */
 internal object WorkspaceNativeCommandPolicy {
     private val directOpenPrefix = Regex(
-        """(?i)^(?:jarvis[\s,:;-]+)?(?:please\s+)?(?:open|launch|start|run|go\s+to|take\s+me\s+to)\s+[\p{L}\p{N}][\p{L}\p{N} ._()+-]{0,79}$"""
+        """(?i)^(?:jarvis[\s,:;-]+)?(?:please\s+)?(?:can\s+you\s+)?(?:open|launch|start|run|go\s+to|take\s+me\s+to)\s+[\p{L}\p{N}][\p{L}\p{N} ._()+-]{0,79}$"""
     )
     private val directOpenSuffix = Regex(
         """(?i)^(?:jarvis[\s,:;-]+)?(?:please\s+)?(?:mujhe\s+)?[\p{L}\p{N}][\p{L}\p{N} ._()+-]{0,79}\s+(?:ko\s+)?(?:kholo|khol\s+do|open\s+karo|launch\s+karo|chalao|start\s+karo|shuru\s+karo)$"""
