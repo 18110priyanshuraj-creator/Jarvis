@@ -2289,6 +2289,17 @@ $("#chat-form").addEventListener("submit", async (event) => {
   waiting.append(mark, wrap);
   $("#chat-messages").append(waiting);
   try {
+    const nativeLaunch = /^(?:jarvis[\\s,:;-]+)?(?:please\\s+)?(?:open|launch|start)\\s+[a-z0-9][a-z0-9 ._()+-]{0,59}$/i.test(message);
+    if (nativeLaunch && window.JarvisNative && typeof window.JarvisNative.submitAppLaunch === "function") {
+      let forwarded = false;
+      try { forwarded = window.JarvisNative.submitAppLaunch(message) === true; } catch { /* fall back to normal chat */ }
+      if (forwarded) {
+        body.textContent = "Sent to this Android device. Check for the app launch.";
+        awaitingAssistantReply = false;
+        setOrbitalStatus("idle", "Command sent to Android");
+        return;
+      }
+    }
     const data = await api("/api/chat", { method: "POST", body: JSON.stringify({ message, applicationId: "web-dashboard" }) });
     if ($("#speak-toggle").checked || voiceModeActive) {
       const replyLanguage = /[\u0900-\u097F]/.test(data.answer)
