@@ -683,6 +683,24 @@
               <p id="media-scene-count" class="small muted">0 / 12 scenes</p>
             </div>
             <div id="media-editor-scenes" class="media-editor-scenes"></div>
+            <section class="media-timeline-panel" aria-label="Multi-track video timeline">
+              <div class="media-timeline-heading">
+                <div>
+                  <strong>Multi-track timeline</strong>
+                  <p class="small muted">Arrange video, overlays and audio. Trim, split, animate, key and retime each clip.</p>
+                </div>
+                <div class="timeline-track-actions">
+                  <button type="button" class="item-action" id="media-timeline-add-video">＋ Video track</button>
+                  <button type="button" class="item-action" id="media-timeline-add-overlay">＋ Overlay</button>
+                  <button type="button" class="item-action" id="media-timeline-add-audio">＋ Audio track</button>
+                </div>
+              </div>
+              <div id="media-timeline-tracks" class="media-timeline-tracks"></div>
+              <div id="media-timeline-inspector" class="media-timeline-inspector">
+                <p class="small muted">Select a clip to edit its timing, keyframes, chroma key and speed ramp.</p>
+              </div>
+              <p class="media-limits-note">Timeline edit decisions are saved with the project. Imported files are kept locally in this browser session; re-attach them after opening the project on another device or browser.</p>
+            </section>
             <div class="media-editor-toolbar">
               <button type="button" class="item-action" id="media-add-scene">Add scene</button>
               <button type="button" class="primary" id="media-save-button">Save changes</button>
