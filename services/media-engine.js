@@ -153,6 +153,15 @@ function normalizeTimelineClip(clip, index, trackKind) {
       similarity: boundedNumber(key.similarity, 0.34, 0.01, 1),
       softness: boundedNumber(key.softness, 0.12, 0, 1)
     },
+    mask: {
+      shape: ["none", "rectangle", "ellipse", "rounded"].includes(clip?.mask?.shape) ? clip.mask.shape : "none",
+      x: boundedNumber(clip?.mask?.x, 0, -1, 1),
+      y: boundedNumber(clip?.mask?.y, 0, -1, 1),
+      width: boundedNumber(clip?.mask?.width, 1, 0.05, 2),
+      height: boundedNumber(clip?.mask?.height, 1, 0.05, 2),
+      feather: boundedNumber(clip?.mask?.feather, 0, 0, 0.5),
+      invert: clip?.mask?.invert === true
+    },
     visible: clip?.visible !== false,
     muted: clip?.muted === true
   };
