@@ -58,7 +58,7 @@ object BrowserUrlPolicy {
         if (uri.port !in -1..65535) return null
 
         val restrictedTarget = Regex(
-            """(?i)\b(porn|xxx|adult[-_ ]?content|erotic|onlyfans|escort|vape|cigarette|tobacco|nicotine|alcohol|liquor|beer|wine|weed|marijuana|cannabis|cocaine|meth(?:amphetamine)?|heroin|gambling|sports[-_ ]?betting|casino|firearms?|weapons?|ammunition|explosives?|bomb)\b"""
+            """(?i)\b(porn|xxx|adult[-_ ]?content|erotic|onlyfans|escort|vape|cigarette|tobacco|nicotine|alcohol|liquor|beer|wine|weed|marijuana|cannabis|cocaine|meth(?:amphetamine)?|heroin|opioid|fentanyl|steroids?|gambling|sports[-_ ]?betting|casino|firearms?|guns?|weapons?|ammunition|explosives?|bomb|suicide|self[-_ ]?harm|overdose)\b"""
         )
         val destinationText = listOf(host, uri.path.orEmpty(), uri.query.orEmpty()).joinToString(" ")
         if (restrictedTarget.containsMatchIn(destinationText)) return null
