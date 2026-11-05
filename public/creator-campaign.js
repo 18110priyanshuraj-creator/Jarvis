@@ -69,6 +69,10 @@ function markdown(pack) {
   }
   lines.push("## Lead magnet", "### " + pack.leadMagnet.title, pack.leadMagnet.promise,
     ...pack.leadMagnet.sections.map(item => "- " + item), pack.leadMagnet.cta, "",
+    "## Lead reply kit · manual drafts only", "Comment keyword: " + pack.leadMachine.commentKeyword,
+    "Public reply: " + pack.leadMachine.publicReplyDraft,
+    "Manual resource reply: " + pack.leadMachine.manualReplyDraft,
+    "Follow-up boundary: " + pack.leadMachine.followUpRule, "",
     "## Follow-up ideas", ...pack.ideas.map(item => "- " + item), "",
     "Review claims, source links and media rights before publishing.");
   return lines.join("\n");
@@ -196,6 +200,12 @@ export function createCreatorCampaignStudio({ api, toast }) {
     const leadList = add(lead, "ul", "creator-campaign-list");
     for (const line of pack.leadMagnet.sections) add(leadList, "li", "", line);
     add(lead, "p", "", pack.leadMagnet.cta);
+
+    const leadMachine = card(target, "Lead reply kit · manual drafts only", "Comment-to-resource reply templates. Nothing is sent automatically.");
+    add(leadMachine, "p", "", "Optional comment keyword: " + pack.leadMachine.commentKeyword);
+    add(leadMachine, "p", "", "Public reply: " + pack.leadMachine.publicReplyDraft);
+    add(leadMachine, "p", "", "Manual resource reply: " + pack.leadMachine.manualReplyDraft);
+    add(leadMachine, "p", "small muted", "Boundary: " + pack.leadMachine.followUpRule);
 
     const ideas = card(target, "Next content ideas");
     const ideaList = add(ideas, "ol", "creator-campaign-list");
