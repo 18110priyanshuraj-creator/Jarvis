@@ -777,8 +777,7 @@ export function createMediaWorkspace({ api, toast }) {
             button.style.left = (clip.start / total * 100) + "%";
             button.style.width = Math.max(1.2, clip.duration / total * 100) + "%";
             timeLabel.textContent = Number(clip.start).toFixed(1) + "s · " + Number(clip.duration).toFixed(1) + "s";
-            currentProject.durationSeconds = Math.min(180, Math.max(
-              currentProject.scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0),
+            currentProject.durationSeconds = Math.min(180, Math.max(0,
               ...currentProject.tracks.flatMap((item) => item.clips.map((candidate) => candidate.start + candidate.duration))
             ));
           };
@@ -842,8 +841,7 @@ export function createMediaWorkspace({ api, toast }) {
     if (["start", "duration", "sourceIn", "sourceOut", "speed", "volume"].includes(path)) {
       selection.clip[path] = emptySourceOut ? null : value;
     }
-    currentProject.durationSeconds = Math.min(180, Math.max(
-      currentProject.scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0),
+    currentProject.durationSeconds = Math.min(180, Math.max(0,
       ...currentProject.tracks.flatMap((track) => track.clips.map((item) => item.start + item.duration))
     ));
     renderPreviewAtTime(selection.clip.start * 1000);
@@ -919,6 +917,9 @@ export function createMediaWorkspace({ api, toast }) {
           asset?.element?.pause?.();
           timelineAssets.delete(clipId);
           activeTimelineClipIds.delete(clipId);
+          currentProject.durationSeconds = Math.min(180, Math.max(0,
+            ...currentProject.tracks.flatMap((item) => item.clips.map((candidate) => candidate.start + candidate.duration))
+          ));
           selectedTimelineClipId = null;
           renderTimelineEditor();
           renderPreviewAtTime(0);
@@ -2612,8 +2613,7 @@ export function createMediaWorkspace({ api, toast }) {
           : event.target.value;
       }
       syncSceneTimeline(currentProject);
-      currentProject.durationSeconds = Math.min(180, Math.max(
-        currentProject.scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0),
+      currentProject.durationSeconds = Math.min(180, Math.max(0,
         ...currentProject.tracks.flatMap((track) => track.clips.map((clip) => clip.start + clip.duration))
       ));
       renderTimelineEditor();
