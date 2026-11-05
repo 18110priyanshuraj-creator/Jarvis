@@ -31,10 +31,7 @@ object LocalCommandProcessor {
      * browser directly; the shared Android approval dialog remains mandatory.
      */
     fun createGoogleSearchPlan(message: String): JSONObject? {
-        val input = message.trim()
-            .replace(Regex("""(?i)^jarvis[\s,:;-]+"""), "")
-            .trim()
-            .trimEnd('.', '!', '?', '।', '॥')
+        val input = normalizeCommand(message)
         if (input.isBlank()) return null
 
         val query = googleSearchPatterns.firstNotNullOfOrNull { pattern ->
@@ -122,7 +119,7 @@ object LocalCommandProcessor {
      */
     internal fun normalizeCommand(message: String): String =
         message.trim()
-            .replace(Regex("""(?i)^jarvis[\s,:;-]+"""), "")
+            .replace(Regex("""(?i)^(?:(?:hey|okay|ok|hello|hi)\s+)?jarvis(?:[\s,:;-]+|$)"""), "")
             .trim()
             .trimEnd('.', '!', '?', '।', '॥')
 
