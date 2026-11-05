@@ -56,7 +56,7 @@ test("splits longer scene narration into short, timed subtitle cues", () => {
 
 test("exports a spreadsheet-friendly storyboard CSV with timing and quoted text", () => {
   const csv = buildCreatorStoryboardCsv(pack);
-  assert.match(csv, /scene,start,end,duration_seconds/);
+  assert.match(csv, /"scene","start","end","duration_seconds"/);
   assert.match(csv, /00:00:00/);
   assert.match(csv, /"Solar cells"/);
   assert.match(csv, /"Solar cells convert light into electrical energy\."/);
