@@ -1,4 +1,4 @@
-const QUESTION_PREFIX = /^(?:how\s+(?:do\s+i|can\s+i|to)\b|what\s+(?:is|are|does)\b|why\s+(?:does|is)\b|show\s+me\s+how\b|kaise\s+(?:use|banate|banaate|banaun)\b|kya\s+hai\b)/i;
+const QUESTION_PREFIX = /^(?:how\s+(?:do\s+i|can\s+i|to)\b|what\s+(?:is|are|does)\b|why\s+(?:does|is)\b|where\b|when\b|show\s+me\s+how\b|tell\s+me\s+how\b|teach\s+me\s+how\b|can\s+you\s+explain\b|explain\s+how\b|kaise\s+(?:use|banate|banaate|banaun)\b|kya\s+hai\b)/i;
 const CREATION_VERB = /\b(?:create|make|build|edit|produce|render|generate|prepare|design|animate|turn|convert|banao|bana|banana|banado|bana\s+do|taiyar\s+karo|taiyaar\s+karo|edit\s+karo)\b/i;
 const CREATION_OBJECT = /\b(?:video|animation|stick[ -]?figure|stickman|reel|shorts?|storyboard|thumbnail|poster|motion[ -]?graphics?|intro|outro|clip)\b/i;
 const EXTERNAL_APP = /\b(?:canva|capcut|cap\s+cut|inshot|vn\s+editor|kinemaster|adobe\s+express)\b/i;
