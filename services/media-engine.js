@@ -634,6 +634,7 @@ export function buildMediaCaptions(project) {
       .map((clip) => {
         const scene = scenesById.get(clip.sceneId);
         return {
+          sceneId: clip.sceneId,
           start: clip.start,
           end: clip.start + clip.duration,
           text: (scene.voiceover || scene.onScreenText).replace(/\s+/g, " ").trim()
@@ -643,8 +644,20 @@ export function buildMediaCaptions(project) {
       .sort((a, b) => a.start - b.start)
     : [];
 
-  const cues = timelineCues.length
-    ? timelineCues
+  // Splitting a scene clip creates two adjacent timeline clips with the same scene ID.
+  // Merge adjacent pieces so the SRT does not repeat the complete narration twice.
+  const mergedTimelineCues = [];
+  for (const cue of timelineCues) {
+    const previous = mergedTimelineCues.at(-1);
+    if (previous && previous.sceneId === cue.sceneId && Math.abs(previous.end - cue.start) < 0.01) {
+      previous.end = cue.end;
+    } else {
+      mergedTimelineCues.push({ ...cue });
+    }
+  }
+
+  const cues = mainTrack
+    ? mergedTimelineCues
     : normalized.scenes.map((scene, index) => {
       const start = normalized.scenes.slice(0, index).reduce((sum, item) => sum + item.durationSeconds, 0);
       return {
