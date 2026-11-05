@@ -37,12 +37,35 @@ test("builds scene-level SRT and WebVTT captions with contiguous timecodes", () 
   assert.equal(result.durationMs, 42000);
 });
 
+test("splits longer scene narration into short, timed subtitle cues", () => {
+  const longPack = {
+    shortVideo: { scenes: [{
+      voiceover: "A solar panel contains many connected solar cells. Each cell uses light to move electrical charges. The panel produces direct current and an inverter changes it into alternating current for compatible devices.",
+      durationSeconds: 30
+    }] }
+  };
+  const captions = buildCreatorCaptions(longPack);
+  assert.ok(captions.cueCount > 1);
+  assert.match(captions.srt, /00:00:00,000 -->/);
+  assert.match(captions.srt, /00:00:30,000/);
+  for (const block of captions.srt.trim().split("\n\n")) {
+    const lines = block.split("\n");
+    assert.ok(lines.slice(2).length <= 2);
+  }
+});
+
 test("exports a spreadsheet-friendly storyboard CSV with timing and quoted text", () => {
   const csv = buildCreatorStoryboardCsv(pack);
   assert.match(csv, /scene,start,end,duration_seconds/);
   assert.match(csv, /00:00:00/);
   assert.match(csv, /"Solar cells"/);
   assert.match(csv, /"Solar cells convert light into electrical energy\."/);
+  const unsafe = buildCreatorStoryboardCsv({ shortVideo: { scenes: [{
+    heading: "=HYPERLINK(\"https://example.com\")",
+    voiceover: "Normal narration",
+    durationSeconds: 6
+  }] } });
+  assert.match(unsafe, /"'=HYPERLINK/);
 });
 
 test("creates YouTube chapters with three segments of at least ten seconds", () => {
@@ -69,6 +92,16 @@ test("escapes text in carousel SVG rather than injecting markup", () => {
   assert.match(svg, /A &amp; B/);
   assert.doesNotMatch(svg, /<script>/);
   assert.match(svg, /width="1080" height="1080"/);
+  const branded = buildCarouselSlideSvg({ heading: "Brand", body: "A useful point", visualPrompt: "Diagram" }, 0, 4, {
+    brandName: "Solar Lab",
+    accentColor: "#ff8800",
+    backgroundColor: "#101820",
+    textColor: "#ffffff"
+  }, "Solar energy");
+  assert.match(branded, /Solar Lab/);
+  assert.match(branded, /#ff8800/);
+  assert.match(branded, /#101820/);
+  assert.match(branded, /#ffffff/);
 });
 
 test("bundles carousel SVGs, subtitles, storyboard and chapter readiness in ZIP assets", () => {
