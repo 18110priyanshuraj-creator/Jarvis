@@ -1813,6 +1813,7 @@ export function createMediaWorkspace({ api, toast }) {
 
     let audioContext = null;
     const audioSources = [];
+    const scheduledAudioSources = new Set();
     let audioDestination = null;
     let canvasStream = null;
     let stream = null;
@@ -1821,7 +1822,7 @@ export function createMediaWorkspace({ api, toast }) {
     const totalMs = Math.max(project.durationSeconds * 1000, project.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0));
     const chunks = [];
     const timelineAudioClips = (project.tracks || []).filter((track) => track.kind === "audio" && track.visible !== false && track.muted !== true)
-      .flatMap((track) => track.clips.filter((clip) => !clip.muted && clip.assetType === "audio" && timelineAssets.get(clip.id)?.file));
+      .flatMap((track) => track.clips.filter((clip) => !clip.muted && clip.visible !== false && clip.assetType === "audio" && timelineAssets.get(clip.id)?.file));
     const hasAudio = Boolean(audioFile || musicFile || timelineAudioClips.length);
 
     setExportBusy(true, hasAudio
@@ -1881,6 +1882,7 @@ export function createMediaWorkspace({ api, toast }) {
           source.start(startAt, sourceOffset);
           source.stop(startAt + Math.max(0.05, clip.duration));
           audioSources.push(source);
+          scheduledAudioSources.add(source);
         }
         audioTracks = audioDestination.stream.getAudioTracks();
       }
@@ -1921,15 +1923,7 @@ export function createMediaWorkspace({ api, toast }) {
       const startedAt = performance.now();
       recorder.start(500);
       for (const source of audioSources) {
-        // Timeline sources are scheduled at an absolute AudioContext time above.
-        if (timelineAudioClips.some((clip) => timelineAssets.get(clip.id)?.file && source.buffer)) {
-          try {
-            if (source.playbackState === "scheduled") continue;
-          } catch { /* Browser implementations do not expose playbackState consistently. */ }
-        }
-        if (!source.buffer) continue;
-        const scheduled = timelineAudioClips.some((clip) => clip.duration > 0 && clip.assetId === clip.id && timelineAssets.get(clip.id)?.file);
-        if (!scheduled) source.start();
+        if (!scheduledAudioSources.has(source)) source.start();
       }
       await new Promise((resolve) => {
         const frame = (now) => {
