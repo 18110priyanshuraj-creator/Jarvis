@@ -53,6 +53,27 @@ function extractGoogleSearchQuery(input) {
 }
 
 /**
+ * Parse only quoted, exact Canva source/destination labels. The local planner
+ * never guesses labels from screen contents, because it does not receive them.
+ */
+function extractCanvaDragIntent(input) {
+  const patterns = [
+    /^(?:please\\s+)?(?:open|launch|start)\\s+canva\\s+(?:and|then)\\s+(?:drag|move)\\s+["“'](.+?)["”']\\s+(?:to|into|onto)\\s+["“'](.+?)["”']$/i,
+    /^canva\\s+(?:kholo|khol do)\\s+(?:aur|phir)\\s+["“'](.+?)["”']\\s+ko\\s+["“'](.+?)["”']\\s+(?:mein|me|par)\\s+(?:drag|move|shift|rakh(?:o|\\s+do))$/i
+  ];
+  for (const pattern of patterns) {
+    const match = input.match(pattern);
+    if (match?.[1] && match?.[2]) {
+      return {
+        sourceLabel: cleanLocalIntent(match[1], 100),
+        targetLabel: cleanLocalIntent(match[2], 100)
+      };
+    }
+  }
+  return null;
+}
+
+/**
  * Deterministic fallback for small, clearly expressed Android tasks.
  * It never reads the screen, chooses a search result, or performs a sensitive action.
  */
@@ -73,6 +94,27 @@ export function createLocalAgentPlan(message) {
         { type: "open_web_search", value: googleQuery, purpose: "Open a fixed Google HTTPS search URL in the default browser." },
         { type: "verify_browser_foreground", value: googleQuery, purpose: "Confirm the default browser is foregrounded after opening the fixed Google search URL." },
         { type: "ask_user", value: "The default browser opened for your Google search request. Check that the query loaded, then choose a public result yourself. Handle any login, consent or CAPTCHA prompt manually, then return to JARVIS.", purpose: "Keep result selection and access challenges under the user's control." }
+      ]
+    });
+  }
+
+  const canvaDrag = extractCanvaDragIntent(input);
+  if (canvaDrag) {
+    const { sourceLabel, targetLabel } = canvaDrag;
+    if (!sourceLabel || !targetLabel ||
+      sourceLabel.toLowerCase() === targetLabel.toLowerCase() ||
+      BLOCKED_LABEL.test(sourceLabel) || BLOCKED_LABEL.test(targetLabel)) {
+      return null;
+    }
+    return validateAgentPlan({
+      mode: "device_action",
+      reply: "I will open Canva, verify that it is foregrounded, request the named semantic drag, and check the visible screen. If Canva does not expose drag actions for those items, you will need to move the clip manually.",
+      actions: [
+        { type: "open_app", value: "Canva", purpose: "Open the Canva app." },
+        { type: "verify_app_foreground", value: "Canva", purpose: "Confirm Canva is the foreground app." },
+        { type: "drag_label_to_label", value: "Canva", sourceLabel, targetLabel, purpose: "Move the exact user-named item to the exact user-named destination with Android semantic accessibility actions." },
+        { type: "verify_screen_text", value: targetLabel, purpose: "Check that the expected destination label is visible after the drag request." },
+        { type: "ask_user", value: "Review the timeline and confirm the clip is in the intended position. If the move did not happen, move it manually in Canva.", purpose: "Keep final placement verification with the user." }
       ]
     });
   }
