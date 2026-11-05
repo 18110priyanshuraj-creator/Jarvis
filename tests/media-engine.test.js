@@ -103,6 +103,43 @@ test("normalizes multi-track clips, chroma key, custom keyframes and speed ramps
   assert.ok(second.sourceIn > first.sourceIn);
 });
 
+test("explicit timeline tracks determine the saved project duration", () => {
+  const project = normalizeMediaProject({
+    title: "Timeline extent",
+    brief,
+    scenes: [
+      { id: "scene-a", heading: "A", voiceover: "First scene.", durationSeconds: 8 },
+      { id: "scene-b", heading: "B", voiceover: "Second scene.", durationSeconds: 8 }
+    ],
+    tracks: [
+      {
+        id: "track-main-video",
+        kind: "video",
+        clips: [{ id: "base-a", sceneId: "scene-a", assetType: "scene", start: 4, duration: 3 }]
+      },
+      {
+        id: "audio-lane",
+        kind: "audio",
+        clips: [{ id: "sound", assetType: "audio", start: 10, duration: 5 }]
+      }
+    ]
+  });
+  assert.equal(project.durationSeconds, 15);
+  assert.equal(project.tracks[0].clips[0].start, 4);
+  assert.equal(project.tracks[0].clips[0].duration, 3);
+
+  const emptyTimeline = normalizeMediaProject({
+    title: "Empty timeline",
+    brief,
+    scenes: [
+      { id: "scene-c", heading: "C", voiceover: "First scene.", durationSeconds: 8 },
+      { id: "scene-d", heading: "D", voiceover: "Second scene.", durationSeconds: 8 }
+    ],
+    tracks: [{ id: "track-main-video", kind: "video", clips: [] }]
+  });
+  assert.equal(emptyTimeline.durationSeconds, 0);
+});
+
 test("normalizes clip masks to supported shapes and bounded geometry", () => {
   const tracks = normalizeTimelineTracks([{
     id: "masked-video",
