@@ -2289,14 +2289,13 @@ $("#chat-form").addEventListener("submit", async (event) => {
   waiting.append(mark, wrap);
   $("#chat-messages").append(waiting);
   try {
-    const nativeLaunch = /^(?:jarvis[\s,:;-]+)?(?:please\s+)?(?:open|launch|start)\s+[a-z0-9][a-z0-9 ._()+-]{0,59}$/i.test(message);
-    if (nativeLaunch && window.JarvisNative && typeof window.JarvisNative.submitAppLaunch === "function") {
+    if (window.JarvisNative && typeof window.JarvisNative.submitNativeCommand === "function") {
       let forwarded = false;
-      try { forwarded = window.JarvisNative.submitAppLaunch(message, window.__jarvisBridgeNonce) === true; } catch { /* fall back to normal chat */ }
+      try { forwarded = window.JarvisNative.submitNativeCommand(message, window.__jarvisBridgeNonce) === true; } catch { /* fall back to normal chat */ }
       if (forwarded) {
-        body.textContent = "Sent to this Android device. Check for the app launch.";
+        body.textContent = "Request forwarded to Android Companion. Check the Android assistant for its plan and next step.";
         awaitingAssistantReply = false;
-        setOrbitalStatus("idle", "Command sent to Android");
+        setOrbitalStatus("idle", "Request sent to Android");
         return;
       }
     }
