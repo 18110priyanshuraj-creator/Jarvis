@@ -383,6 +383,27 @@ test("supports 20-minute long-form landscape projects with bounded scenes and ti
   assert.equal(boundedTimeline.durationSeconds, 1200);
 });
 
+
+test("preserves all 80 scenes in a 20-minute long-form main track", () => {
+  const scenes = Array.from({ length: 80 }, (_, index) => ({
+    id: "long-scene-" + index,
+    heading: "Chapter " + (index + 1),
+    voiceover: "Explain this chapter with context and one clear example.",
+    onScreenText: "Chapter " + (index + 1),
+    durationSeconds: 120
+  }));
+  const project = normalizeMediaProject({
+    title: "Eighty scene course",
+    brief,
+    format: "long-form",
+    scenes
+  });
+  assert.equal(project.scenes.length, 80);
+  assert.equal(project.tracks[0].clips.length, 80);
+  assert.equal(project.durationSeconds, 1200);
+  assert.equal(project.tracks[0].clips.at(-1).start + project.tracks[0].clips.at(-1).duration, 1200);
+});
+
 test("keeps standard landscape projects capped at three minutes", () => {
   const scenes = Array.from({ length: 10 }, (_, index) => ({
     heading: "Scene " + index,
