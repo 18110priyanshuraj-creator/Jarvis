@@ -496,23 +496,27 @@ export async function createMediaDraft(input = {}, options = {}) {
   const selectedFormat = formatKey(input.format);
   const visualStyle = VISUAL_STYLES.has(input.visualStyle) ? input.visualStyle : "cinematic-motion";
   const now = new Date().toISOString();
+  const isLongForm = selectedFormat === "long-form";
+  const targetDurationSeconds = FORMATS[selectedFormat].maxDurationSeconds;
   const base = normalizeMediaProject({
     ...input,
     id: crypto.randomUUID(),
     brief,
-    title: cleanText(input.title, MAX_TITLE) || cleanText(brief.split(/[.!?\n।]/u)[0], MAX_TITLE) || "Untitled media project",
+    title: cleanText(input.title, MAX_TITLE) || cleanText(brief.split(/[.!?\\n।]/u)[0], MAX_TITLE) || "Untitled media project",
     format: selectedFormat,
     visualStyle,
     scenes: createTemplateScenes(brief, selectedFormat, visualStyle),
     status: "draft",
     generationSource: "local-template",
-    generationNote: "A structured local storyboard is ready. Review wording and verify factual claims before exporting.",
+    generationNote: isLongForm
+      ? "Local long-form outline only, not a finished 15–20 minute script. Add complete narration to every chapter or configure the AI generator for a full-length storyboard before export."
+      : "A structured local storyboard is ready. Review wording and verify factual claims before exporting.",
     createdAt: now,
     updatedAt: now
   });
   if (typeof options.generate !== "function") return base;
   try {
-    const generated = parseGeneratedContent(await options.generate({
+    const generationRequest = {
       brief: base.brief,
       format: base.format,
       platform: base.platform,
@@ -521,6 +525,14 @@ export async function createMediaDraft(input = {}, options = {}) {
       audience: base.audience,
       visualStyle: base.visualStyle,
       sceneLimit: MAX_SCENES,
+      targetDurationSeconds,
+      targetDurationLabel: isLongForm ? "15–20 minutes" : formatKey(selectedFormat),
+      targetSceneCount: isLongForm ? 30 : null,
+      narrationTargetWordsPerScene: isLongForm ? "80–100" : null,
+      totalNarrationTargetWords: isLongForm ? "2400–3000" : null,
+      generationGuidance: isLongForm
+        ? "Create a genuinely complete long-form educational or storytelling script, not a short outline stretched across long scene durations. Return about 30 coherent scenes with 80–100 spoken words per scene, factual transitions, examples, a clear progression and a concise final recap. Aim for 15–20 minutes of spoken narration. Do not repeat filler to reach the target. If the supplied brief does not support enough factual detail, return a shorter honest outline and explain what needs research."
+        : "Create a concise, complete storyboard appropriate for the selected output format. Avoid filler and invented factual claims.",
       outputShape: {
         title: "string",
         scenes: [{
@@ -529,11 +541,12 @@ export async function createMediaDraft(input = {}, options = {}) {
           animation: "gesture", background: "midnight", transition: "fade",
           cameraMotion: "ken-burns",
           grade: { brightness: 100, contrast: 100, saturation: 100, blur: 0 },
-          durationSeconds: 8
+          durationSeconds: isLongForm ? 40 : 8
         }]
       }
-    }));
-    return normalizeMediaProject({
+    };
+    const generated = parseGeneratedContent(await options.generate(generationRequest));
+    const normalized = normalizeMediaProject({
       ...base,
       ...generated,
       id: base.id,
@@ -552,8 +565,18 @@ export async function createMediaDraft(input = {}, options = {}) {
       createdAt: base.createdAt,
       updatedAt: new Date().toISOString()
     });
+    if (isLongForm && normalized.durationSeconds < 600) {
+      normalized.generationNote = "The AI provider returned a shorter outline (" +
+        normalized.durationSeconds + " seconds), not a complete 15–20 minute script. Expand the narration and chapters before treating this as long-form.";
+    }
+    return normalized;
   } catch {
-    return { ...base, generationNote: "The AI content provider was unavailable or returned an invalid draft. A local storyboard template was used instead." };
+    return {
+      ...base,
+      generationNote: isLongForm
+        ? "The AI content provider was unavailable or returned an invalid draft. This is only a local outline, not a finished 15–20 minute script."
+        : "The AI content provider was unavailable or returned an invalid draft. A local storyboard template was used instead."
+    };
   }
 }
 
