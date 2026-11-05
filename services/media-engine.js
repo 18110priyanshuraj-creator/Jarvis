@@ -626,14 +626,39 @@ function formatSrtTime(totalSeconds) {
 
 export function buildMediaCaptions(project) {
   const normalized = normalizeMediaProject(project);
-  let cursor = 0;
-  return normalized.scenes.map((scene, index) => {
-    const start = cursor;
-    cursor += scene.durationSeconds;
-    return String(index + 1) + "\n" +
-      formatSrtTime(start) + " --> " + formatSrtTime(cursor) + "\n" +
-      (scene.voiceover || scene.onScreenText).replace(/\s+/g, " ").trim() + "\n";
-  }).join("\n");
+  const scenesById = new Map(normalized.scenes.map((scene) => [scene.id, scene]));
+  const mainTrack = normalized.tracks.find((track) => track.id === "track-main-video");
+  const timelineCues = mainTrack && mainTrack.visible !== false
+    ? mainTrack.clips
+      .filter((clip) => clip.sceneId && clip.visible !== false && scenesById.has(clip.sceneId))
+      .map((clip) => {
+        const scene = scenesById.get(clip.sceneId);
+        return {
+          start: clip.start,
+          end: clip.start + clip.duration,
+          text: (scene.voiceover || scene.onScreenText).replace(/\s+/g, " ").trim()
+        };
+      })
+      .filter((cue) => cue.end > cue.start && cue.text)
+      .sort((a, b) => a.start - b.start)
+    : [];
+
+  const cues = timelineCues.length
+    ? timelineCues
+    : normalized.scenes.map((scene, index) => {
+      const start = normalized.scenes.slice(0, index).reduce((sum, item) => sum + item.durationSeconds, 0);
+      return {
+        start,
+        end: start + scene.durationSeconds,
+        text: (scene.voiceover || scene.onScreenText).replace(/\s+/g, " ").trim()
+      };
+    });
+
+  return cues.map((cue, index) =>
+    String(index + 1) + "\n" +
+    formatSrtTime(cue.start) + " --> " + formatSrtTime(cue.end) + "\n" +
+    cue.text + "\n"
+  ).join("\n");
 }
 
 export function buildMediaScript(project) {
