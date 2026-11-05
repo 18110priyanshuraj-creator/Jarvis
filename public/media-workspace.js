@@ -14,6 +14,8 @@ export function createMediaWorkspace({ api, toast }) {
   let previewStartedAt = 0;
   let previewing = false;
   let exporting = false;
+  let audioFile = null;
+  let audioObjectUrl = null;
 
   const byId = (id) => document.getElementById(id);
 
@@ -75,6 +77,45 @@ export function createMediaWorkspace({ api, toast }) {
     return wrapper;
   }
 
+  function makeSelectField(labelText, value, field, choices) {
+    const wrapper = makeElement("label", "media-field");
+    wrapper.append(makeElement("span", "", labelText));
+    const select = makeElement("select", "media-scene-input");
+    select.dataset.field = field;
+    for (const [optionValue, optionLabel] of choices) {
+      const option = makeElement("option", "", optionLabel);
+      option.value = optionValue;
+      select.append(option);
+    }
+    select.value = value;
+    wrapper.append(select);
+    return wrapper;
+  }
+
+  const VISUAL_CHOICES = [
+    ["auto", "Automatic layout"],
+    ["stick-figure", "Stick figure"],
+    ["diagram", "Diagram / process"],
+    ["quote", "Quote / text focus"],
+    ["title-card", "Title card"]
+  ];
+  const POSE_CHOICES = [
+    ["idle", "Neutral"], ["walk", "Walking"], ["point", "Pointing"],
+    ["think", "Thinking"], ["celebrate", "Celebrating"]
+  ];
+  const ANIMATION_CHOICES = [
+    ["fade", "Fade in"], ["rise", "Rise up"], ["bounce", "Bounce"],
+    ["walk", "Walk cycle"], ["gesture", "Gesture"]
+  ];
+  const BACKGROUND_CHOICES = [
+    ["midnight", "Midnight"], ["sunset", "Sunset"], ["paper", "Warm paper"],
+    ["mint", "Mint"], ["violet", "Violet"]
+  ];
+  const TRANSITION_CHOICES = [
+    ["cut", "Cut"], ["fade", "Crossfade"], ["slide", "Slide"],
+    ["wipe", "Wipe"], ["zoom", "Zoom"]
+  ];
+
   function renderProjectList() {
     const target = byId("media-project-list");
     if (!target) return;
@@ -109,6 +150,17 @@ export function createMediaWorkspace({ api, toast }) {
     }
   }
 
+  function moveScene(index, offset) {
+    if (!currentProject || currentProject.status !== "draft") return;
+    const destination = index + offset;
+    if (destination < 0 || destination >= currentProject.scenes.length) return;
+    [currentProject.scenes[index], currentProject.scenes[destination]] =
+      [currentProject.scenes[destination], currentProject.scenes[index]];
+    currentProject.scenes.forEach((scene, order) => { scene.order = order + 1; });
+    renderSceneEditors();
+    renderPreview(currentProject, destination);
+  }
+
   function renderSceneEditors() {
     const target = byId("media-editor-scenes");
     if (!target || !currentProject) return;
@@ -116,8 +168,8 @@ export function createMediaWorkspace({ api, toast }) {
     currentProject.scenes.forEach((scene, index) => {
       const card = makeElement("article", "media-scene-editor");
       const heading = makeElement("div", "media-scene-heading");
-      heading.append(makeElement("strong", "", "Scene " + (index + 1)));
       const duration = makeElement("label", "media-duration-field");
+      heading.append(makeElement("strong", "", "Scene " + (index + 1)));
       duration.append(makeElement("span", "", "Seconds"));
       const durationInput = makeElement("input", "media-scene-input");
       durationInput.type = "number";
@@ -128,24 +180,44 @@ export function createMediaWorkspace({ api, toast }) {
       durationInput.dataset.field = "durationSeconds";
       durationInput.disabled = currentProject.format === "square-carousel";
       duration.append(durationInput);
-      heading.append(duration);
+      const moveControls = makeElement("div", "media-scene-order");
+      const moveUp = makeElement("button", "item-action", "↑");
+      moveUp.type = "button";
+      moveUp.title = "Move scene up";
+      moveUp.setAttribute("aria-label", "Move scene " + (index + 1) + " up");
+      moveUp.disabled = currentProject.status !== "draft" || index === 0;
+      moveUp.addEventListener("click", () => moveScene(index, -1));
+      const moveDown = makeElement("button", "item-action", "↓");
+      moveDown.type = "button";
+      moveDown.title = "Move scene down";
+      moveDown.setAttribute("aria-label", "Move scene " + (index + 1) + " down");
+      moveDown.disabled = currentProject.status !== "draft" || index === currentProject.scenes.length - 1;
+      moveDown.addEventListener("click", () => moveScene(index, 1));
+      moveControls.append(moveUp, moveDown);
+      heading.append(duration, moveControls);
       card.append(heading);
       card.append(makeField("Scene heading", scene.heading, "heading"));
       card.append(makeField("Voiceover script", scene.voiceover, "voiceover", "textarea"));
       card.append(makeField("On-screen text", scene.onScreenText, "onScreenText", "textarea"));
       card.append(makeField("Visual direction", scene.visualPrompt, "visualPrompt", "textarea"));
+      card.append(makeSelectField("Visual type", scene.visualType || "auto", "visualType", VISUAL_CHOICES));
+      card.append(makeSelectField("Stick-figure pose", scene.figurePose || "point", "figurePose", POSE_CHOICES));
+      card.append(makeSelectField("Motion", scene.animation || "rise", "animation", ANIMATION_CHOICES));
+      card.append(makeSelectField("Background", scene.background || "midnight", "background", BACKGROUND_CHOICES));
+      card.append(makeSelectField("Transition into scene", scene.transition || "fade", "transition", TRANSITION_CHOICES));
       if (currentProject.status === "draft") {
         const remove = makeElement("button", "item-action media-remove-scene", "Remove scene");
         remove.type = "button";
         remove.disabled = currentProject.scenes.length <= MIN_SCENES;
         remove.addEventListener("click", () => {
           currentProject.scenes.splice(index, 1);
+          currentProject.scenes.forEach((item, order) => { item.order = order + 1; });
           renderSceneEditors();
           renderPreview(currentProject, 0);
         });
         card.append(remove);
       } else {
-        card.querySelectorAll("input, textarea").forEach((control) => { control.disabled = true; });
+        card.querySelectorAll("input, textarea, select, button").forEach((control) => { control.disabled = true; });
       }
       target.append(card);
     });
@@ -158,7 +230,7 @@ export function createMediaWorkspace({ api, toast }) {
   function setEditorControls() {
     const editable = currentProject?.status === "draft";
     const approved = currentProject?.status === "approved";
-    for (const id of ["media-editor-project-title", "media-editor-audience", "media-editor-tone"]) {
+    for (const id of ["media-editor-project-title", "media-editor-audience", "media-editor-visual-style", "media-editor-tone"]) {
       const element = byId(id);
       if (element) element.disabled = !editable;
     }
@@ -185,6 +257,7 @@ export function createMediaWorkspace({ api, toast }) {
     byId("media-editor-project-title").value = currentProject.title;
     byId("media-editor-audience").value = currentProject.audience || "";
     byId("media-editor-tone").value = currentProject.tone || "clear";
+    byId("media-editor-visual-style").value = currentProject.visualStyle || "cinematic-motion";
     byId("media-editor-title").textContent = currentProject.title;
     byId("media-editor-meta").textContent = currentProject.formatLabel + " · " +
       currentProject.width + " × " + currentProject.height + " · " +
@@ -333,6 +406,11 @@ export function createMediaWorkspace({ api, toast }) {
         voiceover: value("voiceover"),
         onScreenText: value("onScreenText"),
         visualPrompt: value("visualPrompt"),
+        visualType: value("visualType"),
+        figurePose: value("figurePose"),
+        animation: value("animation"),
+        background: value("background"),
+        transition: value("transition"),
         durationSeconds: Number(value("durationSeconds"))
       };
     });
@@ -358,6 +436,7 @@ export function createMediaWorkspace({ api, toast }) {
       title: byId("media-editor-project-title").value,
       audience: byId("media-editor-audience").value,
       tone: byId("media-editor-tone").value,
+      visualStyle: byId("media-editor-visual-style").value,
       scenes: readSceneEditors()
     };
     const result = await api("/api/media/projects/" + encodeURIComponent(currentProject.id), {
@@ -586,6 +665,11 @@ export function createMediaWorkspace({ api, toast }) {
       onScreenText: "New idea",
       visualPrompt: "Describe a simple visual that supports the narration.",
       durationSeconds: 8,
+      visualType: currentProject.visualStyle === "stick-figure-story" ? "stick-figure" : "auto",
+      figurePose: "walk",
+      animation: "walk",
+      background: "midnight",
+      transition: "fade",
       order: currentProject.scenes.length + 1
     });
     renderSceneEditors();
@@ -609,7 +693,8 @@ export function createMediaWorkspace({ api, toast }) {
           platform: byId("media-platform").value,
           language: byId("media-language").value,
           tone: byId("media-tone").value,
-          audience: byId("media-audience").value
+          audience: byId("media-audience").value,
+          visualStyle: byId("media-visual-style").value
         };
         const result = await api("/api/media/drafts", { method: "POST", body: JSON.stringify(payload) });
         projects.unshift(result.project);
