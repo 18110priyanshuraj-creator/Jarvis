@@ -110,6 +110,12 @@ test("bundles carousel SVGs, subtitles, storyboard and chapter readiness in ZIP 
   assert.ok(files.some(file => file.name === "video/captions.vtt"));
   assert.ok(files.some(file => file.name === "video/storyboard.csv"));
   assert.ok(files.some(file => file.name === "video/youtube-chapters.txt"));
+  assert.ok(files.some(file => file.name === "website/seo-page-draft.html"));
+  assert.ok(files.some(file => file.name === "social/platform-copy.md"));
+  assert.ok(files.some(file => file.name === "ideas/idea-backlog.csv"));
+  assert.ok(files.some(file => file.name === "lead/lead-resource-outline.txt"));
+  assert.ok(files.some(file => file.name === "research/source-review.txt"));
+  assert.ok(files.some(file => file.name === "publishing/pre-publish-checklist.txt"));
   assert.equal(files.filter(file => file.name.startsWith("carousel/slide-")).length, 4);
   const archive = buildStoredZip(files, new Date(2026, 0, 1));
   assert.equal(new DataView(archive.buffer, archive.byteOffset, archive.byteLength).getUint32(0, true), 0x04034b50);
@@ -117,6 +123,36 @@ test("bundles carousel SVGs, subtitles, storyboard and chapter readiness in ZIP 
   assert.match(archiveText, /carousel\/slide-01\.svg/);
   assert.match(archiveText, /video\/captions\.srt/);
   assert.equal(new DataView(archive.buffer, archive.byteOffset, archive.byteLength).getUint32(archive.length - 22, true), 0x06054b50);
+});
+
+test("exports a self-contained escaped SEO HTML draft and brand styling in the ZIP files", () => {
+  const unsafePack = {
+    ...pack,
+    brandKit: { brandName: "Solar Lab", accentColor: "#ff8800", backgroundColor: "#101820", textColor: "#ffffff" },
+    seoPage: {
+      metaTitle: "<script>bad</script>",
+      metaDescription: "A & B",
+      h1: "<img src=x onerror=alert(1)>",
+      sections: [{ heading: "How it works", summary: "<script>no</script>" }],
+      faqs: []
+    }
+  };
+  const files = buildCreatorAssetFiles(unsafePack);
+  const html = files.find(file => file.name === "website/seo-page-draft.html").content;
+  assert.match(html, /&lt;script&gt;/);
+  assert.match(html, /A &amp; B/);
+  assert.doesNotMatch(html, /<script>/);
+  const slide = files.find(file => file.name === "carousel/slide-01.svg").content;
+  assert.match(slide, /Solar Lab/);
+  assert.match(slide, /#ff8800/);
+  assert.match(slide, /#101820/);
+});
+
+test("quotes dangerous spreadsheet formula cells", () => {
+  const unsafePack = {
+    shortVideo: { scenes: [{ heading: "=HYPERLINK(\"https://example.com\")", voiceover: "Line", durationSeconds: 4 }] }
+  };
+  assert.match(buildCreatorStoryboardCsv(unsafePack), /"'=HYPERLINK/);
 });
 
 test("uses a chapter readiness note instead of fake chapters for clips that are too short", () => {
