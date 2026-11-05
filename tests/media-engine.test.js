@@ -103,6 +103,27 @@ test("normalizes multi-track clips, chroma key, custom keyframes and speed ramps
   assert.ok(second.sourceIn > first.sourceIn);
 });
 
+test("normalizes clip masks to supported shapes and bounded geometry", () => {
+  const tracks = normalizeTimelineTracks([{
+    id: "masked-video",
+    kind: "overlay",
+    clips: [{
+      id: "masked-clip",
+      duration: 8,
+      mask: { shape: "ellipse", x: 0.2, y: -0.1, width: 0.8, height: 0.6, feather: 0.15, invert: true }
+    }]
+  }]);
+  assert.deepEqual(tracks[0].clips[0].mask, {
+    shape: "ellipse", x: 0.2, y: -0.1, width: 0.8, height: 0.6, feather: 0.15, invert: true
+  });
+  const invalid = normalizeTimelineTracks([{
+    kind: "overlay",
+    clips: [{ duration: 8, mask: { shape: "freehand-js", x: 9, y: -9, width: 5, height: 0, feather: 2 } }]
+  }])[0].clips[0].mask;
+  assert.equal(invalid.shape, "none");
+  assert.deepEqual([invalid.x, invalid.y, invalid.width, invalid.height, invalid.feather], [1, -1, 2, 0.05, 0.5]);
+});
+
 test("bounds excessive timeline counts and clamps invalid speed/key values", () => {
   const tracks = normalizeTimelineTracks(Array.from({ length: 20 }, (_, index) => ({
     id: "track-" + index,
