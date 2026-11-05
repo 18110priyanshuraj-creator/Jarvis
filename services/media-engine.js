@@ -209,7 +209,6 @@ export async function createMediaDraft(input = {}, options = {}) {
   const now = new Date().toISOString();
   const base = normalizeMediaProject({
     ...input,
-    visualStyle,
     id: crypto.randomUUID(),
     brief,
     title: cleanText(input.title, MAX_TITLE) || cleanText(brief.split(/[.!?\n।]/u)[0], MAX_TITLE) || "Untitled media project",
