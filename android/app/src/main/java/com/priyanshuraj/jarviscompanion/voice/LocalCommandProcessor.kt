@@ -135,9 +135,9 @@ object LocalCommandProcessor {
     internal fun appLaunchTarget(message: String): String? {
         val input = normalizeCommand(message)
         val rawTarget = openPrefix.find(input)?.groupValues?.getOrNull(1)
-            ?: openSuffix.find(input)?.groupValues?.getOrNull(1)
             ?: websiteSuffix.find(input)?.groupValues?.getOrNull(1)
             ?: websitePrefix.find(input)?.groupValues?.getOrNull(1)
+            ?: openSuffix.find(input)?.groupValues?.getOrNull(1)
             ?: return null
         // Remove polite/context clauses so "open Canva to edit a video" still
         // resolves to the app name rather than searching for a fictitious app.
