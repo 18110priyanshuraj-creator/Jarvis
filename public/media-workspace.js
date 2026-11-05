@@ -1477,13 +1477,14 @@ export function createMediaWorkspace({ api, toast }) {
   }
 
   function sceneAtTime(project, elapsedMs) {
-    const totalMs = project.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
-    const bounded = Math.max(0, Math.min(totalMs, elapsedMs));
+    const sceneDurationMs = project.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
+    const totalMs = Math.max(sceneDurationMs, (project.durationSeconds || 0) * 1000);
+    const bounded = Math.max(0, Math.min(sceneDurationMs, elapsedMs));
     let cursor = 0;
     for (let index = 0; index < project.scenes.length; index++) {
       const durationMs = project.scenes[index].durationSeconds * 1000;
       if (bounded < cursor + durationMs || index === project.scenes.length - 1) {
-        return { index, sceneElapsedMs: Math.min(durationMs, bounded - cursor), progress: Math.min(1, Math.max(0, (bounded - cursor) / durationMs)), totalMs };
+        return { index, sceneElapsedMs: Math.min(durationMs, Math.max(0, bounded - cursor)), progress: Math.min(1, Math.max(0, (bounded - cursor) / durationMs)), totalMs };
       }
       cursor += durationMs;
     }
@@ -1500,63 +1501,70 @@ export function createMediaWorkspace({ api, toast }) {
     ctx.clearRect(0, 0, width, height);
     if (index === 0 || sceneElapsedMs >= transitionMs || transition === "cut") {
       drawScene(ctx, width, height, project, index, progress);
-      return;
-    }
-    const previousIndex = index - 1;
-    if (transition === "fade") {
-      drawScene(ctx, width, height, project, previousIndex, 1, 1 - transitionProgress);
-      drawScene(ctx, width, height, project, index, progress, transitionProgress);
-    } else if (transition === "slide") {
-      ctx.save();
-      ctx.translate(-width * transitionProgress, 0);
-      drawScene(ctx, width, height, project, previousIndex, 1);
-      ctx.restore();
-      ctx.save();
-      ctx.translate(width * (1 - transitionProgress), 0);
-      drawScene(ctx, width, height, project, index, progress);
-      ctx.restore();
-    } else if (transition === "wipe") {
-      drawScene(ctx, width, height, project, previousIndex, 1);
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, width * transitionProgress, height);
-      ctx.clip();
-      drawScene(ctx, width, height, project, index, progress);
-      ctx.restore();
-    } else if (transition === "zoom") {
-      drawScene(ctx, width, height, project, previousIndex, 1);
-      ctx.save();
-      ctx.translate(width / 2, height / 2);
-      ctx.scale(0.88 + transitionProgress * 0.12, 0.88 + transitionProgress * 0.12);
-      ctx.translate(-width / 2, -height / 2);
-      drawScene(ctx, width, height, project, index, progress);
-      ctx.restore();
     } else {
-      drawScene(ctx, width, height, project, index, progress);
+      const previousIndex = index - 1;
+      if (transition === "fade") {
+        drawScene(ctx, width, height, project, previousIndex, 1, 1 - transitionProgress);
+        drawScene(ctx, width, height, project, index, progress, transitionProgress);
+      } else if (transition === "slide") {
+        ctx.save();
+        ctx.translate(-width * transitionProgress, 0);
+        drawScene(ctx, width, height, project, previousIndex, 1);
+        ctx.restore();
+        ctx.save();
+        ctx.translate(width * (1 - transitionProgress), 0);
+        drawScene(ctx, width, height, project, index, progress);
+        ctx.restore();
+      } else if (transition === "wipe") {
+        drawScene(ctx, width, height, project, previousIndex, 1);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, width * transitionProgress, height);
+        ctx.clip();
+        drawScene(ctx, width, height, project, index, progress);
+        ctx.restore();
+      } else if (transition === "zoom") {
+        drawScene(ctx, width, height, project, previousIndex, 1);
+        ctx.save();
+        ctx.translate(width / 2, height / 2);
+        ctx.scale(0.88 + transitionProgress * 0.12, 0.88 + transitionProgress * 0.12);
+        ctx.translate(-width / 2, -height / 2);
+        drawScene(ctx, width, height, project, index, progress);
+        ctx.restore();
+      } else {
+        drawScene(ctx, width, height, project, index, progress);
+      }
     }
+    drawTimelineOverlays(ctx, width, height, project, elapsedMs);
   }
 
-  function renderPreview(project, index = 0) {
+  function renderPreviewAtTime(elapsedMs) {
     const canvas = byId("media-preview-canvas");
-    if (!canvas || !project?.scenes?.length) return;
-    const size = FORMATS[project.format] || FORMATS["vertical-short"];
+    if (!canvas || !currentProject?.scenes?.length) return;
+    const size = FORMATS[currentProject.format] || FORMATS["vertical-short"];
     canvas.width = Math.min(size.width, 960);
     canvas.height = Math.round(canvas.width * size.height / size.width);
     if (canvas.height > 960) {
       canvas.height = 960;
       canvas.width = Math.round(canvas.height * size.width / size.height);
     }
+    const ctx = canvas.getContext("2d");
+    if (ctx) drawTimelineFrame(ctx, canvas.width, canvas.height, currentProject, Math.max(0, elapsedMs));
+  }
+
+  function renderPreview(project, index = 0) {
     let startMs = 0;
     for (let cursor = 0; cursor < Math.min(index, project.scenes.length); cursor++) {
       startMs += project.scenes[cursor].durationSeconds * 1000;
     }
-    const ctx = canvas.getContext("2d");
-    if (ctx) drawTimelineFrame(ctx, canvas.width, canvas.height, project, startMs + 1);
+    renderPreviewAtTime(startMs + 1);
   }
 
   function stopPreview() {
     previewing = false;
     pauseSceneVideos();
+    for (const id of activeTimelineClipIds) timelineAssets.get(id)?.element?.pause?.();
+    activeTimelineClipIds.clear();
     if (previewFrame) cancelAnimationFrame(previewFrame);
     previewFrame = 0;
     const button = byId("media-preview-button");
@@ -1572,12 +1580,13 @@ export function createMediaWorkspace({ api, toast }) {
     previewing = true;
     previewStartedAt = performance.now();
     byId("media-preview-button").textContent = "Stop preview";
-    const totalMs = currentProject.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
+    const totalMs = Math.max(1, currentProject.durationSeconds * 1000);
     const tick = (now) => {
       if (!previewing || !currentProject) return;
       const elapsed = (now - previewStartedAt) % totalMs;
       const current = sceneAtTime(currentProject, elapsed);
       activateVideoForScene(currentProject.scenes[current.index]?.id);
+      activateTimelineClipAssets(elapsed);
       const canvas = byId("media-preview-canvas");
       const ctx = canvas?.getContext("2d");
       if (ctx) drawTimelineFrame(ctx, canvas.width, canvas.height, currentProject, elapsed);
