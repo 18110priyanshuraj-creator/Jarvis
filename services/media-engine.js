@@ -112,7 +112,8 @@ function normalizeSpeedRamp(value, durationSeconds, fallbackSpeed = 1) {
 }
 
 function normalizeTimelineClip(clip, index, trackKind) {
-  const duration = boundedNumber(clip?.duration, 6, 0.25, 180);
+  const start = boundedNumber(clip?.start, 0, 0, 180);
+  const duration = Math.min(180 - start, boundedNumber(clip?.duration, 6, 0.25, 180));
   const speed = boundedNumber(clip?.speed, 1, 0.25, 4);
   const assetType = TIMELINE_ASSET_TYPES.has(clip?.assetType)
     ? clip.assetType
@@ -130,11 +131,12 @@ function normalizeTimelineClip(clip, index, trackKind) {
     assetName: cleanText(clip?.assetName, 140),
     assetType,
     label: cleanText(clip?.label, 80) || "Clip " + (index + 1),
-    start: boundedNumber(clip?.start, 0, 0, 180),
+    start,
     duration,
     sourceIn,
     sourceOut,
     speed,
+    volume: boundedNumber(clip?.volume, 1, 0, 1.5),
     fit: clip?.fit === "contain" ? "contain" : "cover",
     transform: {
       x: boundedNumber(clip?.transform?.x, 0, -2, 2),
@@ -519,6 +521,7 @@ export async function createMediaDraft(input = {}, options = {}) {
       approvedAt: null,
       generationSource: "ai-assisted",
       generationNote: "AI-assisted storyboard. Review all wording and verify factual claims before export.",
+      tracks: undefined,
       createdAt: base.createdAt,
       updatedAt: new Date().toISOString()
     });
