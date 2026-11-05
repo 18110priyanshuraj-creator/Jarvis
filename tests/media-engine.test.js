@@ -156,7 +156,7 @@ test("accepts a valid AI-generated JSON object and preserves owner settings", as
     generate: async () => ({
       title: "Water cycle in 60 seconds",
       scenes: [
-        { heading: "Hook", voiceover: "Water keeps moving around Earth.", onScreenText: "Water never stops moving", visualPrompt: "Simple earth and water illustration", durationSeconds: 8 },
+        { heading: "Hook", voiceover: "Water keeps moving around Earth.", onScreenText: "Water never stops moving", visualPrompt: "Simple earth and water illustration", cameraMotion: "push-in", grade: { brightness: 106, contrast: 112, saturation: 108, blur: 0 }, durationSeconds: 8 },
         { heading: "Evaporation", voiceover: "Sunlight warms water and changes some of it into vapour.", onScreenText: "Evaporation", visualPrompt: "Sun over a lake with upward arrows", durationSeconds: 10 },
         { heading: "Clouds", voiceover: "Cooling vapour condenses into tiny droplets.", onScreenText: "Condensation", visualPrompt: "Cloud with water droplets", durationSeconds: 10 }
       ]
@@ -167,6 +167,8 @@ test("accepts a valid AI-generated JSON object and preserves owner settings", as
   assert.equal(project.audience, "Class 11 students");
   assert.equal(project.status, "draft");
   assert.equal(project.scenes.length, 3);
+  assert.equal(project.scenes[0].cameraMotion, "push-in");
+  assert.deepEqual(project.scenes[0].grade, { brightness: 106, contrast: 112, saturation: 108, blur: 0 });
 });
 
 test("parses fenced JSON output from a configured generator", async () => {
