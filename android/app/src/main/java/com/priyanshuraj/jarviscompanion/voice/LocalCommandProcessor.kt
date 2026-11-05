@@ -238,7 +238,13 @@ object LocalCommandProcessor {
         val message: String
     )
 
-    fun executePlannedAction(context: Context, type: String, value: String): PlannedActionResult {
+    fun executePlannedAction(
+        context: Context,
+        type: String,
+        value: String,
+        sourceLabel: String = "",
+        targetLabel: String = ""
+    ): PlannedActionResult {
         val service = JarvisAccessibilityService.activeService
         return when (type) {
             "open_app" -> {
@@ -290,6 +296,19 @@ object LocalCommandProcessor {
             "open_web_search" -> openGoogleSearch(context, value)
             "verify_browser_foreground" -> verifyBrowserForeground(context, value)
             "verify_app_foreground" -> verifyAppForeground(context, value)
+            "drag_label_to_label" -> {
+                // The planner binds this action to Canva and the check is repeated at
+                // execution time so a foreground-app switch cannot redirect the drag.
+                val appCheck = verifyAppForeground(context, value)
+                if (!appCheck.success || appCheck.shouldStop) {
+                    appCheck
+                } else if (service == null) {
+                    PlannedActionResult(false, true, "Enable the JARVIS screen assistant in Android Accessibility settings first.")
+                } else {
+                    val result = UIActionExecutor.dragExactLabels(service, sourceLabel, targetLabel)
+                    PlannedActionResult(result.ok, !result.ok, result.message)
+                }
+            }
             "verify_screen_text" -> {
                 if (service == null) {
                     PlannedActionResult(
