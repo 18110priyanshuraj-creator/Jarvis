@@ -322,16 +322,16 @@ object UIActionExecutor {
                     }
                     val lookup = findUniqueActionTarget(tree.nodes, targetLabel, dropActionId)
                     if (lookup.protected) {
-                        runCatching { source?.performAction(cancelActionId) }
+                        runCatching { activeSource.performAction(cancelActionId) }
                         return failure(UiActionCode.PROTECTED_CONTROL, "The requested destination is inside a protected control. The drag was cancelled.")
                     }
                     if (lookup.ambiguous) {
-                        runCatching { source?.performAction(cancelActionId) }
+                        runCatching { activeSource.performAction(cancelActionId) }
                         return failure(UiActionCode.DRAG_AMBIGUOUS_TARGET, "More than one drop target is labelled " + targetLabel + ". The drag was cancelled.")
                     }
                     val target = lookup.target
                         ?: run {
-                            runCatching { source?.performAction(cancelActionId) }
+                            runCatching { activeSource.performAction(cancelActionId) }
                             return failure(
                                 if (lookup.labelFound) UiActionCode.DRAG_ACTION_UNAVAILABLE else UiActionCode.DRAG_TARGET_NOT_FOUND,
                                 if (lookup.labelFound) "The destination is visible, but the app did not expose its semantic drop action. The drag was cancelled."
@@ -340,11 +340,11 @@ object UIActionExecutor {
                         }
                     try {
                         if (targetKey(target) == targetKey(activeSource)) {
-                            runCatching { source?.performAction(cancelActionId) }
+                            runCatching { activeSource.performAction(cancelActionId) }
                             return failure(UiActionCode.DRAG_AMBIGUOUS_TARGET, "The source and destination resolve to the same UI item. The drag was cancelled.")
                         }
                         if (!target.performAction(dropActionId)) {
-                            runCatching { source?.performAction(cancelActionId) }
+                            runCatching { activeSource.performAction(cancelActionId) }
                             return failure(UiActionCode.DRAG_ACTION_REJECTED, "Android rejected the drop request. The result must be checked manually.")
                         }
                         return success(
