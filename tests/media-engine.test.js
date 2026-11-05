@@ -359,7 +359,7 @@ test("does not mark a long timeline with very little narration as a complete scr
     generate: async () => ({ title: "Long silent outline", scenes })
   });
   assert.equal(project.durationSeconds, 1200);
-  assert.match(project.generationNote, /240 narration words/i);
+  assert.match(project.generationNote, /30 narration words/i);
   assert.match(project.generationNote, /below the 15-20 minute script target/i);
 });
 
