@@ -109,8 +109,16 @@ object LocalCommandProcessor {
      * Handles simple local actions. Screen actions are allowed only during the
      * explicit hands-free session, when another app can remain in the foreground.
      */
+    /**
+     * Remove an optional spoken wake word before matching local commands.
+     * Without this, requests such as "Jarvis, open Canva" miss the direct
+     * app-launch parser and are unnecessarily sent to remote planning.
+     */
+    internal fun normalizeCommand(message: String): String =
+        message.trim().replace(Regex("""(?i)^jarvis[\\s,:;-]+"""), "").trim()
+
     fun handle(context: Context, message: String, allowUiActions: Boolean): String? {
-        val original = message.trim()
+        val original = normalizeCommand(message)
         if (original.isBlank()) return null
 
         if (normalize(original) == "open home screen") {
