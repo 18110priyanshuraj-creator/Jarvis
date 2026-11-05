@@ -139,8 +139,9 @@ export function createMediaWorkspace({ api, toast }) {
   async function setSceneAsset(scene, file) {
     const projectId = currentProject?.id;
     if (!projectId || !scene?.id) return;
-    disposeSceneAsset(scene.id);
     if (!file) {
+      disposeSceneAsset(scene.id);
+      renderSceneEditors();
       renderPreview(currentProject, currentProject.scenes.findIndex((item) => item.id === scene.id));
       return;
     }
@@ -151,6 +152,7 @@ export function createMediaWorkspace({ api, toast }) {
     if (file.size > 100 * 1024 * 1024) {
       throw new Error("Scene assets must be 100 MiB or smaller for local rendering.");
     }
+    disposeSceneAsset(scene.id);
     const url = URL.createObjectURL(file);
     let element;
     if (type.startsWith("image/")) {
@@ -321,6 +323,17 @@ export function createMediaWorkspace({ api, toast }) {
       });
       const asset = sceneAssets.get(scene.id);
       assetField.append(assetInput, makeElement("span", "small muted", asset ? asset.name : "No file selected; this scene uses generated motion graphics."));
+      if (asset) {
+        const clearAsset = makeElement("button", "item-action media-remove-scene", "Remove local asset");
+        clearAsset.type = "button";
+        clearAsset.disabled = currentProject.status !== "draft";
+        clearAsset.addEventListener("click", () => {
+          disposeSceneAsset(scene.id);
+          renderSceneEditors();
+          renderPreview(currentProject, index);
+        });
+        assetField.append(clearAsset);
+      }
       card.append(assetField);
       if (currentProject.status === "draft") {
         const remove = makeElement("button", "item-action media-remove-scene", "Remove scene");
@@ -877,10 +890,15 @@ export function createMediaWorkspace({ api, toast }) {
       schemaVersion: 1,
       exportedAt: new Date().toISOString(),
       project,
+      localAssetManifest: project.scenes.map((scene) => {
+        const asset = sceneAssets.get(scene.id);
+        return asset ? { sceneId: scene.id, fileName: asset.name, type: asset.type } : null;
+      }).filter(Boolean),
+      audioTrack: audioFile ? { fileName: audioFile.name, sizeBytes: audioFile.size } : null,
       exportNotes: {
-        video: "Use Export WebM to render a silent motion-graphic video in this browser.",
-        audio: "Voiceover is supplied as a script and captions; no audio is recorded or generated.",
-        assets: "Visual directions are prompts only. Add media assets only when you have the rights to use them."
+        video: "The local browser renderer exports the storyboard as a video file when MediaRecorder supports MP4 or WebM.",
+        audio: "A user-selected local audio file may be mixed into the video export. Audio files are not uploaded to the JARVIS server.",
+        assets: "Scene image/video files are selected locally and embedded into the video export. The project JSON contains only an asset manifest, not the file bytes. Use assets you own or have permission to use."
       }
     };
     downloadText(cleanFileName(project.title) + "-project.json", JSON.stringify(bundle, null, 2), "application/json");
@@ -998,10 +1016,24 @@ export function createMediaWorkspace({ api, toast }) {
       stream = typeof MediaStream !== "undefined"
         ? new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks])
         : canvasStream;
-      const mimeTypes = audioFile
-        ? ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]
-        : ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
-      const mimeType = mimeTypes.find((candidate) => MediaRecorder.isTypeSupported(candidate));
+      const mediaTypes = audioFile
+        ? [
+            { mime: "video/mp4;codecs=avc1.42E01E,mp4a.40.2", extension: ".mp4" },
+            { mime: "video/webm;codecs=vp9,opus", extension: ".webm" },
+            { mime: "video/webm;codecs=vp8,opus", extension: ".webm" },
+            { mime: "video/webm", extension: ".webm" }
+          ]
+        : [
+            { mime: "video/mp4;codecs=avc1.42E01E", extension: ".mp4" },
+            { mime: "video/webm;codecs=vp9", extension: ".webm" },
+            { mime: "video/webm;codecs=vp8", extension: ".webm" },
+            { mime: "video/webm", extension: ".webm" }
+          ];
+      const selectedType = typeof MediaRecorder.isTypeSupported === "function"
+        ? mediaTypes.find((candidate) => MediaRecorder.isTypeSupported(candidate.mime))
+        : null;
+      const mimeType = selectedType?.mime;
+      const extension = selectedType?.extension || ".webm";
       recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
 
       const finished = new Promise((resolve, reject) => {
@@ -1035,11 +1067,11 @@ export function createMediaWorkspace({ api, toast }) {
         animation = requestAnimationFrame(frame);
       });
       const blob = await finished;
-      const suffix = audioFile ? "-with-audio.webm" : ".webm";
+      const suffix = audioFile ? "-with-audio" + extension : extension;
       downloadBlob(cleanFileName(project.title) + suffix, blob);
-      setExportStatus(audioFile
-        ? "Video export finished with the selected local audio track. Preview the downloaded file before using it."
-        : "Silent video export finished. Add a local voiceover or music track to export a version with audio.");
+      setExportStatus("Video export finished as " + extension.slice(1).toUpperCase() +
+        (audioFile ? " with the selected local audio track." : " without an audio track.") +
+        " Preview the downloaded file before using it.");
     } finally {
       if (animation) cancelAnimationFrame(animation);
       if (recorder && recorder.state !== "inactive") recorder.stop();
