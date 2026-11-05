@@ -4,8 +4,15 @@ import {
   createCreatorCampaignPack,
   normalizeCreatorCampaign,
   CREATOR_CAMPAIGN_LIMITS,
-  creatorCampaignSlug
+  creatorCampaignSlug,
+  updateCreatorCampaign
 } from "../services/creator-campaign.js";
+import {
+  buildCreatorSrt,
+  buildCreatorShotListCsv,
+  buildCreatorCarouselSlideSvg,
+  buildCreatorCarouselZip
+} from "../public/creator-asset-export.js";
 
 const topic = "How a simple solar panel works";
 
@@ -94,4 +101,58 @@ test("stored campaign normalization rejects incomplete or unsafe drafts", async 
 
 test("topic slug is normalized for an SEO draft URL", () => {
   assert.equal(creatorCampaignSlug("Solar Panels: A Simple Guide"), "solar-panels-a-simple-guide");
+});
+
+test("campaign edits create bounded revision history and preserve the saved brand kit", async () => {
+  const pack = await createCreatorCampaignPack({
+    topic,
+    brandKit: { brandName: "Solar Lab", accentColor: "#ff8800", backgroundColor: "#101820", textColor: "#ffffff" }
+  }, { providerStatus: { conversationEnabled: false } });
+  const edited = updateCreatorCampaign(pack, {
+    title: "Solar panel campaign — reviewed",
+    shortVideo: { hook: "How does sunlight become electricity?" },
+    brandKit: { accentColor: "#33aa77" }
+  });
+  assert.equal(edited.revision, 2);
+  assert.equal(edited.revisionHistory.length, 1);
+  assert.equal(edited.revisionHistory[0].revision, 1);
+  assert.equal(edited.shortVideo.hook, "How does sunlight become electricity?");
+  assert.equal(edited.brandKit.brandName, "Solar Lab");
+  assert.equal(edited.brandKit.accentColor, "#33aa77");
+  assert.throws(() => updateCreatorCampaign(edited, { trendRadar: { summary: "forged" } }), /unsupported field/);
+});
+
+test("campaign subtitle export creates timed readable SRT cues", async () => {
+  const pack = await createCreatorCampaignPack({ topic }, { providerStatus: { conversationEnabled: false } });
+  const srt = buildCreatorSrt(pack);
+  assert.match(srt, /1\\n00:00:00,000 -->/);
+  assert.match(srt, /--> 00:00:/);
+  assert.ok((srt.match(/\\n\\n/g) || []).length >= 2);
+});
+
+test("campaign shot-list export quotes cells and blocks spreadsheet formulas", () => {
+  const csv = buildCreatorShotListCsv({
+    shortVideo: { scenes: [{ heading: "=HYPERLINK(\"https://example.com\")", voiceover: "A \"quoted\" line", onScreenText: "Line one\\nline two", visualPrompt: "Visual", durationSeconds: 6 }] }
+  });
+  assert.match(csv, /'=HYPERLINK/);
+  assert.match(csv, /""quoted""/);
+  assert.match(csv, /00:00:06\\.000/);
+});
+
+test("carousel vector export escapes markup and creates a valid multi-file ZIP", async () => {
+  const pack = await createCreatorCampaignPack({ topic }, { providerStatus: { conversationEnabled: false } });
+  pack.carousel.slides[0].heading = "<script>alert(1)</script>";
+  pack.carousel.slides[0].body = "Solar & clean energy";
+  const svg = buildCreatorCarouselSlideSvg(pack, 0);
+  assert.match(svg, /&lt;script&gt;/);
+  assert.match(svg, /Solar &amp; clean energy/);
+  assert.doesNotMatch(svg, /<script>/);
+  const zip = buildCreatorCarouselZip(pack);
+  const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+  assert.equal(view.getUint32(0, true), 0x04034b50);
+  const endOffset = zip.length - 22;
+  assert.equal(view.getUint32(endOffset, true), 0x06054b50);
+  assert.equal(view.getUint16(endOffset + 10, true), pack.carousel.slides.length + 1);
+  const centralOffset = view.getUint32(endOffset + 16, true);
+  assert.equal(view.getUint32(centralOffset, true), 0x02014b50);
 });
