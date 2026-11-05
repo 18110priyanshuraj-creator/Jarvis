@@ -19,7 +19,7 @@ import { createPageReadToken, createWebPageRead, getWebPageReadStatus, verifyPag
 import { createSourceBasedAnswer, SOURCE_ANSWER_LIMITS } from "./services/source-answer.js";
 import { createChatCompletion, getAIProviderStatus } from "./services/ai-provider.js";
 import { approveMediaProject, createMediaDraft, MEDIA_FORMATS, MEDIA_LIMITS, normalizeMediaProject, updateMediaProject } from "./services/media-engine.js";
-import { createCreatorCampaignPack, CREATOR_CAMPAIGN_LIMITS, normalizeCreatorCampaign } from "./services/creator-campaign.js";
+import { createCreatorCampaignPack, CREATOR_CAMPAIGN_LIMITS, normalizeCreatorCampaign, updateCreatorCampaign } from "./services/creator-campaign.js";
 import {
   completeYouTubePublication,
   createYouTubePublishPreview,
@@ -3197,6 +3197,19 @@ app.post("/api/creator/campaigns", requireAuth, mediaGenerationLimiter, async (r
   } catch (error) {
     const status = error?.code === "CREATOR_PRIVATE_CONTENT" || error?.code === "CREATOR_RESTRICTED_CONTENT" ? 400 : 400;
     res.status(status).json({ error: error?.message || "The creator campaign could not be generated." });
+  }
+});
+
+app.patch("/api/creator/campaigns/:id", requireAuth, async (req, res) => {
+  const existing = store.creatorCampaigns.find(item => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Creator campaign not found." });
+  try {
+    const campaign = updateCreatorCampaign(existing, req.body || {});
+    store.creatorCampaigns = store.creatorCampaigns.map(item => item.id === existing.id ? campaign : item);
+    await saveStore();
+    res.json({ campaign });
+  } catch (error) {
+    res.status(400).json({ error: error?.message || "Campaign changes could not be saved." });
   }
 });
 
