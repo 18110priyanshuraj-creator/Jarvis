@@ -95,6 +95,24 @@ export function createMediaWorkspace({ api, toast }) {
     return wrapper;
   }
 
+  function makeRangeField(labelText, value, field, min, max, step = 1, suffix = "") {
+    const wrapper = makeElement("label", "media-field media-range-field");
+    const heading = makeElement("span", "", labelText);
+    const readout = makeElement("output", "media-range-value", Number(value) + suffix);
+    const input = makeElement("input", "media-scene-input");
+    input.type = "range";
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(step);
+    input.value = String(value);
+    input.dataset.field = field;
+    input.addEventListener("input", () => {
+      readout.textContent = Number(input.value) + suffix;
+    });
+    wrapper.append(heading, readout, input);
+    return wrapper;
+  }
+
   const VISUAL_CHOICES = [
     ["auto", "Automatic layout"],
     ["stick-figure", "Stick figure"],
@@ -117,6 +135,16 @@ export function createMediaWorkspace({ api, toast }) {
   const TRANSITION_CHOICES = [
     ["cut", "Cut"], ["fade", "Crossfade"], ["slide", "Slide"],
     ["wipe", "Wipe"], ["zoom", "Zoom"]
+  ];
+
+  const CAMERA_CHOICES = [
+    ["static", "Static"],
+    ["ken-burns", "Ken Burns"],
+    ["push-in", "Push in"],
+    ["pull-out", "Pull out"],
+    ["pan-left", "Pan left"],
+    ["pan-right", "Pan right"],
+    ["drift-up", "Drift up"]
   ];
 
   function disposeSceneAsset(sceneId) {
@@ -314,6 +342,15 @@ export function createMediaWorkspace({ api, toast }) {
       card.append(makeSelectField("Motion", scene.animation || "rise", "animation", ANIMATION_CHOICES));
       card.append(makeSelectField("Background", scene.background || "midnight", "background", BACKGROUND_CHOICES));
       card.append(makeSelectField("Transition into scene", scene.transition || "fade", "transition", TRANSITION_CHOICES));
+      card.append(makeSelectField("Camera movement", scene.cameraMotion || "static", "cameraMotion", CAMERA_CHOICES));
+      const grade = scene.grade || {};
+      const gradePanel = makeElement("div", "media-grade-controls");
+      gradePanel.append(makeElement("strong", "media-grade-title", "Colour grading"));
+      gradePanel.append(makeRangeField("Brightness", grade.brightness ?? 100, "grade.brightness", 50, 150, 1, "%"));
+      gradePanel.append(makeRangeField("Contrast", grade.contrast ?? 100, "grade.contrast", 50, 150, 1, "%"));
+      gradePanel.append(makeRangeField("Saturation", grade.saturation ?? 100, "grade.saturation", 0, 180, 1, "%"));
+      gradePanel.append(makeRangeField("Soft focus", grade.blur ?? 0, "grade.blur", 0, 12, 0.5, " px"));
+      card.append(gradePanel);
       const assetField = makeElement("label", "media-field");
       assetField.append(makeElement("span", "", "Optional local image or video"));
       const assetInput = makeElement("input", "media-scene-input");
@@ -585,8 +622,42 @@ export function createMediaWorkspace({ api, toast }) {
       const coverScale = Math.max(width / assetWidth, height / assetHeight);
       const drawWidth = assetWidth * coverScale;
       const drawHeight = assetHeight * coverScale;
+      const p = Math.max(0, Math.min(1, progress));
+      const motion = scene.cameraMotion || "static";
+      let zoom = 1;
+      let offsetX = 0;
+      let offsetY = 0;
+      if (motion === "ken-burns") {
+        zoom = 1.035 + p * 0.14;
+        offsetX = -0.018 * p;
+        offsetY = -0.012 * p;
+      } else if (motion === "push-in") {
+        zoom = 1 + p * 0.2;
+      } else if (motion === "pull-out") {
+        zoom = 1.2 - p * 0.2;
+      } else if (motion === "pan-left") {
+        zoom = 1.12;
+        offsetX = 0.05 - p * 0.1;
+      } else if (motion === "pan-right") {
+        zoom = 1.12;
+        offsetX = -0.05 + p * 0.1;
+      } else if (motion === "drift-up") {
+        zoom = 1.12;
+        offsetY = 0.045 - p * 0.09;
+      }
+      const grade = scene.grade || {};
+      const brightness = Math.max(50, Math.min(150, Number(grade.brightness ?? 100)));
+      const contrast = Math.max(50, Math.min(150, Number(grade.contrast ?? 100)));
+      const saturation = Math.max(0, Math.min(180, Number(grade.saturation ?? 100)));
+      const blur = Math.max(0, Math.min(12, Number(grade.blur ?? 0)));
+      ctx.save();
       ctx.globalAlpha = opacity * 0.52;
-      ctx.drawImage(assetElement, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+      ctx.translate(width / 2 + offsetX * width, height / 2 + offsetY * height);
+      ctx.scale(zoom, zoom);
+      ctx.filter = "brightness(" + brightness + "%) contrast(" + contrast + "%) saturate(" +
+        saturation + "%) blur(" + blur + "px)";
+      ctx.drawImage(assetElement, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+      ctx.restore();
       ctx.globalAlpha = opacity * 0.48;
       ctx.fillStyle = scene.background === "paper" ? "#f5ead6" : "#06101f";
       ctx.fillRect(0, 0, width, height);
@@ -794,6 +865,13 @@ export function createMediaWorkspace({ api, toast }) {
         animation: value("animation"),
         background: value("background"),
         transition: value("transition"),
+        cameraMotion: value("cameraMotion"),
+        grade: {
+          brightness: Number(value("grade.brightness")),
+          contrast: Number(value("grade.contrast")),
+          saturation: Number(value("grade.saturation")),
+          blur: Number(value("grade.blur"))
+        },
         durationSeconds: Number(value("durationSeconds"))
       };
     });
@@ -1213,9 +1291,15 @@ export function createMediaWorkspace({ api, toast }) {
       const cards = [...byId("media-editor-scenes").querySelectorAll(".media-scene-editor")];
       const index = cards.indexOf(card);
       if (index < 0 || !currentProject.scenes[index]) return;
-      currentProject.scenes[index][field] = field === "durationSeconds"
-        ? Number(event.target.value)
-        : event.target.value;
+      if (field.startsWith("grade.")) {
+        const gradeField = field.slice("grade.".length);
+        currentProject.scenes[index].grade ||= { brightness: 100, contrast: 100, saturation: 100, blur: 0 };
+        currentProject.scenes[index].grade[gradeField] = Number(event.target.value);
+      } else {
+        currentProject.scenes[index][field] = field === "durationSeconds"
+          ? Number(event.target.value)
+          : event.target.value;
+      }
       renderPreview(currentProject, index);
     };
     byId("media-editor-scenes")?.addEventListener("input", updateSceneField);
