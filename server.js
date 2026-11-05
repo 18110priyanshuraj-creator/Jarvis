@@ -3189,6 +3189,7 @@ app.post("/api/creator/campaigns", requireAuth, mediaGenerationLimiter, async (r
       audience: req.body?.audience,
       language: req.body?.language,
       sourceText: req.body?.sourceText,
+      brandKit: req.body?.brandKit,
       includeTrendRadar: req.body?.includeTrendRadar === true
     });
     store.creatorCampaigns.push(campaign);
