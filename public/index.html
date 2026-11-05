@@ -704,14 +704,21 @@
               <button type="button" class="primary media-wide" id="media-export-webm">Export video (MP4 / WebM)</button>
             </div>
             <div class="media-audio-panel">
-              <label class="media-field" for="media-audio-file"><span>Optional voiceover or music track</span>
+              <label class="media-field" for="media-audio-file"><span>Voiceover track</span>
                 <input id="media-audio-file" class="media-scene-input" type="file" accept="audio/*">
               </label>
-              <label class="media-field" for="media-audio-volume"><span>Audio volume</span>
+              <label class="media-field" for="media-audio-volume"><span>Voiceover level</span>
                 <input id="media-audio-volume" type="range" min="0" max="1.5" step="0.05" value="1">
               </label>
               <audio id="media-audio-preview" class="media-audio-preview hidden" controls preload="metadata"></audio>
-              <p class="media-limits-note">Audio is read locally on this device and mixed into the exported WebM. It is not uploaded or saved to the JARVIS server.</p>
+              <label class="media-field" for="media-music-file"><span>Background music track (loops to video end)</span>
+                <input id="media-music-file" class="media-scene-input" type="file" accept="audio/*">
+              </label>
+              <label class="media-field" for="media-music-volume"><span>Music level</span>
+                <input id="media-music-volume" type="range" min="0" max="1.5" step="0.05" value="0.65">
+              </label>
+              <audio id="media-music-preview" class="media-audio-preview hidden" controls preload="metadata"></audio>
+              <p class="media-limits-note">Voiceover and music are separate local tracks. Music loops to the video duration and is automatically lowered when voiceover is present. Track files stay on this device and are not uploaded or saved to the JARVIS server.</p>
             </div>
             <p class="media-limits-note">Video is rendered in this browser with animated scenes, transitions, local image/video layers and an optional audio track. The browser chooses MP4 or WebM based on support; keep this tab open until export completes.</p>
           </aside>
