@@ -1439,8 +1439,9 @@ class MainActivity : Activity() {
     }
 
     /**
-     * Narrow bridge for explicit installed-app launches from the authenticated
-     * in-app Workspace. It is not exposed to ordinary mobile/desktop browsers.
+     * Bridge for clear app and in-app task requests from the authenticated
+     * Workspace. Native planning still validates and previews device actions.
+     * It is not exposed to ordinary mobile/desktop browsers.
      */
     private inner class WorkspaceNativeBridge {
         @JavascriptInterface
