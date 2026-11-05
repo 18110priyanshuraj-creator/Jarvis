@@ -927,12 +927,15 @@ export function createMediaWorkspace({ api, toast }) {
         try {
           if (Math.abs(video.currentTime - targetTime) > 0.04) {
             video.currentTime = targetTime;
-            video.addEventListener("seeked", () => {
-              if (previewing || !currentProject) return;
-              const canvas = byId("media-preview-canvas");
-              const ctx = canvas?.getContext("2d");
-              if (ctx) drawTimelineFrame(ctx, canvas.width, canvas.height, currentProject, previewTimeMs);
-            }, { once: true });
+            if (!asset.seekHandler) {
+              asset.seekHandler = () => {
+                if (previewing || !currentProject) return;
+                const canvas = byId("media-preview-canvas");
+                const ctx = canvas?.getContext("2d");
+                if (ctx) drawTimelineFrame(ctx, canvas.width, canvas.height, currentProject, previewTimeMs);
+              };
+              video.addEventListener("seeked", asset.seekHandler);
+            }
           }
         } catch { /* Some media sources cannot seek until metadata is ready. */ }
       }
@@ -1092,6 +1095,8 @@ export function createMediaWorkspace({ api, toast }) {
         const asset = timelineAssets.get(clip.id);
         if (!asset?.element || (asset.type === "video" && asset.element.readyState < 2)) continue;
         const element = asset.element;
+        if (asset.type === "video" && clip.sourceOut !== null && Number.isFinite(clip.sourceOut) &&
+            element.currentTime >= clip.sourceOut) continue;
         const sourceWidth = element.videoWidth || element.naturalWidth || 0;
         const sourceHeight = element.videoHeight || element.naturalHeight || 0;
         if (!sourceWidth || !sourceHeight) continue;
@@ -1773,9 +1778,10 @@ export function createMediaWorkspace({ api, toast }) {
       return;
     }
     previewing = true;
-    previewStartedAt = performance.now();
-    byId("media-preview-button").textContent = "Stop preview";
     const totalMs = Math.max(1, currentProject.durationSeconds * 1000);
+    previewTimeMs = previewTimeMs >= totalMs ? 0 : previewTimeMs;
+    previewStartedAt = performance.now() - previewTimeMs;
+    byId("media-preview-button").textContent = "Stop preview";
     const tick = (now) => {
       if (!previewing || !currentProject) return;
       const elapsed = (now - previewStartedAt) % totalMs;
