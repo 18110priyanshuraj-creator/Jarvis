@@ -614,6 +614,33 @@ export function createMediaWorkspace({ api, toast }) {
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
 
+    const p = Math.max(0, Math.min(1, progress));
+    const motion = scene.cameraMotion || "static";
+    let zoom = 1;
+    let offsetX = 0;
+    let offsetY = 0;
+    if (motion === "ken-burns") {
+      zoom = 1.035 + p * 0.14;
+      offsetX = -0.018 * p;
+      offsetY = -0.012 * p;
+    } else if (motion === "push-in") {
+      zoom = 1 + p * 0.2;
+    } else if (motion === "pull-out") {
+      zoom = 1.2 - p * 0.2;
+    } else if (motion === "pan-left") {
+      zoom = 1.12;
+      offsetX = 0.05 - p * 0.1;
+    } else if (motion === "pan-right") {
+      zoom = 1.12;
+      offsetX = -0.05 + p * 0.1;
+    } else if (motion === "drift-up") {
+      zoom = 1.12;
+      offsetY = 0.045 - p * 0.09;
+    }
+    ctx.save();
+    ctx.translate(width / 2 + offsetX * width, height / 2 + offsetY * height);
+    ctx.scale(zoom, zoom);
+
     const asset = sceneAssets.get(scene.id);
     const assetElement = asset?.element;
     const assetWidth = asset?.type === "video" ? assetElement?.videoWidth : assetElement?.naturalWidth;
@@ -622,29 +649,6 @@ export function createMediaWorkspace({ api, toast }) {
       const coverScale = Math.max(width / assetWidth, height / assetHeight);
       const drawWidth = assetWidth * coverScale;
       const drawHeight = assetHeight * coverScale;
-      const p = Math.max(0, Math.min(1, progress));
-      const motion = scene.cameraMotion || "static";
-      let zoom = 1;
-      let offsetX = 0;
-      let offsetY = 0;
-      if (motion === "ken-burns") {
-        zoom = 1.035 + p * 0.14;
-        offsetX = -0.018 * p;
-        offsetY = -0.012 * p;
-      } else if (motion === "push-in") {
-        zoom = 1 + p * 0.2;
-      } else if (motion === "pull-out") {
-        zoom = 1.2 - p * 0.2;
-      } else if (motion === "pan-left") {
-        zoom = 1.12;
-        offsetX = 0.05 - p * 0.1;
-      } else if (motion === "pan-right") {
-        zoom = 1.12;
-        offsetX = -0.05 + p * 0.1;
-      } else if (motion === "drift-up") {
-        zoom = 1.12;
-        offsetY = 0.045 - p * 0.09;
-      }
       const grade = scene.grade || {};
       const brightness = Math.max(50, Math.min(150, Number(grade.brightness ?? 100)));
       const contrast = Math.max(50, Math.min(150, Number(grade.contrast ?? 100)));
@@ -652,11 +656,9 @@ export function createMediaWorkspace({ api, toast }) {
       const blur = Math.max(0, Math.min(12, Number(grade.blur ?? 0)));
       ctx.save();
       ctx.globalAlpha = opacity * 0.52;
-      ctx.translate(width / 2 + offsetX * width, height / 2 + offsetY * height);
-      ctx.scale(zoom, zoom);
       ctx.filter = "brightness(" + brightness + "%) contrast(" + contrast + "%) saturate(" +
         saturation + "%) blur(" + blur + "px)";
-      ctx.drawImage(assetElement, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+      ctx.drawImage(assetElement, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
       ctx.restore();
       ctx.globalAlpha = opacity * 0.48;
       ctx.fillStyle = scene.background === "paper" ? "#f5ead6" : "#06101f";
@@ -737,7 +739,8 @@ export function createMediaWorkspace({ api, toast }) {
     ctx.fillStyle = isPaper ? "rgba(38,51,66,0.62)" : "rgba(255,255,255,0.68)";
     ctx.font = "500 " + Math.round(unit * 0.016) + "px system-ui, sans-serif";
     ctx.fillText(project.title, margin, height * 0.955);
-    ctx.restore();
+    ctx.restore(); // Restore the camera transform.
+    ctx.restore(); // Restore the scene opacity and drawing state.
   }
 
   function sceneAtTime(project, elapsedMs) {
