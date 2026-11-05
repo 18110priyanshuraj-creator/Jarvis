@@ -1818,9 +1818,11 @@ export function createMediaWorkspace({ api, toast }) {
     let stream = null;
     let animation = 0;
     let recorder = null;
-    const totalMs = project.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
+    const totalMs = Math.max(project.durationSeconds * 1000, project.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0));
     const chunks = [];
-    const hasAudio = Boolean(audioFile || musicFile);
+    const timelineAudioClips = (project.tracks || []).filter((track) => track.kind === "audio" && track.visible !== false && track.muted !== true)
+      .flatMap((track) => track.clips.filter((clip) => !clip.muted && clip.assetType === "audio" && timelineAssets.get(clip.id)?.file));
+    const hasAudio = Boolean(audioFile || musicFile || timelineAudioClips.length);
 
     setExportBusy(true, hasAudio
       ? "Preparing voiceover and background music, then rendering locally. Keep this tab open until export finishes."
@@ -1854,6 +1856,30 @@ export function createMediaWorkspace({ api, toast }) {
           gain.gain.value = effectiveVolume;
           source.connect(gain);
           gain.connect(audioDestination);
+          audioSources.push(source);
+        }
+
+        for (const clip of timelineAudioClips) {
+          const asset = timelineAssets.get(clip.id);
+          if (!asset?.file) continue;
+          const decoded = await audioContext.decodeAudioData(await asset.file.arrayBuffer());
+          const source = audioContext.createBufferSource();
+          source.buffer = decoded;
+          const gain = audioContext.createGain();
+          gain.gain.value = Math.max(0, Math.min(1.5, Number(clip.volume ?? 1)));
+          source.connect(gain);
+          gain.connect(audioDestination);
+          const startAt = audioContext.currentTime + 0.2 + Math.max(0, clip.start);
+          const initialRate = sampleClipSpeed(clip, 0);
+          source.playbackRate.setValueAtTime(initialRate, startAt);
+          const sampleCount = Math.max(2, Math.ceil(clip.duration * 12));
+          for (let index = 1; index <= sampleCount; index++) {
+            const localTime = clip.duration * index / sampleCount;
+            source.playbackRate.setValueAtTime(sampleClipSpeed(clip, localTime), startAt + localTime);
+          }
+          const sourceOffset = Math.max(0, Number(clip.sourceIn || 0));
+          source.start(startAt, sourceOffset);
+          source.stop(startAt + Math.max(0.05, clip.duration));
           audioSources.push(source);
         }
         audioTracks = audioDestination.stream.getAudioTracks();
@@ -1894,13 +1920,24 @@ export function createMediaWorkspace({ api, toast }) {
       activateVideoForScene(project.scenes[0]?.id);
       const startedAt = performance.now();
       recorder.start(500);
-      for (const source of audioSources) source.start();
+      for (const source of audioSources) {
+        // Timeline sources are scheduled at an absolute AudioContext time above.
+        if (timelineAudioClips.some((clip) => timelineAssets.get(clip.id)?.file && source.buffer)) {
+          try {
+            if (source.playbackState === "scheduled") continue;
+          } catch { /* Browser implementations do not expose playbackState consistently. */ }
+        }
+        if (!source.buffer) continue;
+        const scheduled = timelineAudioClips.some((clip) => clip.duration > 0 && clip.assetId === clip.id && timelineAssets.get(clip.id)?.file);
+        if (!scheduled) source.start();
+      }
       await new Promise((resolve) => {
         const frame = (now) => {
           const elapsed = Math.min(totalMs, now - startedAt);
           drawTimelineFrame(ctx, canvas.width, canvas.height, project, elapsed);
           const current = sceneAtTime(project, elapsed);
           activateVideoForScene(project.scenes[current.index]?.id);
+          activateTimelineClipAssets(elapsed);
           setExportStatus("Rendering scene " + (current.index + 1) + " of " + project.scenes.length +
             (hasAudio ? " · voiceover/music mixed locally" : " · no audio track") + "…");
           if (elapsed >= totalMs) {
