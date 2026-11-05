@@ -1,6 +1,7 @@
 import { createVoiceController } from "./voice-controller.js";
 import { createOrbitalVisual } from "./orbital-visual.js";
 import { createMediaWorkspace } from "./media-workspace.js";
+import { createCreatorStudio } from "./creator-studio.js";
 import { createYouTubePublisher } from "./youtube-publisher.js";
 import { createKnowledgeDocuments } from "./knowledge-documents.js";
 import { createAgentEvolution } from "./agent-evolution.js";
@@ -33,6 +34,8 @@ async function api(url, options = {}) {
 }
 
 const mediaWorkspace = createMediaWorkspace({ api, toast });
+const creatorStudio = createCreatorStudio({ api, toast });
+creatorStudio.init();
 const youtubePublisher = createYouTubePublisher({ api, toast });
 const knowledgeDocuments = createKnowledgeDocuments({ api, toast });
 const agentEvolution = createAgentEvolution({ api, toast, getSkills: () => state.skills });
@@ -62,12 +65,18 @@ async function boot() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("integration") === "google_drive_connected" && params.get("capability") === "youtube_upload") {
       toast("YouTube upload permission connected. Review an approved video before uploading.");
+    } else if (params.get("integration") === "google_drive_connected" && params.get("capability") === "youtube_analytics") {
+      toast("Read-only YouTube Analytics permission connected. Open Creator Studio to load channel reports.");
     } else if (params.get("integration") === "google_drive_connected" && params.get("capability") === "create_docs") {
       toast("Google Drive connected. New Google Docs can now be created after preview and confirmation.");
     } else if (params.get("integration") === "google_drive_connected") {
       toast("Google Drive connected with read-only metadata access.");
     } else if (params.get("integration") === "google_drive_error") {
       toast("Google Drive was not connected. Check the OAuth setup and try again.", true);
+    } else if (params.get("integration") === "canva_connected") {
+      toast("Canva connected. Open Creator Studio to create a thumbnail design.");
+    } else if (params.get("integration") === "canva_error") {
+      toast("Canva was not connected. Check the Canva developer credentials and callback URL.", true);
     }
     if (params.has("integration")) window.history.replaceState({}, "", window.location.pathname);
   } catch {
@@ -129,6 +138,7 @@ function setView(name) {
     research: ["WEB DISCOVERY", "Research"],
     knowledge: ["PERSONAL KNOWLEDGE LIBRARY", "Knowledge"],
     media: ["MEDIA & CONTENT CREATION", "Media Studio"],
+    creator: ["VIDEO PRODUCTION & CHANNEL IMPROVEMENT", "Creator Studio"],
     experience: ["EXPERIENCE & SELF-IMPROVEMENT", "Experience"],
     workflows: ["AUTOMATION & EXECUTION", "Workflows"],
     integrations: ["CONNECTED SERVICES", "Connections"],
@@ -154,6 +164,10 @@ function setView(name) {
   if (name === "media") {
     mediaWorkspace.open().catch((error) => toast(error.message, true));
     youtubePublisher.open().catch((error) => toast(error.message, true));
+  }
+  if (name === "creator") {
+    creatorStudio.init();
+    creatorStudio.loadAnalyticsStatus().catch((error) => toast(error.message, true));
   }
 }
 

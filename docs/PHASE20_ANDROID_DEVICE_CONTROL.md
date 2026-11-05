@@ -49,3 +49,12 @@ The direct commands already recognized by the Android Companion can work without
 Tests cover English, Hindi and Hinglish app-search phrasing, reversed search phrasing, bounded action order, manual result selection, unsupported requests, selected restricted/high-risk search terms, authenticated paired-device planning and the distinction between local and remote planning.
 
 The repository CI remains responsible for running the Node.js test suite, dependency audit and Android Companion build. Physical testing is still needed on the target tablet to confirm installed app labels, accessibility node labels, Android speech recognition and the device's TTS voice.
+
+
+## Browser and app control extension
+
+The Android Companion can open a public website from an explicit voice command such as `Open https://www.canva.com` or `Canva kholo`. A URL is normalized by `BrowserUrlPolicy`: only HTTP(S) public hosts are accepted; credentials, local/private hostnames, non-web schemes, control characters and oversized input are rejected.
+
+Once the browser or app is foregrounded, the existing user-enabled Accessibility service can read a bounded local screen summary, tap a unique exact visible label, scroll and type ordinary text into the field the user has focused. Commands are sequential and interruptible through the existing task runner. The companion does not bypass login, CAPTCHA, consent, paywalls or permission prompts. It does not claim reliable drag-and-drop or precision timeline editing; the user must review and perform controls that are not exposed as accessible elements.
+
+Canva OAuth is not required for this UI automation path. The optional Canva Connect API implementation may remain in the repository for owners who explicitly configure a developer integration, but Creator Studio's normal Canva handoff no longer blocks on OAuth credentials and the example environment no longer asks for those three variables.
