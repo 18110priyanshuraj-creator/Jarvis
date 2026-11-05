@@ -986,16 +986,15 @@ export function createMediaWorkspace({ api, toast }) {
     if (!main) return;
     let cursor = 0;
     for (const scene of project.scenes) {
-      const clip = main.clips.find((item) => item.sceneId === scene.id);
-      if (!clip) continue;
-      clip.start = cursor;
-      clip.duration = scene.durationSeconds;
-      clip.sourceIn = 0;
-      clip.sourceOut = null;
-      clip.speed = 1;
-      clip.speedRamp = [];
-      clip.label = scene.heading;
-      cursor += clip.duration;
+      const group = main.clips.filter((item) => item.sceneId === scene.id);
+      if (!group.length) continue;
+      const groupStart = Math.min(...group.map((clip) => clip.start));
+      const groupEnd = Math.max(...group.map((clip) => clip.start + clip.duration));
+      const groupDuration = Math.max(0, groupEnd - groupStart);
+      for (const clip of group) {
+        clip.start = cursor + (clip.start - groupStart);
+      }
+      cursor += groupDuration;
     }
     syncSceneTimeline(project);
   }
