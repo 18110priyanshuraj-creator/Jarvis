@@ -899,6 +899,10 @@ export function createMediaWorkspace({ api, toast }) {
       clip.assetType = "scene";
       cursor += scene.durationSeconds;
     }
+    project.durationSeconds = Math.min(180, Math.max(
+      project.scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0),
+      ...project.tracks.flatMap((track) => track.clips.map((clip) => clip.start + clip.duration))
+    ));
   }
 
   function activateTimelineClipAssets(elapsedMs) {
@@ -2101,6 +2105,12 @@ export function createMediaWorkspace({ api, toast }) {
       if (animation) cancelAnimationFrame(animation);
       if (recorder && recorder.state !== "inactive") recorder.stop();
       pauseSceneVideos();
+      for (const id of activeTimelineClipIds) {
+        const asset = timelineAssets.get(id);
+        asset?.element?.pause?.();
+        if (asset) asset.started = false;
+      }
+      activeTimelineClipIds.clear();
       for (const mediaStream of [stream, canvasStream, audioDestination?.stream]) {
         mediaStream?.getTracks().forEach((track) => track.stop());
       }
