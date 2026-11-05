@@ -736,7 +736,7 @@ export function createMediaWorkspace({ api, toast }) {
     if (button) button.textContent = "Preview storyboard";
   }
 
-  function playPreview() {
+  async function playPreview() {
     if (!currentProject) return;
     if (previewing) {
       stopPreview();
