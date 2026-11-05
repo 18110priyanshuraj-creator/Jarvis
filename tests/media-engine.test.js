@@ -8,6 +8,10 @@ import {
   MEDIA_FORMATS,
   MEDIA_LIMITS,
   normalizeMediaProject,
+  normalizeTimelineTracks,
+  sampleTimelineKeyframes,
+  sampleTimelineSpeed,
+  splitTimelineClip,
   updateMediaProject
 } from "../services/media-engine.js";
 
@@ -55,6 +59,69 @@ test("creates editable stick-figure scenes with visual and motion metadata", asy
   assert.ok(project.scenes.every((scene) => ["fade", "rise", "bounce", "walk", "gesture"].includes(scene.animation)));
   assert.ok(project.scenes.every((scene) => ["midnight", "sunset", "paper", "mint", "violet"].includes(scene.background)));
   assert.ok(project.scenes.every((scene) => ["cut", "fade", "slide", "wipe", "zoom"].includes(scene.transition)));
+});
+
+test("normalizes multi-track clips, chroma key, custom keyframes and speed ramps", () => {
+  const tracks = normalizeTimelineTracks([
+    {
+      id: "video-main",
+      name: "Main video",
+      kind: "video",
+      clips: [{
+        id: "clip-a",
+        assetId: "asset-a",
+        assetName: "scene.mp4",
+        assetType: "video",
+        start: 1,
+        duration: 6,
+        sourceIn: 2,
+        sourceOut: 8,
+        speed: 1,
+        keyframes: [
+          { time: 0, x: 0, y: 0, scale: 1, opacity: 1, easing: "cubic-bezier", curve: { x1: 0.4, y1: 0, x2: 0.2, y2: 1 } },
+          { time: 6, x: 0.5, y: -0.2, scale: 1.6, opacity: 0.8, rotation: 12 }
+        ],
+        speedRamp: [{ time: 0, speed: 1 }, { time: 6, speed: 3 }],
+        chromaKey: { enabled: true, color: "#00ff00", similarity: 0.4, softness: 0.2 }
+      }]
+    },
+    { id: "overlay-1", kind: "overlay", clips: [{ id: "logo", assetType: "image", duration: 4 }] }
+  ]);
+  assert.equal(tracks.length, 2);
+  assert.equal(tracks[0].clips[0].chromaKey.enabled, true);
+  assert.equal(tracks[0].clips[0].keyframes.length, 2);
+  assert.equal(tracks[0].clips[0].speedRamp.length, 2);
+  assert.ok(Math.abs(sampleTimelineSpeed(tracks[0].clips[0], 3) - 2) < 0.001);
+  const midpoint = sampleTimelineKeyframes(tracks[0].clips[0], 3);
+  assert.ok(midpoint.x > 0 && midpoint.scale > 1);
+  const [first, second] = splitTimelineClip(tracks[0].clips[0], 3);
+  assert.equal(first.duration, 3);
+  assert.equal(second.duration, 3);
+  assert.equal(second.start, 4);
+  assert.ok(second.sourceIn > first.sourceIn);
+});
+
+test("bounds excessive timeline counts and clamps invalid speed/key values", () => {
+  const tracks = normalizeTimelineTracks(Array.from({ length: 20 }, (_, index) => ({
+    id: "track-" + index,
+    kind: "video",
+    clips: Array.from({ length: 80 }, (_, clipIndex) => ({
+      id: "clip-" + index + "-" + clipIndex,
+      duration: 999,
+      start: 999,
+      speed: 99,
+      chromaKey: { enabled: true, color: "javascript:alert(1)", similarity: 3, softness: -2 },
+      keyframes: [{ time: 999, x: 99, y: -99, scale: 90, opacity: 5, rotation: 999 }]
+    }))
+  })));
+  assert.equal(tracks.length, 8);
+  assert.equal(tracks[0].clips.length, 48);
+  assert.equal(tracks[0].clips[0].duration, 180);
+  assert.equal(tracks[0].clips[0].start, 180);
+  assert.equal(tracks[0].clips[0].speed, 4);
+  assert.equal(tracks[0].clips[0].chromaKey.color, "#00ff00");
+  assert.equal(tracks[0].clips[0].chromaKey.similarity, 1);
+  assert.equal(tracks[0].clips[0].chromaKey.softness, 0);
 });
 
 test("supports validated camera movements and bounded per-scene colour grading", () => {
