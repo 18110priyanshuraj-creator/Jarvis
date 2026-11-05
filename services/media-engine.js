@@ -113,7 +113,7 @@ function normalizeSpeedRamp(value, durationSeconds, fallbackSpeed = 1) {
   return points.slice(0, MAX_SPEED_POINTS);
 }
 
-function normalizeTimelineClip(clip, index, trackKind, maxDurationSeconds = MAX_PROJECT_DURATION_SECONDS) {
+function normalizeTimelineClip(clip, index, trackKind, maxDurationSeconds = 180) {
   const duration = boundedNumber(clip?.duration, 6, 0.25, maxDurationSeconds);
   const start = boundedNumber(clip?.start, 0, 0, Math.max(0, maxDurationSeconds - duration));
   const speed = boundedNumber(clip?.speed, 1, 0.25, 4);
@@ -169,7 +169,7 @@ function normalizeTimelineClip(clip, index, trackKind, maxDurationSeconds = MAX_
   };
 }
 
-export function normalizeTimelineTracks(value, scenes = [], maxDurationSeconds = MAX_PROJECT_DURATION_SECONDS) {
+export function normalizeTimelineTracks(value, scenes = [], maxDurationSeconds = 180) {
   const source = Array.isArray(value) ? value.slice(0, MAX_TIMELINE_TRACKS) : [];
   const fallback = [{
     id: "track-main-video",
@@ -311,8 +311,8 @@ export function splitTimelineClip(clip, splitAtSeconds) {
       .map((point) => ({ ...point, time: point.time - splitAt }))
   };
   return [
-    normalizeTimelineClip(first, 0, "video"),
-    normalizeTimelineClip(second, 1, "video")
+    normalizeTimelineClip(first, 0, "video", MAX_PROJECT_DURATION_SECONDS),
+    normalizeTimelineClip(second, 1, "video", MAX_PROJECT_DURATION_SECONDS)
   ];
 }
 
@@ -528,10 +528,10 @@ export async function createMediaDraft(input = {}, options = {}) {
       targetDurationSeconds,
       targetDurationLabel: isLongForm ? "15-20 minutes" : formatKey(selectedFormat),
       targetSceneCount: isLongForm ? 30 : null,
-      narrationTargetWordsPerScene: isLongForm ? "80–100" : null,
+      narrationTargetWordsPerScene: isLongForm ? "80-100" : null,
       totalNarrationTargetWords: isLongForm ? "2400-3000" : null,
       generationGuidance: isLongForm
-        ? "Create a genuinely complete long-form educational or storytelling script, not a short outline stretched across long scene durations. Return about 30 coherent scenes with 80–100 spoken words per scene, factual transitions, examples, a clear progression and a concise final recap. Aim for 15-20 minutes of spoken narration. Do not repeat filler to reach the target. If the supplied brief does not support enough factual detail, return a shorter honest outline and explain what needs research."
+        ? "Create a genuinely complete long-form educational or storytelling script, not a short outline stretched across long scene durations. Return about 30 coherent scenes with 80-100 spoken words per scene, factual transitions, examples, a clear progression and a concise final recap. Aim for 15-20 minutes of spoken narration. Do not repeat filler to reach the target. If the supplied brief does not support enough factual detail, return a shorter honest outline and explain what needs research."
         : "Create a concise, complete storyboard appropriate for the selected output format. Avoid filler and invented factual claims.",
       outputShape: {
         title: "string",
