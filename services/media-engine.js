@@ -250,7 +250,10 @@ export async function createMediaDraft(input = {}, options = {}) {
         scenes: [{
           heading: "string", voiceover: "string", onScreenText: "string",
           visualPrompt: "string", visualType: "stick-figure", figurePose: "point",
-          animation: "gesture", background: "midnight", transition: "fade", durationSeconds: 8
+          animation: "gesture", background: "midnight", transition: "fade",
+          cameraMotion: "ken-burns",
+          grade: { brightness: 100, contrast: 100, saturation: 100, blur: 0 },
+          durationSeconds: 8
         }]
       }
     }));
