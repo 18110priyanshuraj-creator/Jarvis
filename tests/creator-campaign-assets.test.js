@@ -115,7 +115,7 @@ test("creates branded vertical Reel and landscape YouTube cover templates with e
   const reel = buildCreatorCoverSvg(coverPack, "vertical");
   const thumbnail = buildCreatorCoverSvg(coverPack, "landscape");
   assert.match(reel, /width="1080" height="1920"/);
-  assert.match(reel, /Solar Lab/);
+  assert.match(reel, /SOLAR LAB/);
   assert.match(reel, /#ff8800/);
   assert.match(reel, /How solar power works/);
   assert.doesNotMatch(reel, /<Solar energy>/);
