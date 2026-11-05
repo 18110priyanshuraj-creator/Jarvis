@@ -51,7 +51,7 @@ object BrowserUrlPolicy {
         if (host.contains(':') || host == "localhost" || host.endsWith(".localhost") ||
             host.endsWith(".local") || host.endsWith(".internal") ||
             host.endsWith(".test") || host.endsWith(".example") ||
-            host.endsWith(".invalid") || host.endsWith(".onion") ||
+            host.endsWith(".invalid") || host.endsWith(".home.arpa") || host.endsWith(".onion") ||
             isPrivateOrReservedIpv4(host)) return null
 
         if (!host.contains(".")) return null
