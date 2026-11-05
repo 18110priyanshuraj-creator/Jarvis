@@ -11,6 +11,25 @@ class LocalCommandProcessorParsingTest {
         assertEquals("open Canva", LocalCommandProcessor.normalizeCommand("open Canva"))
     }
 
+
+    @Test
+    fun recognizesPublicWebsiteLaunchTargetsAndRejectsPrivateDestinations() {
+        val website = LocalCommandProcessor.appLaunchTarget(
+            "Hey Jarvis, open https://www.canva.com/design/demo"
+        )
+        assertEquals("https://www.canva.com/design/demo", website)
+        assertEquals(
+            "https://www.canva.com/design/demo",
+            BrowserUrlPolicy.normalize(website!!)
+        )
+
+        val bareDomain = LocalCommandProcessor.appLaunchTarget("open example.com")
+        assertEquals("https://example.com/", BrowserUrlPolicy.normalize(bareDomain!!))
+
+        val localAddress = LocalCommandProcessor.appLaunchTarget("open http://192.168.1.1")
+        assertEquals(null, BrowserUrlPolicy.normalize(localAddress!!))
+    }
+
     @Test
     fun onlyStripsWakeWordAtTheBeginning() {
         assertEquals("please ask Jarvis to open Canva", LocalCommandProcessor.normalizeCommand("please ask Jarvis to open Canva"))
