@@ -10,6 +10,7 @@ const ALLOWED_ACTIONS = new Set([
   "type_text",
   "scroll_down",
   "scroll_up",
+  "drag_label_to_label",
   "back",
   "home",
   "verify_screen_text",
@@ -146,11 +147,19 @@ export function validateAgentPlan(candidate) {
     }
 
     const value = typeof action.value === "string" ? action.value.trim().slice(0, 180) : "";
-    if (["open_app", "verify_app_foreground", "open_web_search", "verify_browser_foreground", "tap_label", "type_text", "verify_screen_text", "ask_user", "finish"].includes(action.type) && !value) {
+    const sourceLabel = typeof action.sourceLabel === "string" ? cleanLocalIntent(action.sourceLabel, 100) : "";
+    const targetLabel = typeof action.targetLabel === "string" ? cleanLocalIntent(action.targetLabel, 100) : "";
+    if (["open_app", "verify_app_foreground", "open_web_search", "verify_browser_foreground", "tap_label", "type_text", "verify_screen_text", "ask_user", "finish", "drag_label_to_label"].includes(action.type) && !value) {
       throw new TypeError("A required action value is missing.");
     }
     if (action.type === "tap_label" && BLOCKED_LABEL.test(value)) {
       throw new TypeError("The AI planner requested a protected action.");
+    }
+    if (action.type === "drag_label_to_label" &&
+      (value.toLowerCase() !== "canva" || !sourceLabel || !targetLabel ||
+        sourceLabel.toLowerCase() === targetLabel.toLowerCase() ||
+        BLOCKED_LABEL.test(sourceLabel) || BLOCKED_LABEL.test(targetLabel))) {
+      throw new TypeError("A Canva drag needs two different, safe, exact visible labels.");
     }
     if (action.type === "type_text" && (value.length > 160 || NUMERIC_SECRET.test(value))) {
       throw new TypeError("The requested text is outside the allowed typing policy.");
@@ -171,6 +180,7 @@ export function validateAgentPlan(candidate) {
     return {
       type: action.type,
       value,
+      ...(action.type === "drag_label_to_label" ? { sourceLabel, targetLabel } : {}),
       purpose: typeof action.purpose === "string" ? action.purpose.trim().slice(0, 100) : ""
     };
   });
@@ -211,8 +221,25 @@ export function validateAgentPlan(candidate) {
     }
   }
 
+  // A Canva drag is permitted only inside an explicitly opened and verified Canva app.
+  // It must be followed immediately by a visible-result check on the device.
+  for (let index = 0; index < actions.length; index += 1) {
+    const action = actions[index];
+    if (action.type !== "drag_label_to_label") continue;
+    const launch = actions[index - 2];
+    const appCheck = actions[index - 1];
+    const resultCheck = actions[index + 1];
+    if (launch?.type !== "open_app" || launch.value.toLowerCase() !== "canva" ||
+      appCheck?.type !== "verify_app_foreground" || appCheck.value.toLowerCase() !== "canva") {
+      throw new TypeError("A Canva drag must follow an explicit Canva launch and foreground check.");
+    }
+    if (resultCheck?.type !== "verify_screen_text" || !resultCheck.value) {
+      throw new TypeError("A Canva drag must be followed immediately by visible-result verification.");
+    }
+  }
+
   const lastUiMutation = actions.findLastIndex((action) =>
-    ["tap_label", "type_text", "scroll_down", "scroll_up", "back", "home"].includes(action.type)
+    ["tap_label", "type_text", "scroll_down", "scroll_up", "drag_label_to_label", "back", "home"].includes(action.type)
   );
   if (lastUiMutation >= 0 &&
     !actions.slice(lastUiMutation + 1).some((action) => action.type === "verify_screen_text")) {
@@ -238,9 +265,11 @@ const RESPONSE_SCHEMA = {
         properties: {
           type: {
             type: "string",
-            enum: ["open_app", "verify_app_foreground", "open_web_search", "verify_browser_foreground", "read_screen", "tap_label", "type_text", "scroll_down", "scroll_up", "back", "home", "verify_screen_text", "ask_user", "finish"]
+            enum: ["open_app", "verify_app_foreground", "open_web_search", "verify_browser_foreground", "read_screen", "tap_label", "type_text", "scroll_down", "scroll_up", "drag_label_to_label", "back", "home", "verify_screen_text", "ask_user", "finish"]
           },
           value: { type: "string" },
+          sourceLabel: { type: "string" },
+          targetLabel: { type: "string" },
           purpose: { type: "string" }
         },
         required: ["type", "value", "purpose"]
@@ -256,13 +285,14 @@ const SYSTEM_INSTRUCTIONS = [
   "Use mode device_action only when the user clearly asks to operate the Android interface, such as opening an app, reading visible labels, searching, scrolling or navigating.",
   "Use mode clarification when a requested device action is ambiguous, unsafe, or outside the supported controls. Return actions as an empty array and put one short explanation or clarification question in reply.",
   "You do not control Android directly. The Android app validates and executes every device action locally.",
-  "Allowed device action types only: open_app, verify_app_foreground, open_web_search, verify_browser_foreground, read_screen, tap_label, type_text, scroll_down, scroll_up, back, home, verify_screen_text, ask_user, finish.",
+  "Allowed device action types only: open_app, verify_app_foreground, open_web_search, verify_browser_foreground, read_screen, tap_label, type_text, scroll_down, scroll_up, drag_label_to_label, back, home, verify_screen_text, ask_user, finish.",
   "Never create actions for sending messages, submitting forms, deleting, purchasing, paying, transferring money, changing account/security settings, handling OTP/PIN/password, granting permissions, installing apps, or bypassing system dialogs.",
   "For an explicit Google search request, use open_web_search with only the query text; Android opens a fixed HTTPS Google search URL in the user's default browser. Follow it immediately with verify_browser_foreground carrying the same query; this checks only that the resolved browser app is foregrounded, not that the page content/results are correct. Then ask the user to check the query and choose a public result. Never claim that the result page was read. Do not bypass login, consent or CAPTCHA challenges.",
   "For an app-specific search workflow, open the requested app and immediately verify its foreground identity, tap the visible Search label, type the query and verify that the query is visible. Do not claim that search results have loaded: tell the user to submit the query in the app and choose a result manually.",
   "Every open_app action must be followed immediately by verify_app_foreground with the same app label. Every open_web_search action must be followed immediately by verify_browser_foreground with the exact same query text. Every UI mutation (tap, type, scroll, back or home) must be followed by verify_screen_text for the expected visible result before the plan can finish.",
   "A verification action is an observation only; it never taps, submits, sends, purchases, deletes or changes account state. If the expected result is not visible, stop and ask the user to review the screen. Never report completion without that check.",
   "A tap_label must be a short exact UI label such as Search or Library. If uncertain, choose clarification instead of guessing.",
+  "For drag_label_to_label, only handle an explicitly requested Canva edit. Set value to exactly Canva, sourceLabel to the exact accessible label of the item to move, and targetLabel to the exact accessible label of the destination. Do not invent labels or infer them from the screen: the planner does not receive screen contents. Require the actions immediately before it to be open_app Canva and verify_app_foreground Canva, then immediately follow the drag with verify_screen_text for a phrase the user expects to see. If the user has not supplied both exact labels, choose clarification and ask for them. Drag works only if Canva exposes Android semantic accessibility drag actions; never use coordinates or claim timeline editing succeeded if the action is unavailable.",
   "type_text is only for ordinary search or draft text in a field the user has already focused. Never produce PINs, OTPs, passwords, payment details, or long numeric codes.",
   "Do not request or infer screen contents. The planner receives only the spoken transcript; screen text stays on the device.",
   "Use no more than six actions. If the task is outside the allowed capabilities, choose clarification and explain that it must be completed manually."
