@@ -438,6 +438,7 @@ export function createMediaWorkspace({ api, toast }) {
     if (selectedProjectId && selectedProjectId !== id) {
       releaseProjectAssets(selectedProjectId);
       setAudioTrack(null);
+      setMusicTrack(null);
     }
     selectedProjectId = id;
     currentProject = structuredClone(selected);
@@ -1207,7 +1208,9 @@ export function createMediaWorkspace({ api, toast }) {
         preview.classList.add("hidden");
         preview.load();
       }
-      setExportStatus("No audio track selected. The next WebM export will be silent.");
+      setExportStatus(musicFile
+        ? "Background music remains selected. Add a voiceover to create a layered mix."
+        : "No audio tracks selected. The next video export will be silent.");
       setEditorControls();
       return;
     }
