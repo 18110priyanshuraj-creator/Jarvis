@@ -20,7 +20,7 @@ object BrowserUrlPolicy {
         if (uri.userInfo != null || host.isBlank() || host == "localhost" ||
             host.endsWith(".localhost") || host == "127.0.0.1" || host == "::1" ||
             host.startsWith("10.") || host.startsWith("192.168.") ||
-            host.matches(Regex("""172\\.(1[6-9]|2[0-9]|3[0-1])\\..+""")) ||
+            host.matches(Regex("""172\.(1[6-9]|2[0-9]|3[0-1])\..+""")) ||
             host.endsWith(".local") || host.endsWith(".internal")) return null
         if (uri.port !in -1..65535) return null
 
