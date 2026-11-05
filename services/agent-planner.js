@@ -99,7 +99,7 @@ function normalizePublicBrowserUrl(value) {
   if (host.includes(":") || host === "localhost" ||
     reservedSuffixes.some((suffix) => host === suffix.slice(1) || host.endsWith(suffix))) return "";
   if (!host.includes(".")) return "";
-  const restrictedTarget = /\b(porn|xxx|adult[-_ ]?content|erotic|onlyfans|escort|vape|cigarette|tobacco|nicotine|alcohol|liquor|beer|wine|weed|marijuana|cannabis|cocaine|meth(?:amphetamine)?|heroin|gambling|sports[-_ ]?betting|casino|firearms?|weapons?|ammunition|explosives?|bomb)\b/i;
+  const restrictedTarget = /\b(porn|xxx|adult[-_ ]?content|erotic|onlyfans|escort|vape|cigarette|tobacco|nicotine|alcohol|liquor|beer|wine|weed|marijuana|cannabis|cocaine|meth(?:amphetamine)?|heroin|opioid|fentanyl|steroids?|gambling|sports[-_ ]?betting|casino|firearms?|guns?|weapons?|ammunition|explosives?|bomb|suicide|self[-_ ]?harm|overdose)\b/i;
   let decodedTarget = host + " " + parsed.pathname + " " + parsed.search;
   try { decodedTarget = decodeURIComponent(decodedTarget); } catch { /* Keep the URL's encoded form for conservative matching. */ }
   if (restrictedTarget.test(decodedTarget)) return "";
