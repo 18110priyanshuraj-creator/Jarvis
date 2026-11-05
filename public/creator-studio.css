@@ -353,3 +353,109 @@
   cursor: not-allowed;
 }
 #creator-canva-status { line-height: 1.55; }
+
+ 
+.creator-campaign-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+.creator-campaign-form > label:not(.creator-campaign-toggle) {
+  display: grid;
+  gap: 7px;
+}
+.creator-campaign-form textarea,
+.creator-campaign-form input,
+.creator-campaign-form select {
+  width: 100%;
+  min-width: 0;
+  color: var(--text);
+  background: #06121b;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  line-height: 1.5;
+}
+.creator-campaign-form textarea { resize: vertical; }
+.creator-campaign-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #a5bac4;
+  font-size: .8rem;
+}
+.creator-campaign-toggle input {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+}
+.creator-campaign-actions,
+.creator-campaign-history {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: 12px 0;
+}
+.creator-campaign-results {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.creator-campaign-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(5, 18, 27, .78);
+  overflow-wrap: anywhere;
+}
+.creator-campaign-card h3 {
+  margin: 0 0 9px;
+  color: #dffaff;
+  font-size: .92rem;
+}
+.creator-campaign-card h4 {
+  margin: 12px 0 6px;
+  color: #bde8ed;
+  font-size: .82rem;
+}
+.creator-campaign-card p {
+  margin: 6px 0;
+  color: #a5bac4;
+  font-size: .78rem;
+  line-height: 1.6;
+}
+.creator-campaign-card strong { color: #e3f6fa; font-size: .8rem; }
+.creator-campaign-card a { color: #63dce5; overflow-wrap: anywhere; }
+.creator-campaign-list {
+  margin: 8px 0;
+  padding-left: 20px;
+  color: #a5bac4;
+  font-size: .78rem;
+  line-height: 1.65;
+}
+.creator-campaign-list li + li { margin-top: 5px; }
+.creator-campaign-scene,
+.creator-campaign-slide {
+  margin-top: 9px;
+  padding: 10px;
+  border: 1px solid rgba(57, 206, 227, .13);
+  border-radius: 9px;
+  background: rgba(8, 28, 38, .65);
+}
+.creator-campaign-history-wrap {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.creator-campaign-history-wrap h3 {
+  margin: 0;
+  color: #dffaff;
+  font-size: .9rem;
+}
+.creator-campaign-history-item { max-width: 100%; text-align: left; }
+@media (max-width: 760px) {
+  .creator-campaign-results { grid-template-columns: 1fr; }
+}
