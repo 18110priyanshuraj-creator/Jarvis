@@ -344,7 +344,7 @@ test("public URL device plans require a matching immediate browser foreground ch
     reply: "Open website.",
     actions: [
       { type: "open_public_url", value: "https://example.com/", purpose: "Open website." },
-      { type: "verify_public_url_foreground", value: "https://other.example/", purpose: "Check browser." }
+      { type: "verify_public_url_foreground", value: "https://different.org/", purpose: "Check browser." }
     ]
   }), /matching browser foreground verification/i);
 
