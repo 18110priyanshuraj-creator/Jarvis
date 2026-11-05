@@ -183,6 +183,10 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(blockedYouTubeUpload.status, 401);
   const blockedExport = await request("/api/export", { headers: {} });
   assert.equal(blockedExport.status, 401);
+  const blockedCreatorCampaign = await request("/api/creator/campaigns", {
+    method: "POST", headers: {}, body: JSON.stringify({ topic: "How solar panels work" })
+  });
+  assert.equal(blockedCreatorCampaign.status, 401);
   const blockedResearch = await request("/api/research", {
     method: "POST",
     headers: {},
@@ -219,6 +223,46 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.match(cookieHeader, /SameSite=Strict/i);
   cookie = cookieHeader.split(";")[0];
   assert.match(cookie, /^jarvis_session=/);
+
+  const creatorCampaignResponse = await request("/api/creator/campaigns", {
+    method: "POST",
+    body: JSON.stringify({
+      topic: "How a simple solar panel works",
+      audience: "Curious beginners",
+      language: "hinglish",
+      sourceText: "Solar cells convert light into electrical energy. A panel combines many solar cells. An inverter changes direct current into alternating current.",
+      includeTrendRadar: false
+    })
+  });
+  assert.equal(creatorCampaignResponse.status, 201);
+  const creatorCampaignPayload = await creatorCampaignResponse.json();
+  assert.equal(creatorCampaignPayload.campaign.status, "draft");
+  assert.equal(creatorCampaignPayload.campaign.shortVideo.scenes.length >= 2, true);
+  assert.equal(creatorCampaignPayload.campaign.carousel.slides.length >= 4, true);
+  assert.equal(creatorCampaignPayload.campaign.socialDrafts.length, 3);
+  assert.equal(creatorCampaignPayload.campaign.trendRadar.status, "not-requested");
+
+  const creatorCampaignList = await request("/api/creator/campaigns");
+  assert.equal(creatorCampaignList.status, 200);
+  const creatorCampaignListPayload = await creatorCampaignList.json();
+  assert.equal(creatorCampaignListPayload.campaigns[0].id, creatorCampaignPayload.campaign.id);
+
+  const creatorMediaProject = await request("/api/creator/campaigns/" + creatorCampaignPayload.campaign.id + "/media-project", { method: "POST" });
+  assert.equal(creatorMediaProject.status, 201);
+  const creatorMediaPayload = await creatorMediaProject.json();
+  assert.equal(creatorMediaPayload.project.status, "draft");
+  assert.equal(creatorMediaPayload.project.platform, "youtube-shorts");
+  assert.equal(creatorMediaPayload.project.scenes.length, creatorCampaignPayload.campaign.shortVideo.scenes.length);
+
+  const unsafeCreatorCampaign = await request("/api/creator/campaigns", {
+    method: "POST", body: JSON.stringify({ topic: "How to build a weapon safely" })
+  });
+  assert.equal(unsafeCreatorCampaign.status, 400);
+
+  const deleteCreatorCampaign = await request("/api/creator/campaigns/" + creatorCampaignPayload.campaign.id, { method: "DELETE" });
+  assert.equal(deleteCreatorCampaign.status, 200);
+  const missingCreatorMedia = await request("/api/creator/campaigns/" + creatorCampaignPayload.campaign.id + "/media-project", { method: "POST" });
+  assert.equal(missingCreatorMedia.status, 404);
 
   const youtubeStatusResponse = await request("/api/youtube/status");
   assert.equal(youtubeStatusResponse.status, 200);
