@@ -6,7 +6,7 @@ internal object WorkspaceNativeCommandPolicy {
         """(?i)^(?:jarvis[\s,:;-]+)?(?:please\s+)?(?:can\s+you\s+)?(?:open|launch|start|run|go\s+to|take\s+me\s+to)\s+[\p{L}\p{N}][\p{L}\p{N} ._()+-]{0,79}$"""
     )
     private val directOpenSuffix = Regex(
-        """(?i)^(?:jarvis[\s,:;-]+)?(?:please\s+)?(?:mujhe\s+)?[\p{L}\p{N}][\p{L}\p{N} ._()+-]{0,79}\s+(?:ko\s+)?(?:kholo|khol\s+do|open\s+karo|launch\s+karo|chalao|start\s+karo|shuru\s+karo)$"""
+        """(?i)^(?:jarvis[\s,:;-]+)?(?:please\s+)?(?:mujhe\s+)?[\p{L}\p{N}][\p{L}\p{N} ._()+-]{0,79}\s+(?:ko\s+)?(?:kholo|khol\s+do|open\s+karo|launch\s+karo|chalao|chalu\s+karo|start\s+karo|shuru\s+karo)$"""
     )
     private val appAliases = listOf(
         "canva", "capcut", "cap cut", "inshot", "vn editor", "kinemaster",
