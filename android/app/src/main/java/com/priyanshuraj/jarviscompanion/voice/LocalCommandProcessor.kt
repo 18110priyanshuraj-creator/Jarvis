@@ -76,7 +76,15 @@ object LocalCommandProcessor {
     }
 
     private val openPrefix = Regex(
-        """^(?:(?:please|can you)\s+)?(?:open|launch|start|run|go to|take me to|chalao)\s+(.+)$""",
+        """^(?:(?:please|can you)\s+)?(?:open|launch|start|run|visit|browse|go to|navigate to|take me to|chalao)\s+(.+)$""",
+        RegexOption.IGNORE_CASE
+    )
+    private val websiteSuffix = Regex(
+        """^(.+?)\s+(?:website|site)\s+(?:kholo|khol do|open karo)$""",
+        RegexOption.IGNORE_CASE
+    )
+    private val websitePrefix = Regex(
+        """^(?:website|site)\s+(?:kholo|khol do|open karo)\s+(.+)$""",
         RegexOption.IGNORE_CASE
     )
     private val openSuffix = Regex(
@@ -128,6 +136,8 @@ object LocalCommandProcessor {
         val input = normalizeCommand(message)
         val rawTarget = openPrefix.find(input)?.groupValues?.getOrNull(1)
             ?: openSuffix.find(input)?.groupValues?.getOrNull(1)
+            ?: websiteSuffix.find(input)?.groupValues?.getOrNull(1)
+            ?: websitePrefix.find(input)?.groupValues?.getOrNull(1)
             ?: return null
         // Remove polite/context clauses so "open Canva to edit a video" still
         // resolves to the app name rather than searching for a fictitious app.
