@@ -2,6 +2,7 @@ import { createVoiceController } from "./voice-controller.js";
 import { createOrbitalVisual } from "./orbital-visual.js";
 import { createMediaWorkspace } from "./media-workspace.js";
 import { createCreatorStudio } from "./creator-studio.js";
+import { createCreatorCampaignStudio } from "./creator-campaign.js";
 import { createYouTubePublisher } from "./youtube-publisher.js";
 import { createKnowledgeDocuments } from "./knowledge-documents.js";
 import { createAgentEvolution } from "./agent-evolution.js";
@@ -37,6 +38,8 @@ async function api(url, options = {}) {
 const mediaWorkspace = createMediaWorkspace({ api, toast });
 const creatorStudio = createCreatorStudio({ api, toast });
 creatorStudio.init();
+const creatorCampaignStudio = createCreatorCampaignStudio({ api, toast });
+creatorCampaignStudio.init();
 const youtubePublisher = createYouTubePublisher({ api, toast });
 const knowledgeDocuments = createKnowledgeDocuments({ api, toast });
 const agentEvolution = createAgentEvolution({ api, toast, getSkills: () => state.skills });
@@ -63,6 +66,7 @@ async function boot() {
     await api("/api/session");
     showApp();
     await refreshState();
+    await creatorCampaignStudio.loadHistory();
     const params = new URLSearchParams(window.location.search);
     if (params.get("integration") === "google_drive_connected" && params.get("capability") === "youtube_upload") {
       toast("YouTube upload permission connected. Review an approved video before uploading.");

@@ -19,6 +19,7 @@ import { createPageReadToken, createWebPageRead, getWebPageReadStatus, verifyPag
 import { createSourceBasedAnswer, SOURCE_ANSWER_LIMITS } from "./services/source-answer.js";
 import { createChatCompletion, getAIProviderStatus } from "./services/ai-provider.js";
 import { approveMediaProject, createMediaDraft, MEDIA_FORMATS, MEDIA_LIMITS, normalizeMediaProject, updateMediaProject } from "./services/media-engine.js";
+import { createCreatorCampaignPack, CREATOR_CAMPAIGN_LIMITS, normalizeCreatorCampaign, updateCreatorCampaign } from "./services/creator-campaign.js";
 import {
   completeYouTubePublication,
   createYouTubePublishPreview,
@@ -206,7 +207,7 @@ const oauthLaunchLimiter = rateLimit({
 
 app.use("/api", apiLimiter);
 
-let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], skillPrograms: [], autoHeal: createDefaultAutoHealState(), workflows: [], workflowRuns: [], workflowStepEffects: [], workerRuns: [], schedules: [], scheduleEvents: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [], knowledgeDocuments: [], mediaProjects: [], youtubePublications: [] };
+let store = { memories: [], tasks: [], feedback: [], experiencePreferences: [], skills: [], skillPrograms: [], autoHeal: createDefaultAutoHealState(), workflows: [], workflowRuns: [], workflowStepEffects: [], workerRuns: [], schedules: [], scheduleEvents: [], disabledIntegrations: [], oauthConnections: [], externalActions: [], devices: [], research: [], knowledge: [], knowledgeDocuments: [], mediaProjects: [], creatorCampaigns: [], youtubePublications: [] };
 let writeQueue = Promise.resolve();
 let neonSql;
 let databaseRevision = null;
@@ -400,6 +401,11 @@ function normalizeStore(parsed = {}) {
     mediaProjects: Array.isArray(parsed.mediaProjects)
       ? parsed.mediaProjects.slice(-MEDIA_LIMITS.projects).flatMap((item) => {
           try { return [normalizeMediaProject(item)]; } catch { return []; }
+        })
+      : [],
+    creatorCampaigns: Array.isArray(parsed.creatorCampaigns)
+      ? parsed.creatorCampaigns.slice(-CREATOR_CAMPAIGN_LIMITS.campaigns).flatMap((item) => {
+          try { return [normalizeCreatorCampaign(item)]; } catch { return []; }
         })
       : [],
     youtubePublications: Array.isArray(parsed.youtubePublications)
@@ -1153,7 +1159,8 @@ app.get("/api/export", requireAuth, (req, res) => {
       scheduleEvents: store.scheduleEvents,
       disabledIntegrations: store.disabledIntegrations,
       externalActions: store.externalActions,
-      youtubePublications: store.youtubePublications
+      youtubePublications: store.youtubePublications,
+      creatorCampaigns: store.creatorCampaigns
     },
     excluded: [
       "temporary conversation history",
@@ -3166,6 +3173,93 @@ app.delete("/api/knowledge/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+
+app.get("/api/creator/campaigns", requireAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ campaigns: store.creatorCampaigns.slice().reverse(), limits: CREATOR_CAMPAIGN_LIMITS });
+});
+
+app.post("/api/creator/campaigns", requireAuth, mediaGenerationLimiter, async (req, res) => {
+  if (store.creatorCampaigns.length >= CREATOR_CAMPAIGN_LIMITS.campaigns) {
+    return res.status(409).json({ error: "Creator campaign limit reached. Delete an older campaign first." });
+  }
+  try {
+    const campaign = await createCreatorCampaignPack({
+      topic: req.body?.topic,
+      audience: req.body?.audience,
+      language: req.body?.language,
+      sourceText: req.body?.sourceText,
+      brandKit: req.body?.brandKit,
+      includeTrendRadar: req.body?.includeTrendRadar === true
+    });
+    store.creatorCampaigns.push(campaign);
+    await saveStore();
+    res.status(201).json({ campaign });
+  } catch (error) {
+    const status = error?.code === "CREATOR_PRIVATE_CONTENT" || error?.code === "CREATOR_RESTRICTED_CONTENT" ? 400 : 400;
+    res.status(status).json({ error: error?.message || "The creator campaign could not be generated." });
+  }
+});
+
+app.patch("/api/creator/campaigns/:id", requireAuth, async (req, res) => {
+  const existing = store.creatorCampaigns.find(item => item.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: "Creator campaign not found." });
+  try {
+    const campaign = updateCreatorCampaign(existing, req.body || {});
+    store.creatorCampaigns = store.creatorCampaigns.map(item => item.id === existing.id ? campaign : item);
+    await saveStore();
+    res.json({ campaign });
+  } catch (error) {
+    res.status(400).json({ error: error?.message || "Campaign changes could not be saved." });
+  }
+});
+
+app.delete("/api/creator/campaigns/:id", requireAuth, async (req, res) => {
+  const before = store.creatorCampaigns.length;
+  store.creatorCampaigns = store.creatorCampaigns.filter(item => item.id !== req.params.id);
+  if (store.creatorCampaigns.length === before) return res.status(404).json({ error: "Creator campaign not found." });
+  await saveStore();
+  res.json({ ok: true });
+});
+
+app.post("/api/creator/campaigns/:id/media-project", requireAuth, async (req, res) => {
+  const campaign = store.creatorCampaigns.find(item => item.id === req.params.id);
+  if (!campaign) return res.status(404).json({ error: "Creator campaign not found." });
+  if (store.mediaProjects.length >= MEDIA_LIMITS.projects) {
+    return res.status(409).json({ error: "Media project limit reached. Delete an older project first." });
+  }
+  try {
+    const project = normalizeMediaProject({
+      title: campaign.shortVideo.title,
+      brief: campaign.topic,
+      format: "vertical-short",
+      platform: "youtube-shorts",
+      language: campaign.language,
+      tone: "friendly",
+      audience: campaign.audience,
+      visualStyle: "cinematic-motion",
+      scenes: campaign.shortVideo.scenes.map(scene => ({
+        heading: scene.heading,
+        voiceover: scene.voiceover,
+        onScreenText: scene.onScreenText,
+        visualPrompt: scene.visualPrompt,
+        durationSeconds: scene.durationSeconds,
+        visualType: "auto",
+        transition: "cut",
+        animation: "fade",
+        cameraMotion: "static"
+      })),
+      status: "draft",
+      generationSource: "ai-assisted",
+      generationNote: "Created from a reviewed Creator Campaign Pack. Check source facts and media assets before export."
+    });
+    store.mediaProjects.push(project);
+    await saveStore();
+    res.status(201).json({ project });
+  } catch (error) {
+    res.status(400).json({ error: error?.message || "The short-video scenes could not be added to Media Studio." });
+  }
+});
 
 app.get("/api/media/projects", requireAuth, (_req, res) => {
   res.json({

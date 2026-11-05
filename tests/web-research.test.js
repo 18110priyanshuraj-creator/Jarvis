@@ -142,6 +142,26 @@ test("search calls only the server-configured endpoint and returns honest snippe
   });
 });
 
+test("trend research passes a bounded 24-hour window to SearXNG", async () => {
+  await withEnv({ ...enabledSearch }, async () => {
+    let captured;
+    const fakeFetch = async (url) => {
+      captured = new URL(url);
+      return {
+        ok: true, status: 200, headers: { get: () => "200" },
+        text: async () => JSON.stringify({ results: [
+          { title: "Recent official update", url: "https://official.example/update", content: "A dated public update." }
+        ] })
+      };
+    };
+    const result = await createWebResearch("latest learning technology", {
+      fetchImpl: fakeFetch, timeRange: "day"
+    });
+    assert.equal(captured.searchParams.get("time_range"), "day");
+    assert.equal(result.timeRange, "day");
+  });
+});
+
 test("search can synthesize a cited answer through the separately configured AI brain", async () => {
   const aiEnv = {
     JARVIS_AI_BASE_URL: "http://127.0.0.1:11434/v1",
