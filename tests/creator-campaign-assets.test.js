@@ -5,6 +5,7 @@ import {
   buildCreatorStoryboardCsv,
   buildYouTubeChapters,
   buildCarouselSlideSvg,
+  buildCreatorCoverSvg,
   buildCreatorAssetFiles,
   buildStoredZip
 } from "../public/creator-campaign-assets.js";
@@ -104,10 +105,32 @@ test("escapes text in carousel SVG rather than injecting markup", () => {
   assert.match(branded, /#ffffff/);
 });
 
+test("creates branded vertical Reel and landscape YouTube cover templates with escaped text", () => {
+  const coverPack = {
+    ...pack,
+    title: "<Solar energy>",
+    shortVideo: { ...pack.shortVideo, title: "How solar power works", hook: "Turn sunlight into useful electricity." },
+    brandKit: { brandName: "Solar Lab", accentColor: "#ff8800", backgroundColor: "#101820", textColor: "#ffffff" }
+  };
+  const reel = buildCreatorCoverSvg(coverPack, "vertical");
+  const thumbnail = buildCreatorCoverSvg(coverPack, "landscape");
+  assert.match(reel, /width="1080" height="1920"/);
+  assert.match(reel, /Solar Lab/);
+  assert.match(reel, /#ff8800/);
+  assert.match(reel, /How solar power works/);
+  assert.doesNotMatch(reel, /<Solar energy>/);
+  assert.match(thumbnail, /width="1280" height="720"/);
+  assert.match(thumbnail, /Turn sunlight into useful electricity/);
+  assert.match(thumbnail, /#101820/);
+  assert.throws(() => buildCreatorCoverSvg(coverPack, "square"), /vertical Reel cover/);
+});
+
 test("bundles carousel SVGs, subtitles, storyboard and chapter readiness in ZIP assets", () => {
   const files = buildCreatorAssetFiles(pack);
   assert.ok(files.some(file => file.name === "video/captions.srt"));
   assert.ok(files.some(file => file.name === "video/captions.vtt"));
+  assert.ok(files.some(file => file.name === "video/reel-cover-template.svg"));
+  assert.ok(files.some(file => file.name === "video/youtube-thumbnail-template.svg"));
   assert.ok(files.some(file => file.name === "video/storyboard.csv"));
   assert.ok(files.some(file => file.name === "video/youtube-chapters.txt"));
   assert.ok(files.some(file => file.name === "website/seo-page-draft.html"));
