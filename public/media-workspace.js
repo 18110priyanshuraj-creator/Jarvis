@@ -311,6 +311,19 @@ export function createMediaWorkspace({ api, toast }) {
     return Math.max(0.25, Math.min(4, Number(sampleTimelinePoints(points, time, ["speed"]).speed || clip.speed || 1)));
   }
 
+  function integrateClipSpeed(clip, toTime) {
+    const to = Math.max(0, Math.min(clip.duration, Number(toTime) || 0));
+    const steps = Math.max(8, Math.ceil(to * 20));
+    const step = to / steps;
+    let sourceSeconds = 0;
+    for (let index = 0; index < steps; index++) {
+      const a = sampleClipSpeed(clip, index * step);
+      const b = sampleClipSpeed(clip, (index + 1) * step);
+      sourceSeconds += (a + b) * 0.5 * step;
+    }
+    return sourceSeconds;
+  }
+
   async function loadTimelineAsset(clip, file) {
     const projectId = currentProject?.id;
     if (!projectId || !clip?.id || !file) return;
@@ -563,6 +576,8 @@ export function createMediaWorkspace({ api, toast }) {
     select(timing, "Fit", clip.fit || "cover", "fit", [["cover", "Fill / cover"], ["contain", "Fit inside"]]);
     target.append(actions);
 
+    if (track.kind === "audio") toggle(timing, "Mute this audio clip", clip.muted === true, "muted");
+
     const keying = section("Green screen / chroma key");
     toggle(keying, "Enable chroma key", clip.chromaKey?.enabled, "chromaKey.enabled");
     const colorField = makeElement("label", "media-field timeline-control");
@@ -642,10 +657,10 @@ export function createMediaWorkspace({ api, toast }) {
       const visible = makeElement("label", "timeline-toggle");
       const visibleInput = makeElement("input");
       visibleInput.type = "checkbox";
-      visibleInput.checked = track.visible !== false;
+      visibleInput.checked = track.kind === "audio" ? track.muted !== true : track.visible !== false;
       visibleInput.dataset.trackId = track.id;
-      visibleInput.dataset.trackField = "visible";
-      visible.append(visibleInput, makeElement("span", "", "Visible"));
+      visibleInput.dataset.trackField = track.kind === "audio" ? "muted" : "visible";
+      visible.append(visibleInput, makeElement("span", "", track.kind === "audio" ? "Enabled" : "Visible"));
       header.append(visible);
       const addLabel = makeElement("label", "item-action timeline-add-clip", "＋ Add media");
       const file = makeElement("input");
@@ -707,6 +722,7 @@ export function createMediaWorkspace({ api, toast }) {
       return null;
     })();
     if (!selection) return;
+    const emptySourceOut = path === "sourceOut" && target.value === "";
     const value = target.type === "checkbox" ? target.checked
       : target.type === "number" || target.type === "range" ? Number(target.value)
         : target.value;
@@ -719,9 +735,9 @@ export function createMediaWorkspace({ api, toast }) {
       if (!object) return;
     }
     const last = parts[parts.length - 1];
-    object[last] = path === "sourceOut" && target.value === "" ? null : value;
-    if (["start", "duration", "sourceIn", "sourceOut", "speed"].includes(path)) {
-      selection.clip[path] = value;
+    object[last] = emptySourceOut ? null : value;
+    if (["start", "duration", "sourceIn", "sourceOut", "speed", "volume"].includes(path)) {
+      selection.clip[path] = emptySourceOut ? null : value;
     }
     currentProject.durationSeconds = Math.min(180, Math.max(
       currentProject.scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0),
@@ -747,7 +763,7 @@ export function createMediaWorkspace({ api, toast }) {
     }
     const sampledSpeed = sampleClipSpeed(clip, at);
     const transform = sampleClipTransform(clip, at);
-    const sourceSplit = clip.sourceIn + at * sampledSpeed;
+    const sourceSplit = clip.sourceIn + integrateClipSpeed(clip, at);
     const second = structuredClone(clip);
     second.id = "clip-" + crypto.randomUUID();
     second.label = (clip.label || "Clip") + " · B";
@@ -826,13 +842,34 @@ export function createMediaWorkspace({ api, toast }) {
   function syncSceneTimeline(project) {
     const main = project.tracks?.find((track) => track.id === "track-main-video");
     if (!main) return;
+    const sceneIds = new Set(project.scenes.map((scene) => scene.id));
+    main.clips = main.clips.filter((clip) => !clip.sceneId || sceneIds.has(clip.sceneId));
     let cursor = 0;
     for (const scene of project.scenes) {
-      const clip = main.clips.find((item) => item.sceneId === scene.id);
-      if (!clip) continue;
+      let clip = main.clips.find((item) => item.sceneId === scene.id);
+      if (!clip) {
+        clip = {
+          id: "clip-" + scene.id,
+          sceneId: scene.id,
+          assetId: null,
+          assetName: "",
+          assetType: "scene",
+          label: scene.heading,
+          start: cursor,
+          duration: scene.durationSeconds,
+          sourceIn: 0,
+          sourceOut: null,
+          speed: 1,
+          speedRamp: [],
+          keyframes: [],
+          chromaKey: { enabled: false, color: "#00ff00", similarity: 0.34, softness: 0.12 }
+        };
+        main.clips.push(clip);
+      }
       clip.start = cursor;
       clip.duration = scene.durationSeconds;
       clip.label = scene.heading;
+      clip.assetType = "scene";
       cursor += scene.durationSeconds;
     }
   }
@@ -1026,6 +1063,7 @@ export function createMediaWorkspace({ api, toast }) {
     [currentProject.scenes[index], currentProject.scenes[destination]] =
       [currentProject.scenes[destination], currentProject.scenes[index]];
     currentProject.scenes.forEach((scene, order) => { scene.order = order + 1; });
+    syncSceneTimeline(currentProject);
     renderSceneEditors();
     renderPreview(currentProject, destination);
   }
@@ -2095,6 +2133,7 @@ export function createMediaWorkspace({ api, toast }) {
       transition: "fade",
       order: currentProject.scenes.length + 1
     });
+    syncSceneTimeline(currentProject);
     renderSceneEditors();
     renderPreview(currentProject, currentProject.scenes.length - 1);
   }
@@ -2162,9 +2201,9 @@ export function createMediaWorkspace({ api, toast }) {
       if (event.target?.dataset?.timelineField) updateTimelineField(event);
     });
     byId("media-timeline-tracks")?.addEventListener("change", (event) => {
-      if (event.target?.dataset?.trackField === "visible") {
+      if (event.target?.dataset?.trackField) {
         const track = currentProject?.tracks.find((item) => item.id === event.target.dataset.trackId);
-        if (track) track.visible = event.target.checked;
+        if (track) track[event.target.dataset.trackField] = event.target.dataset.trackField === "muted" ? !event.target.checked : event.target.checked;
         renderPreviewAtTime(0);
       } else if (event.target?.dataset?.timelineField) {
         updateTimelineField(event);
