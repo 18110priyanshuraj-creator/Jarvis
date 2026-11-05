@@ -11,6 +11,7 @@ import {
   normalizeTimelineTracks,
   sampleTimelineKeyframes,
   sampleTimelineSpeed,
+  integrateTimelineSpeed,
   splitTimelineClip,
   updateMediaProject
 } from "../services/media-engine.js";
@@ -94,6 +95,7 @@ test("normalizes multi-track clips, chroma key, custom keyframes and speed ramps
   assert.ok(Math.abs(sampleTimelineSpeed(tracks[0].clips[0], 3) - 2) < 0.001);
   const midpoint = sampleTimelineKeyframes(tracks[0].clips[0], 3);
   assert.ok(midpoint.x > 0 && midpoint.scale > 1);
+  assert.ok(integrateTimelineSpeed(tracks[0].clips[0], 0, 6) > 6);
   const [first, second] = splitTimelineClip(tracks[0].clips[0], 3);
   assert.equal(first.duration, 3);
   assert.equal(second.duration, 3);
