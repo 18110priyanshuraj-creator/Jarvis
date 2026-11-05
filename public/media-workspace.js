@@ -963,7 +963,9 @@ export function createMediaWorkspace({ api, toast }) {
         const localTime = seconds - clip.start;
         video.playbackRate = sampleClipSpeed(clip, localTime);
         if (!asset.started) {
-          try { video.currentTime = clip.sourceIn || 0; } catch { /* metadata is not ready yet */ }
+          const sourceTime = (clip.sourceIn || 0) + integrateClipSpeed(clip, localTime);
+          try { video.currentTime = clip.sourceOut === null ? sourceTime : Math.min(sourceTime, clip.sourceOut); }
+          catch { /* metadata is not ready yet */ }
           asset.started = true;
           video.play().catch(() => {});
         }
