@@ -113,12 +113,18 @@ function normalizePack(rawInput, input, options = {}) {
   if (!seoPage.metaTitle || !seoPage.metaDescription || !seoPage.h1) throw new TypeError("SEO metadata is incomplete.");
   const shortVideo = { title: clean(raw.shortVideo?.title, 90), hook: clean(raw.shortVideo?.hook, 320), caption: clean(raw.shortVideo?.caption, 1500), hashtags: stringList(raw.shortVideo?.hashtags, 8, 36), durationSeconds: Math.min(90, scenes.reduce((sum, item) => sum + item.durationSeconds, 0)), scenes };
   const carousel = { title: clean(raw.carousel?.title, 90), caption: clean(raw.carousel?.caption, 1500), commentCTA: clean(raw.carousel?.commentCTA, 260), slides };
-  assertSafe(JSON.stringify({ shortVideo, carousel, seoPage }), "Campaign output");
+  const ideas = stringList(raw.ideas, CREATOR_CAMPAIGN_LIMITS.ideas, 180);
+  if (ideas.length < 3) {
+    ideas.push("A beginner-friendly explanation of " + input.topic);
+    ideas.push("One example that makes " + input.topic + " easier to understand");
+    ideas.push("A visual guide to the key ideas in " + input.topic);
+  }
+  assertSafe(JSON.stringify({ shortVideo, carousel, seoPage, ideas }), "Campaign output");
   const trendRadar = options.trendResult
     ? { status: "ready", windowHours: 24, searchedAt: options.trendResult.searchedAt || new Date().toISOString(), summary: clean(options.trendResult.answer, 3600), sources: (options.trendResult.sources || []).slice(0, CREATOR_CAMPAIGN_LIMITS.sources).map((item, i) => ({ index: i + 1, title: clean(item?.title, 180), url: clean(item?.url, 1000), publishedAt: clean(item?.publishedAt, 80), snippet: clean(item?.snippet, 500) })) }
     : { status: options.trendRequested ? "unavailable" : "not-requested", windowHours: 24, searchedAt: null, summary: options.trendRequested ? "No usable 24-hour report was returned. No trend was inferred." : "Trend Radar was not requested.", sources: [] };
   const now = new Date().toISOString();
-  return { id: clean(raw.id, 80) || crypto.randomUUID(), topic: input.topic, audience: input.audience, language: input.language, title: clean(raw.title, 90) || input.topic, ideas: stringList(raw.ideas, CREATOR_CAMPAIGN_LIMITS.ideas, 180), trendRadar, shortVideo, carousel, seoPage, socialDrafts, leadMagnet, engine: options.engine || "ai-assisted", status: "draft", createdAt: now, updatedAt: now, generationNote: clean(raw.generationNote, 300) || "Review facts, source rights and all copy before publishing." };
+  return { id: clean(raw.id, 80) || crypto.randomUUID(), topic: input.topic, audience: input.audience, language: input.language, title: clean(raw.title, 90) || input.topic, ideas: ideas.slice(0, CREATOR_CAMPAIGN_LIMITS.ideas), trendRadar, shortVideo, carousel, seoPage, socialDrafts, leadMagnet, engine: options.engine || "ai-assisted", status: "draft", createdAt: now, updatedAt: now, generationNote: clean(raw.generationNote, 300) || "Review facts, source rights and all copy before publishing." };
 }
 
 export function normalizeCreatorCampaign(input) {
