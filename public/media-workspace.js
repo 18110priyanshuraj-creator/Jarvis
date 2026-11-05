@@ -14,6 +14,8 @@ export function createMediaWorkspace({ api, toast }) {
   let previewFrame = 0;
   let previewStartedAt = 0;
   let previewing = false;
+  let previewTimeMs = 0;
+  let lastPlayheadUpdate = 0;
   let exporting = false;
   let audioFile = null;
   let audioObjectUrl = null;
@@ -905,6 +907,38 @@ export function createMediaWorkspace({ api, toast }) {
     ));
   }
 
+  function seekTimelineAssets(elapsedMs) {
+    if (!currentProject) return;
+    const time = Math.max(0, elapsedMs / 1000);
+    for (const track of currentProject.tracks || []) {
+      if (track.kind === "audio" || track.visible === false) continue;
+      for (const clip of track.clips) {
+        if (clip.assetType !== "video" || !clip.assetId) continue;
+        const asset = timelineAssets.get(clip.id);
+        const video = asset?.element;
+        if (!video) continue;
+        const localTime = Math.max(0, Math.min(clip.duration, time - clip.start));
+        video.pause();
+        if (asset) asset.started = false;
+        if (time < clip.start || time >= clip.start + clip.duration) continue;
+        const sourceTime = (clip.sourceIn || 0) + integrateClipSpeed(clip, localTime);
+        const maxTime = clip.sourceOut === null ? Number.MAX_SAFE_INTEGER : clip.sourceOut;
+        const targetTime = Math.max(0, Math.min(maxTime, sourceTime));
+        try {
+          if (Math.abs(video.currentTime - targetTime) > 0.04) {
+            video.currentTime = targetTime;
+            video.addEventListener("seeked", () => {
+              if (previewing || !currentProject) return;
+              const canvas = byId("media-preview-canvas");
+              const ctx = canvas?.getContext("2d");
+              if (ctx) drawTimelineFrame(ctx, canvas.width, canvas.height, currentProject, previewTimeMs);
+            }, { once: true });
+          }
+        } catch { /* Some media sources cannot seek until metadata is ready. */ }
+      }
+    }
+  }
+
   function activateTimelineClipAssets(elapsedMs) {
     if (!currentProject) return;
     const seconds = elapsedMs / 1000;
@@ -1689,6 +1723,15 @@ export function createMediaWorkspace({ api, toast }) {
   function renderPreviewAtTime(elapsedMs) {
     const canvas = byId("media-preview-canvas");
     if (!canvas || !currentProject?.scenes?.length) return;
+    previewTimeMs = Math.max(0, Math.min(currentProject.durationSeconds * 1000, elapsedMs));
+    seekTimelineAssets(previewTimeMs);
+    const playhead = byId("media-timeline-playhead");
+    const playheadValue = byId("media-timeline-playhead-value");
+    if (playhead) {
+      playhead.max = String(Math.max(0.25, currentProject.durationSeconds || 1));
+      playhead.value = String(previewTimeMs / 1000);
+    }
+    if (playheadValue) playheadValue.textContent = (previewTimeMs / 1000).toFixed(2) + "s";
     const size = FORMATS[currentProject.format] || FORMATS["vertical-short"];
     canvas.width = Math.min(size.width, 960);
     canvas.height = Math.round(canvas.width * size.height / size.width);
@@ -1736,6 +1779,14 @@ export function createMediaWorkspace({ api, toast }) {
     const tick = (now) => {
       if (!previewing || !currentProject) return;
       const elapsed = (now - previewStartedAt) % totalMs;
+      previewTimeMs = elapsed;
+      if (now - lastPlayheadUpdate > 100) {
+        const playhead = byId("media-timeline-playhead");
+        const value = byId("media-timeline-playhead-value");
+        if (playhead) playhead.value = String(elapsed / 1000);
+        if (value) value.textContent = (elapsed / 1000).toFixed(2) + "s";
+        lastPlayheadUpdate = now;
+      }
       const current = sceneAtTime(currentProject, elapsed);
       activateVideoForScene(currentProject.scenes[current.index]?.id);
       activateTimelineClipAssets(elapsed);
@@ -2318,6 +2369,10 @@ export function createMediaWorkspace({ api, toast }) {
         updateTimelineField(event);
         renderTimelineEditor();
       }
+    });
+    byId("media-timeline-playhead")?.addEventListener("input", (event) => {
+      if (previewing) stopPreview();
+      renderPreviewAtTime(Number(event.target.value) * 1000);
     });
     byId("media-timeline-inspector")?.addEventListener("input", updateTimelineField);
     byId("media-timeline-inspector")?.addEventListener("change", (event) => {
