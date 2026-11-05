@@ -946,40 +946,57 @@ export function createMediaWorkspace({ api, toast }) {
   function syncSceneTimeline(project) {
     const main = project.tracks?.find((track) => track.id === "track-main-video");
     if (!main) return;
-    const sceneIds = new Set(project.scenes.map((scene) => scene.id));
-    main.clips = main.clips.filter((clip) => !clip.sceneId || sceneIds.has(clip.sceneId));
-    let cursor = 0;
-    for (const scene of project.scenes) {
-      let clip = main.clips.find((item) => item.sceneId === scene.id);
-      if (!clip) {
-        clip = {
-          id: "clip-" + scene.id,
-          sceneId: scene.id,
-          assetId: null,
-          assetName: "",
-          assetType: "scene",
-          label: scene.heading,
-          start: cursor,
-          duration: scene.durationSeconds,
-          sourceIn: 0,
-          sourceOut: null,
-          speed: 1,
-          speedRamp: [],
-          keyframes: [],
-          chromaKey: { enabled: false, color: "#00ff00", similarity: 0.34, softness: 0.12 }
-        };
-        main.clips.push(clip);
-      }
-      clip.start = cursor;
-      clip.duration = scene.durationSeconds;
-      clip.label = scene.heading;
-      clip.assetType = "scene";
-      cursor += scene.durationSeconds;
+    const scenesById = new Map(project.scenes.map((scene) => [scene.id, scene]));
+    main.clips = main.clips.filter((clip) => !clip.sceneId || scenesById.has(clip.sceneId));
+    for (const clip of main.clips) {
+      const scene = clip.sceneId ? scenesById.get(clip.sceneId) : null;
+      if (scene) clip.label = scene.heading;
     }
-    project.durationSeconds = Math.min(180, Math.max(
-      project.scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0),
+    project.durationSeconds = Math.min(180, Math.max(0,
       ...project.tracks.flatMap((track) => track.clips.map((clip) => clip.start + clip.duration))
     ));
+  }
+
+  function addSceneTimelineClip(project, scene) {
+    const main = project.tracks?.find((track) => track.id === "track-main-video");
+    if (!main || main.clips.some((clip) => clip.sceneId === scene.id)) return;
+    const start = Math.max(0, ...main.clips.map((clip) => clip.start + clip.duration));
+    main.clips.push({
+      id: "clip-" + scene.id,
+      sceneId: scene.id,
+      assetId: null,
+      assetName: "",
+      assetType: "scene",
+      label: scene.heading,
+      start,
+      duration: Math.min(scene.durationSeconds, Math.max(0.25, 180 - start)),
+      sourceIn: 0,
+      sourceOut: null,
+      speed: 1,
+      speedRamp: [],
+      keyframes: [],
+      chromaKey: { enabled: false, color: "#00ff00", similarity: 0.34, softness: 0.12 }
+    });
+    syncSceneTimeline(project);
+  }
+
+  function reorderMainSceneClips(project) {
+    const main = project.tracks?.find((track) => track.id === "track-main-video");
+    if (!main) return;
+    let cursor = 0;
+    for (const scene of project.scenes) {
+      const clip = main.clips.find((item) => item.sceneId === scene.id);
+      if (!clip) continue;
+      clip.start = cursor;
+      clip.duration = scene.durationSeconds;
+      clip.sourceIn = 0;
+      clip.sourceOut = null;
+      clip.speed = 1;
+      clip.speedRamp = [];
+      clip.label = scene.heading;
+      cursor += clip.duration;
+    }
+    syncSceneTimeline(project);
   }
 
   function seekTimelineAssets(elapsedMs) {
@@ -1270,7 +1287,7 @@ export function createMediaWorkspace({ api, toast }) {
     [currentProject.scenes[index], currentProject.scenes[destination]] =
       [currentProject.scenes[destination], currentProject.scenes[index]];
     currentProject.scenes.forEach((scene, order) => { scene.order = order + 1; });
-    syncSceneTimeline(currentProject);
+    reorderMainSceneClips(currentProject);
     renderSceneEditors();
     renderPreview(currentProject, destination);
   }
@@ -2534,8 +2551,9 @@ export function createMediaWorkspace({ api, toast }) {
       transition: "fade",
       order: currentProject.scenes.length + 1
     });
-    syncSceneTimeline(currentProject);
+    addSceneTimelineClip(currentProject, currentProject.scenes[currentProject.scenes.length - 1]);
     renderSceneEditors();
+    renderTimelineEditor();
     renderPreview(currentProject, currentProject.scenes.length - 1);
   }
 
@@ -2579,6 +2597,11 @@ export function createMediaWorkspace({ api, toast }) {
       const cards = [...byId("media-editor-scenes").querySelectorAll(".media-scene-editor")];
       const index = cards.indexOf(card);
       if (index < 0 || !currentProject.scenes[index]) return;
+      if (field === "durationSeconds") {
+        const main = currentProject.tracks.find((track) => track.id === "track-main-video");
+        const clip = main?.clips.find((item) => item.sceneId === currentProject.scenes[index].id);
+        if (clip) clip.duration = currentProject.scenes[index].durationSeconds;
+      }
       if (field.startsWith("grade.")) {
         const gradeField = field.slice("grade.".length);
         currentProject.scenes[index].grade ||= { brightness: 100, contrast: 100, saturation: 100, blur: 0 };
