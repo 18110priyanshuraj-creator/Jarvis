@@ -194,12 +194,82 @@ export function buildCreatorAssetFiles(pack) {
     "YouTube chapters are generated only when the scene plan can form at least three 10-second segments.",
     ""
   ].join("\n");
+  const seo = pack.seoPage || {};
+  const seoHtml = [
+    "<!doctype html>", '<html lang="en">', "<head>", '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width,initial-scale=1">',
+    "<title>" + escapeXml(seo.metaTitle || pack.title) + "</title>",
+    '<meta name="description" content="' + escapeXml(seo.metaDescription || "") + '">',
+    "</head>", "<body>", "<main>",
+    "<h1>" + escapeXml(seo.h1 || pack.topic) + "</h1>",
+    ...(seo.sections || []).flatMap(section => ["<section>", "<h2>" + escapeXml(section.heading) + "</h2>", "<p>" + escapeXml(section.summary) + "</p>", "</section>"]),
+    ...(seo.faqs || []).length ? ["<section>", "<h2>Frequently asked questions</h2>",
+      ...(seo.faqs || []).flatMap(faq => ["<h3>" + escapeXml(faq.question) + "</h3>", "<p>" + escapeXml(faq.answer) + "</p>"]),
+      "</section>"] : [],
+    "</main>", "</body>", "</html>"
+  ].join("\\n");
+  const socialMarkdown = (pack.socialDrafts || []).map(item =>
+    "## " + clean(item.platform, 40) + "\\n\\n" + clean(item.caption, 1500) + "\\n\\n" +
+    clean(item.cta, 260) + "\\n\\n" + (item.hashtags || []).map(tag => "#" + clean(tag, 36)).join(" ")
+  ).join("\\n\\n");
+  const ideasCsv = [["idea", "status"], ...(pack.ideas || []).map(idea => [idea, "not started"])]
+    .map(row => row.map(csv).join(",")).join("\\r\\n") + "\\r\\n";
+  const sourceReview = [
+    "SOURCE REVIEW CHECKLIST",
+    "",
+    "Trend Radar status: " + clean(pack.trendRadar?.status || "not-requested", 40),
+    ...((pack.trendRadar?.sources || []).map((source, index) =>
+      (index + 1) + ". " + clean(source.title, 180) + "\\n   URL: " + clean(source.url, 1000) +
+      (source.publishedAt ? "\\n   Published: " + clean(source.publishedAt, 80) : "") +
+      "\\n   Review the original page and check that it supports the specific claim."
+    )),
+    "",
+    "Check every factual statement against a primary or otherwise reliable source.",
+    "Do not treat a search snippet as proof that a full page supports a claim.",
+    "Record the date checked and any corrections before publishing."
+  ].join("\\n");
+  const leadText = [
+    "LEAD RESOURCE — DRAFT ONLY",
+    "",
+    "Title: " + clean(pack.leadMagnet?.title, 120),
+    "Promise: " + clean(pack.leadMagnet?.promise, 300),
+    "",
+    ...(pack.leadMagnet?.sections || []).map((item, index) => (index + 1) + ". " + clean(item, 120)),
+    "",
+    "Resource CTA: " + clean(pack.leadMagnet?.cta, 360),
+    "",
+    "Comment keyword: " + clean(pack.leadMachine?.commentKeyword, 24),
+    "Public reply: " + clean(pack.leadMachine?.publicReplyDraft, 360),
+    "Manual reply: " + clean(pack.leadMachine?.manualReplyDraft, 500),
+    "Boundary: " + clean(pack.leadMachine?.followUpRule, 360),
+    "",
+    "No automated messages, profile scraping or contact collection are included."
+  ].join("\\n");
+  const publishChecklist = [
+    "PRE-PUBLISH HUMAN REVIEW",
+    "",
+    "[ ] Verify every factual claim against sources you opened.",
+    "[ ] Confirm the video narration matches the final edit and subtitle timing.",
+    "[ ] Check that carousel copy is readable at phone size.",
+    "[ ] Confirm you have permission to use every image, font, clip and audio track.",
+    "[ ] Check music and platform-specific rights and disclosures.",
+    "[ ] Preview the final file and confirm aspect ratio, sound and captions.",
+    "[ ] Review title, description, hashtags and audience settings.",
+    "[ ] Obtain any required parent/guardian review before public posting.",
+    "[ ] Upload or post only after a separate manual review and confirmation."
+  ].join("\\n");
   const files = [
     { name: "campaign/README.txt", content: readme },
     { name: "campaign/campaign-pack.json", content: JSON.stringify(pack, null, 2) },
     { name: "video/storyboard.csv", content: buildCreatorStoryboardCsv(pack) },
     { name: "video/captions.srt", content: captions.srt },
-    { name: "video/captions.vtt", content: captions.vtt }
+    { name: "video/captions.vtt", content: captions.vtt },
+    { name: "website/seo-page-draft.html", content: seoHtml },
+    { name: "social/platform-copy.md", content: socialMarkdown },
+    { name: "ideas/idea-backlog.csv", content: ideasCsv },
+    { name: "lead/lead-resource-outline.txt", content: leadText },
+    { name: "research/source-review.txt", content: sourceReview },
+    { name: "publishing/pre-publish-checklist.txt", content: publishChecklist }
   ];
   try {
     files.push({ name: "video/youtube-chapters.txt", content: buildYouTubeChapters(pack) });
