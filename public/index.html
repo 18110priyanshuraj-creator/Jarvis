@@ -930,7 +930,7 @@
               <input id="creator-thumbnail-subtitle" maxlength="60" placeholder="Optional · keep it short">
               <canvas id="creator-thumbnail-canvas" width="1280" height="720" aria-label="YouTube thumbnail preview"></canvas>
               <button type="button" class="primary" id="creator-export-thumbnail">Export thumbnail PNG</button>
-              <p class="small muted">No Canva developer credentials are needed for device control. Start JARVIS Companion hands-free and say “Open Canva”, then ask JARVIS to read the screen, tap a clearly labelled control, scroll, or type into a field you have focused. Keep timeline dragging, clip trimming and export review under your direct supervision.</p>
+              <p class="small muted">No Canva developer credentials are needed for device control. Start JARVIS Companion hands-free and say “Open Canva”. JARVIS can read the screen, tap a clearly labelled control, scroll, or type into a field you have focused. On Android 12L/API 32+, it may also attempt a drag between two exact visible labels only when Canva exposes semantic drag and drop. Clip trimming, splitting, precise timing and export review remain under your direct supervision.</p>
               <p class="small muted">Check that the headline remains readable at small phone size and accurately matches the video.</p>
             </div>
             <div class="creator-tool-card">
@@ -955,8 +955,8 @@
             <span>5. Review the file and metadata before upload</span>
           </div>
           <a class="primary creator-canva-link" id="creator-open-canva" href="https://www.canva.com/create/videos/" target="_blank" rel="noopener noreferrer">Open Canva Video</a>
-          <p class="small muted">To open Canva on your paired Android device, start JARVIS Companion hands-free and say: “Jarvis, open Canva.” JARVIS can launch the installed app and use supported visible accessibility labels, scrolling and focused text entry. It cannot reliably drag clips or edit timeline timing; those steps remain manual in Canva.</p>
-          <p class="small muted">This workflow uses your already signed-in Canva app or website through Android Accessibility. No Canva OAuth client ID or secret is required. JARVIS can open public websites, inspect accessible screen labels, tap unique visible controls, scroll and type ordinary text into a field you focus. Some Canva controls are canvas-based or drag-only and may still need your hands.</p>
+          <p class="small muted">To open Canva on your paired Android device, start JARVIS Companion hands-free and say: “Jarvis, open Canva.” JARVIS can launch the installed app and use supported visible accessibility labels, scrolling and focused text entry. It can attempt one previewed, named semantic drag only when both the source and destination expose Android accessibility drag actions. If Canva does not expose them, that move stays manual; clip-edge trimming, splitting and timeline timing also remain manual.</p>
+          <p class="small muted">This workflow uses your already signed-in Canva app or website through Android Accessibility. No Canva OAuth client ID or secret is required. JARVIS can open public websites, inspect accessible screen labels, tap unique visible controls, scroll and type ordinary text into a field you focus. Some Canva controls are canvas-based or drag-only and may still need your hands. The limited drag action does not automate precise timing, trimming, splitting, keyframes or the complete video timeline.</p>
         </section>
 
         <section class="creator-panel">
