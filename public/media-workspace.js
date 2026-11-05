@@ -14,6 +14,9 @@ export function createMediaWorkspace({ api, toast }) {
   let previewFrame = 0;
   let previewStartedAt = 0;
   let previewing = false;
+  let previewAudioContext = null;
+  let previewAudioSources = [];
+  const previewAudioBuffers = new WeakMap();
   let previewTimeMs = 0;
   let lastPlayheadUpdate = 0;
   let exporting = false;
@@ -1829,9 +1832,114 @@ export function createMediaWorkspace({ api, toast }) {
     renderPreviewAtTime(startMs + 1);
   }
 
+  async function startTimelinePreviewAudio(offsetMs) {
+    const audioTracks = (currentProject?.tracks || []).filter((track) => track.kind === "audio" && track.visible !== false && track.muted !== true);
+    const clips = audioTracks.flatMap((track) => track.clips
+      .filter((clip) => clip.visible !== false && clip.muted !== true && clip.assetType === "audio" && timelineAssets.get(clip.id)?.file)
+      .map((clip) => ({ clip, track })));
+    const hasGlobalAudio = Boolean(audioFile || musicFile);
+    if (!clips.length && !hasGlobalAudio) return;
+    const AudioContextType = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextType) return;
+    const context = new AudioContextType();
+    previewAudioContext = context;
+    previewAudioSources = [];
+    await context.resume();
+    const loadBuffer = async (file) => {
+      let buffer = previewAudioBuffers.get(file);
+      if (!buffer) {
+        buffer = await context.decodeAudioData(await file.arrayBuffer());
+        previewAudioBuffers.set(file, buffer);
+      }
+      return buffer;
+    };
+    const timelineStart = Math.max(0, offsetMs / 1000);
+    const scheduleAt = context.currentTime + 0.06;
+    const scheduleFile = async (file, startAt, offset, options = {}) => {
+      const buffer = await loadBuffer(file);
+      if (!previewing || previewAudioContext !== context || context.state === "closed") return;
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.loop = options.loop === true;
+      const gain = context.createGain();
+      gain.gain.value = Math.max(0, Math.min(1.5, Number(options.volume ?? 1)));
+      source.connect(gain);
+      gain.connect(context.destination);
+      if (options.rampClip) {
+        const clip = options.rampClip;
+        const localStart = options.localStart || 0;
+        source.playbackRate.setValueAtTime(sampleClipSpeed(clip, localStart), startAt);
+        const steps = Math.max(1, Math.ceil((clip.duration - localStart) * 20));
+        for (let step = 1; step <= steps; step++) {
+          const localTime = localStart + (clip.duration - localStart) * step / steps;
+          source.playbackRate.setValueAtTime(sampleClipSpeed(clip, localTime), startAt + (localTime - localStart));
+        }
+      }
+      if (options.endAt !== undefined) source.stop(options.endAt);
+      source.start(startAt, Math.max(0, Math.min(Math.max(0, buffer.duration - 0.01), offset)));
+      previewAudioSources.push(source);
+    };
+
+    for (const { clip } of clips) {
+      const clipEnd = clip.start + clip.duration;
+      if (timelineStart >= clipEnd) continue;
+      const localStart = Math.max(0, timelineStart - clip.start);
+      const delay = Math.max(0, clip.start - timelineStart);
+      const startAt = scheduleAt + delay;
+      const sourceTime = Math.max(0, Number(clip.sourceIn || 0) + integrateClipSpeed(clip, localStart));
+      const availableEnd = clip.sourceOut === null ? undefined : Number(clip.sourceOut);
+      const clipEndAt = scheduleAt + delay + (clip.duration - localStart);
+      await scheduleFile(timelineAssets.get(clip.id).file, startAt, sourceTime, {
+        volume: clip.volume ?? 1,
+        rampClip: clip,
+        localStart,
+        endAt: clipEndAt
+      });
+      if (!previewing || previewAudioContext !== context) return;
+      if (availableEnd !== undefined && availableEnd <= sourceTime) continue;
+    }
+    if (audioFile) {
+      const buffer = await loadBuffer(audioFile);
+      if (previewing && previewAudioContext === context && timelineStart < buffer.duration) {
+        const source = context.createBufferSource();
+        source.buffer = buffer;
+        const gain = context.createGain();
+        gain.gain.value = Math.max(0, Math.min(1.5, Number(byId("media-audio-volume")?.value ?? 1)));
+        source.connect(gain);
+        gain.connect(context.destination);
+        source.start(scheduleAt, timelineStart);
+        previewAudioSources.push(source);
+      }
+    }
+    if (musicFile) {
+      const buffer = await loadBuffer(musicFile);
+      if (previewing && previewAudioContext === context && buffer.duration > 0) {
+        const source = context.createBufferSource();
+        source.buffer = buffer;
+        source.loop = true;
+        const gain = context.createGain();
+        const requested = Math.max(0, Math.min(1.5, Number(byId("media-music-volume")?.value ?? 0.65)));
+        gain.gain.value = requested * (audioFile ? 0.32 : 1);
+        source.connect(gain);
+        gain.connect(context.destination);
+        source.start(scheduleAt, timelineStart % buffer.duration);
+        previewAudioSources.push(source);
+      }
+    }
+  }
+
   function stopPreview() {
     previewing = false;
     pauseSceneVideos();
+    for (const source of previewAudioSources) {
+      try { source.stop(); } catch { /* source may already have ended */ }
+    }
+    previewAudioSources = [];
+    if (previewAudioContext && previewAudioContext.state !== "closed") {
+      const context = previewAudioContext;
+      previewAudioContext = null;
+      context.close().catch(() => {});
+    }
     for (const id of activeTimelineClipIds) {
       const asset = timelineAssets.get(id);
       asset?.element?.pause?.();
@@ -1853,8 +1961,11 @@ export function createMediaWorkspace({ api, toast }) {
     previewing = true;
     const totalMs = Math.max(1, currentProject.durationSeconds * 1000);
     previewTimeMs = previewTimeMs >= totalMs ? 0 : previewTimeMs;
-    previewStartedAt = performance.now() - previewTimeMs;
     byId("media-preview-button").textContent = "Stop preview";
+    try { await startTimelinePreviewAudio(previewTimeMs); }
+    catch (error) { setExportStatus("Timeline audio preview could not start: " + error.message, true); }
+    if (!previewing) return;
+    previewStartedAt = performance.now() - previewTimeMs;
     const tick = (now) => {
       if (!previewing || !currentProject) return;
       const elapsed = (now - previewStartedAt) % totalMs;
