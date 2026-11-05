@@ -1206,7 +1206,7 @@ export function createMediaWorkspace({ api, toast }) {
       }
     });
 
-    byId("media-editor-scenes")?.addEventListener("input", (event) => {
+    const updateSceneField = (event) => {
       const field = event.target?.dataset?.field;
       const card = event.target?.closest?.(".media-scene-editor");
       if (!field || !card || !currentProject) return;
@@ -1217,7 +1217,9 @@ export function createMediaWorkspace({ api, toast }) {
         ? Number(event.target.value)
         : event.target.value;
       renderPreview(currentProject, index);
-    });
+    };
+    byId("media-editor-scenes")?.addEventListener("input", updateSceneField);
+    byId("media-editor-scenes")?.addEventListener("change", updateSceneField);
     byId("media-add-scene")?.addEventListener("click", addScene);
     byId("media-save-button")?.addEventListener("click", async () => {
       const button = byId("media-save-button");
