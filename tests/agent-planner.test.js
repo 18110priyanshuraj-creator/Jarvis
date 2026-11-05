@@ -313,6 +313,9 @@ test("built-in planner opens normalized public websites without accepting local 
     "Open https://example.com/adult-content/",
     "Open https://example.com/search?q=porn",
     "Open https://example.com/store/weapon",
+    "Open https://example.com/suicide-prevention/",
+    "Open https://example.com/self-harm/",
+    "Open https://example.com/drug/overdose",
     "Open https://example.com/?access_token=secret",
     "Open https://example.com/?code=123456",
     "Open javascript:alert(1)"
