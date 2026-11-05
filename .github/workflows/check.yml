@@ -73,8 +73,11 @@ jobs:
         run: |
           set -euo pipefail
           apk_path="android/app/build/outputs/apk/debug/app-debug.apk"
+          release_apk_path="android/app/build/outputs/apk/release/app-release-unsigned.apk"
           test -s "$apk_path"
+          test -s "$release_apk_path"
           unzip -t "$apk_path" >/dev/null
+          unzip -t "$release_apk_path" >/dev/null
           mkdir -p release-artifacts
           cp "$apk_path" release-artifacts/JARVIS-Companion-debug.apk
           (
