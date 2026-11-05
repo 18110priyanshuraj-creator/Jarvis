@@ -758,7 +758,8 @@ export function createMediaWorkspace({ api, toast }) {
             if (edge === "move") {
               clip.start = Math.max(0, Math.min(180 - initial.duration, initial.start + delta));
             } else if (edge === "left") {
-              const boundedDelta = Math.max(-initial.sourceIn, Math.min(initial.duration - 0.25, delta));
+              const boundedDelta = Math.max(-Math.min(initial.sourceIn, initial.start),
+                Math.min(initial.duration - 0.25, delta));
               clip.start = Math.max(0, initial.start + boundedDelta);
               clip.duration = Math.max(0.25, initial.duration - boundedDelta);
               clip.sourceIn = Math.max(0, initial.sourceIn + (boundedDelta >= 0
