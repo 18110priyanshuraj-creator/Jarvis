@@ -47,6 +47,36 @@ test("supports landscape explainers and square carousel cards", async () => {
   assert.ok(carousel.scenes.every((scene) => scene.durationSeconds === 5));
 });
 
+test("creates editable stick-figure scenes with visual and motion metadata", async () => {
+  const project = await makeDraft({ visualStyle: "stick-figure-story" });
+  assert.equal(project.visualStyle, "stick-figure-story");
+  assert.ok(project.scenes.every((scene) => scene.visualType === "stick-figure"));
+  assert.ok(project.scenes.every((scene) => ["idle", "walk", "point", "think", "celebrate"].includes(scene.figurePose)));
+  assert.ok(project.scenes.every((scene) => ["fade", "rise", "bounce", "walk", "gesture"].includes(scene.animation)));
+  assert.ok(project.scenes.every((scene) => ["midnight", "sunset", "paper", "mint", "violet"].includes(scene.background)));
+  assert.ok(project.scenes.every((scene) => ["cut", "fade", "slide", "wipe", "zoom"].includes(scene.transition)));
+});
+
+test("rejects unknown visual selectors by falling back to the supported design defaults", async () => {
+  const project = await makeDraft({
+    visualStyle: "arbitrary-html",
+    scenes: undefined
+  });
+  assert.equal(project.visualStyle, "cinematic-motion");
+  const normalized = normalizeMediaProject({
+    title: "Fallbacks", brief,
+    scenes: [
+      { heading: "One", onScreenText: "One", visualType: "script", figurePose: "unknown", animation: "javascript", background: "url", transition: "execute" },
+      { heading: "Two", onScreenText: "Two" }
+    ]
+  });
+  assert.equal(normalized.scenes[0].visualType, "auto");
+  assert.equal(normalized.scenes[0].figurePose, "walk");
+  assert.equal(normalized.scenes[0].animation, "rise");
+  assert.equal(normalized.scenes[0].background, "midnight");
+  assert.equal(normalized.scenes[0].transition, "fade");
+});
+
 test("normalizes unsupported selectors to safe defaults", async () => {
   const project = await makeDraft({ format: "custom-html", platform: "unknown", language: "xx", tone: "angry" });
   assert.equal(project.format, "vertical-short");
