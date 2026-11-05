@@ -483,3 +483,67 @@
 .creator-campaign-checklist .small { line-height: 1.5; }
 #creator-campaign-actions { align-items: center; }
 #creator-campaign-actions button { white-space: normal; }
+
+
+
+.creator-campaign-brand-form {
+  display: grid;
+  gap: 10px;
+  margin: 4px 0 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(8, 22, 31, .65);
+}
+.creator-campaign-brand-form p { margin: 0; }
+.creator-campaign-brand-form label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.creator-campaign-brand-form input[type="text"],
+.creator-campaign-brand-form input:not([type]) {
+  width: 100%;
+  color: var(--text);
+  background: #06121b;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 10px;
+}
+.creator-campaign-brand-form input[type="color"] {
+  width: 100%;
+  min-height: 42px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #06121b;
+}
+.creator-campaign-editor-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 9px;
+  min-width: 0;
+}
+.creator-campaign-editor-field textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 10px 11px;
+  resize: vertical;
+  color: var(--text);
+  background: #06121b;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font: inherit;
+  font-size: .8rem;
+  line-height: 1.5;
+}
+.creator-campaign-editor-field textarea:focus,
+.creator-campaign-brand-form input:focus {
+  outline: 2px solid rgba(31, 199, 212, .35);
+  outline-offset: 1px;
+}
+#creator-campaign-save-revision {
+  min-width: 190px;
+}
