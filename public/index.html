@@ -918,6 +918,23 @@
                 </select>
               </label>
             </div>
+            <div class="creator-campaign-brand-form">
+              <p class="small muted">Optional brand kit · applied to exported carousel slide designs</p>
+              <label for="creator-campaign-brand-name">Brand or channel name
+                <input id="creator-campaign-brand-name" maxlength="60" placeholder="Your channel name">
+              </label>
+              <div class="creator-form-grid">
+                <label for="creator-campaign-accent">Accent colour
+                  <input id="creator-campaign-accent" type="color" value="#1fc7d4">
+                </label>
+                <label for="creator-campaign-background">Background colour
+                  <input id="creator-campaign-background" type="color" value="#071a24">
+                </label>
+                <label for="creator-campaign-text">Text colour
+                  <input id="creator-campaign-text" type="color" value="#f2fbff">
+                </label>
+              </div>
+            </div>
             <label for="creator-campaign-sources">Source notes (optional, up to 8,000 characters)</label>
             <textarea id="creator-campaign-sources" rows="5" maxlength="8000" placeholder="Paste your own notes or reviewed research here. JARVIS will use these as the factual basis for the drafts."></textarea>
             <label class="creator-campaign-toggle" for="creator-campaign-trends">
@@ -931,6 +948,7 @@
           </form>
           <p id="creator-campaign-status" class="creator-status" role="status" aria-live="polite">Create a campaign pack to see all output drafts.</p>
           <div class="creator-campaign-actions hidden" id="creator-campaign-actions">
+            <button type="button" class="primary" id="creator-campaign-save-revision" disabled>Save edits as new revision</button>
             <button type="button" class="item-action" id="creator-campaign-export-json" disabled>Export JSON</button>
             <button type="button" class="item-action" id="creator-campaign-export-md" disabled>Export Markdown</button>
             <button type="button" class="item-action" id="creator-campaign-export-assets" disabled>Download full asset ZIP</button>
