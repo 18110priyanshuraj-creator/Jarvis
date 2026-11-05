@@ -1132,6 +1132,7 @@ export function createMediaWorkspace({ api, toast }) {
     if (count) count.textContent = currentProject.scenes.length + " / " + MAX_SCENES + " scenes";
     const add = byId("media-add-scene");
     if (add) add.disabled = currentProject.status !== "draft" || currentProject.scenes.length >= MAX_SCENES;
+    renderTimelineEditor();
   }
 
   function setEditorControls() {
@@ -1155,6 +1156,18 @@ export function createMediaWorkspace({ api, toast }) {
     }
     const exportButton = byId("media-export-webm");
     if (exportButton) exportButton.textContent = audioFile || musicFile ? "Export video + mixed audio" : "Export video (silent)";
+    const timelineRoot = byId("media-timeline-tracks");
+    if (timelineRoot) timelineRoot.querySelectorAll("input, select").forEach((control) => {
+      control.disabled = !editable || exporting;
+    });
+    const timelineInspector = byId("media-timeline-inspector");
+    if (timelineInspector) timelineInspector.querySelectorAll("input, select, button").forEach((control) => {
+      control.disabled = !editable || exporting;
+    });
+    for (const id of ["media-timeline-add-video", "media-timeline-add-overlay", "media-timeline-add-audio"]) {
+      const control = byId(id);
+      if (control) control.disabled = !editable || exporting || (currentProject?.tracks?.length || 0) >= 8;
+    }
     const status = byId("media-export-status");
     if (status) status.textContent = approved
       ? "Approved storyboard. Export files are generated locally in this browser."
@@ -1183,6 +1196,7 @@ export function createMediaWorkspace({ api, toast }) {
       currentProject.durationSeconds + " seconds · " + currentProject.status;
     byId("media-generation-note").textContent = currentProject.generationNote || "";
     renderSceneEditors();
+    renderTimelineEditor();
     renderPreview(currentProject, 0);
     setEditorControls();
   }
@@ -1647,8 +1661,11 @@ export function createMediaWorkspace({ api, toast }) {
       audience: byId("media-editor-audience").value,
       tone: byId("media-editor-tone").value,
       visualStyle: byId("media-editor-visual-style").value,
-      scenes: readSceneEditors()
+      scenes: readSceneEditors(),
+      tracks: currentProject.tracks
     };
+    syncSceneTimeline(currentProject);
+    currentProject.tracks = structuredClone(currentProject.tracks);
     const result = await api("/api/media/projects/" + encodeURIComponent(currentProject.id), {
       method: "PATCH",
       body: JSON.stringify(payload)
@@ -2131,10 +2148,40 @@ export function createMediaWorkspace({ api, toast }) {
           ? Number(event.target.value)
           : event.target.value;
       }
+      syncSceneTimeline(currentProject);
+      currentProject.durationSeconds = Math.min(180, Math.max(
+        currentProject.scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0),
+        ...currentProject.tracks.flatMap((track) => track.clips.map((clip) => clip.start + clip.duration))
+      ));
+      renderTimelineEditor();
       renderPreview(currentProject, index);
     };
     byId("media-editor-scenes")?.addEventListener("input", updateSceneField);
     byId("media-editor-scenes")?.addEventListener("change", updateSceneField);
+    byId("media-timeline-tracks")?.addEventListener("input", (event) => {
+      if (event.target?.dataset?.timelineField) updateTimelineField(event);
+    });
+    byId("media-timeline-tracks")?.addEventListener("change", (event) => {
+      if (event.target?.dataset?.trackField === "visible") {
+        const track = currentProject?.tracks.find((item) => item.id === event.target.dataset.trackId);
+        if (track) track.visible = event.target.checked;
+        renderPreviewAtTime(0);
+      } else if (event.target?.dataset?.timelineField) {
+        updateTimelineField(event);
+        renderTimelineEditor();
+      }
+    });
+    byId("media-timeline-inspector")?.addEventListener("input", updateTimelineField);
+    byId("media-timeline-inspector")?.addEventListener("change", (event) => {
+      if (event.target?.dataset?.timelineField) {
+        updateTimelineField(event);
+        renderTimelineEditor();
+      }
+    });
+    byId("media-timeline-inspector")?.addEventListener("click", handleTimelineAction);
+    byId("media-timeline-add-video")?.addEventListener("click", () => addTimelineTrack("video"));
+    byId("media-timeline-add-overlay")?.addEventListener("click", () => addTimelineTrack("overlay"));
+    byId("media-timeline-add-audio")?.addEventListener("click", () => addTimelineTrack("audio"));
     byId("media-add-scene")?.addEventListener("click", addScene);
     byId("media-save-button")?.addEventListener("click", async () => {
       const button = byId("media-save-button");
