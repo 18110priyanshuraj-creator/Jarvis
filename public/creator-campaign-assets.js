@@ -143,33 +143,41 @@ export function buildYouTubeChapters(pack) {
   }).join("\n");
 }
 
-export function buildCarouselSlideSvg(slide, index, total) {
+function safeHex(value, fallback) {
+  return /^#[0-9a-f]{6}$/i.test(value || "") ? value.toLowerCase() : fallback;
+}
+
+export function buildCarouselSlideSvg(slide, index, total, brandKit = {}, topic = "") {
+  const accent = safeHex(brandKit.accentColor, "#65e2e7");
+  const background = safeHex(brandKit.backgroundColor, "#081b28");
+  const foreground = safeHex(brandKit.textColor, "#f3fbff");
+  const brandName = escapeXml(clean(brandKit.brandName, 60) || "JARVIS CREATOR");
   const headingLines = wrapWords(slide.heading, 24, 2);
   const bodyLines = wrapWords(slide.body, 36, 8);
   const visualLines = wrapWords(slide.visualPrompt, 48, 2);
   const titleSvg = headingLines.map((line, i) =>
-    '<text x="540" y="' + (310 + i * 62) + '" text-anchor="middle" font-family="Arial,sans-serif" font-size="50" font-weight="700" fill="#f3fbff">' + escapeXml(line) + "</text>"
+    '<text x="540" y="' + (310 + i * 62) + '" text-anchor="middle" font-family="Arial,sans-serif" font-size="50" font-weight="700" fill="' + foreground + '">' + escapeXml(line) + "</text>"
   ).join("");
   const bodySvg = bodyLines.map((line, i) =>
-    '<text x="540" y="' + (490 + i * 48) + '" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" fill="#d2e5eb">' + escapeXml(line) + "</text>"
+    '<text x="540" y="' + (490 + i * 48) + '" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" fill="' + foreground + '" opacity=".88">' + escapeXml(line) + "</text>"
   ).join("");
   const promptSvg = visualLines.map((line, i) =>
-    '<text x="540" y="' + (880 + i * 26) + '" text-anchor="middle" font-family="Arial,sans-serif" font-size="18" fill="#80dce4">' + escapeXml(line) + "</text>"
+    '<text x="540" y="' + (880 + i * 26) + '" text-anchor="middle" font-family="Arial,sans-serif" font-size="18" fill="' + accent + '">' + escapeXml(line) + "</text>"
   ).join("");
   return [
     '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" role="img" aria-label="Carousel slide ' + (index + 1) + '">',
-    '<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#081b28"/><stop offset="1" stop-color="#123c4a"/></linearGradient></defs>',
+    '<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="' + background + '"/><stop offset="1" stop-color="#02080d"/></linearGradient></defs>',
     '<rect width="1080" height="1080" fill="url(#bg)"/>',
-    '<circle cx="930" cy="170" r="190" fill="#30c5ce" opacity=".10"/>',
-    '<circle cx="130" cy="900" r="260" fill="#30c5ce" opacity=".07"/>',
-    '<rect x="78" y="78" width="924" height="924" rx="42" fill="none" stroke="#55d6dd" stroke-opacity=".45" stroke-width="3"/>',
-    '<text x="110" y="160" font-family="Arial,sans-serif" font-size="23" font-weight="700" letter-spacing="4" fill="#65e2e7">JARVIS CREATOR</text>',
-    '<rect x="110" y="210" width="150" height="7" rx="3" fill="#65e2e7"/>',
+    '<circle cx="930" cy="170" r="190" fill="' + accent + '" opacity=".10"/>',
+    '<circle cx="130" cy="900" r="260" fill="' + accent + '" opacity=".07"/>',
+    '<rect x="78" y="78" width="924" height="924" rx="42" fill="none" stroke="' + accent + '" stroke-opacity=".45" stroke-width="3"/>',
+    '<text x="110" y="160" font-family="Arial,sans-serif" font-size="23" font-weight="700" letter-spacing="4" fill="' + accent + '">' + brandName + '</text>',
+    '<rect x="110" y="210" width="150" height="7" rx="3" fill="' + accent + '"/>',
     titleSvg, bodySvg,
-    '<rect x="110" y="825" width="860" height="1" fill="#8bb5c2" opacity=".5"/>',
+    '<rect x="110" y="825" width="860" height="1" fill="' + foreground + '" opacity=".5"/>',
     promptSvg,
-    '<text x="110" y="950" font-family="Arial,sans-serif" font-size="20" fill="#b0cbd3">Swipe for the next point →</text>',
-    '<text x="970" y="950" text-anchor="end" font-family="Arial,sans-serif" font-size="20" fill="#b0cbd3">' + (index + 1) + " / " + total + "</text>",
+    '<text x="110" y="950" font-family="Arial,sans-serif" font-size="18" fill="' + foreground + '">' + escapeXml(clean(topic, 70)) + '</text>',
+    '<text x="970" y="950" text-anchor="end" font-family="Arial,sans-serif" font-size="20" fill="' + foreground + '">' + (index + 1) + " / " + total + "</text>",
     "</svg>"
   ].join("");
 }
@@ -182,7 +190,7 @@ export function buildCreatorAssetFiles(pack) {
     "",
     "Review all wording, source claims, image rights, music rights and platform requirements before publishing.",
     "Captions are scene-level draft cues. Check timing and punctuation against the recorded voiceover.",
-    "Carousel slides are 1080x1080 SVG design drafts. Edit them in a graphics editor after import if needed.",
+    "Carousel slides are 1080x1080 SVG design drafts using the campaign brand kit. Edit them in a graphics editor after import if needed.",
     "YouTube chapters are generated only when the scene plan can form at least three 10-second segments.",
     ""
   ].join("\n");
@@ -201,7 +209,7 @@ export function buildCreatorAssetFiles(pack) {
   (pack.carousel?.slides || []).forEach((slide, index, all) => {
     files.push({
       name: "carousel/slide-" + String(index + 1).padStart(2, "0") + ".svg",
-      content: buildCarouselSlideSvg(slide, index, all.length)
+      content: buildCarouselSlideSvg(slide, index, all.length, pack.brandKit || {}, pack.topic)
     });
   });
   return files;
