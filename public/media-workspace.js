@@ -1885,11 +1885,10 @@ export function createMediaWorkspace({ api, toast }) {
   }
 
   function renderPreview(project, index = 0) {
-    let startMs = 0;
-    for (let cursor = 0; cursor < Math.min(index, project.scenes.length); cursor++) {
-      startMs += project.scenes[cursor].durationSeconds * 1000;
-    }
-    renderPreviewAtTime(startMs + 1);
+    const scene = project.scenes[index];
+    const main = project.tracks?.find((track) => track.id === "track-main-video");
+    const clip = main?.clips.find((item) => item.sceneId === scene?.id);
+    renderPreviewAtTime(clip ? clip.start * 1000 + 1 : 0);
   }
 
   async function startTimelinePreviewAudio(offsetMs) {
@@ -2284,7 +2283,7 @@ export function createMediaWorkspace({ api, toast }) {
     let stream = null;
     let animation = 0;
     let recorder = null;
-    const totalMs = Math.max(project.durationSeconds * 1000, project.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0));
+    const totalMs = Math.max(1, project.durationSeconds * 1000);
     const chunks = [];
     const timelineAudioClips = (project.tracks || []).filter((track) => track.kind === "audio" && track.visible !== false && track.muted !== true)
       .flatMap((track) => track.clips.filter((clip) => !clip.muted && clip.visible !== false && clip.assetType === "audio" && timelineAssets.get(clip.id)?.file));
