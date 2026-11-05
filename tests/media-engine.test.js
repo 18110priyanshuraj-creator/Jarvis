@@ -298,6 +298,62 @@ test("accepts a valid AI-generated JSON object and preserves owner settings", as
   assert.deepEqual(project.scenes[0].grade, { brightness: 106, contrast: 112, saturation: 108, blur: 0 });
 });
 
+
+test("asks the AI provider for a complete 15-20 minute long-form narration and checks actual duration", async () => {
+  let request;
+  const narration = Array.from({ length: 10 }, (_, index) =>
+    "This chapter explains concept " + (index + 1) +
+    " with context, an example, why it matters and a clear transition to the next chapter."
+  ).join(" ");
+  const scenes = Array.from({ length: 30 }, (_, index) => ({
+    heading: "Chapter " + (index + 1),
+    voiceover: narration,
+    onScreenText: "Chapter " + (index + 1),
+    visualPrompt: "An accurate educational illustration for chapter " + (index + 1),
+    durationSeconds: 40
+  }));
+  const project = await makeDraft({ format: "long-form", platform: "youtube" }, {
+    generate: async (input) => {
+      request = input;
+      return { title: "Complete long-form lesson", scenes };
+    }
+  });
+  assert.equal(request.targetDurationSeconds, 1200);
+  assert.equal(request.targetDurationLabel, "15-20 minutes");
+  assert.equal(request.targetSceneCount, 30);
+  assert.equal(request.narrationTargetWordsPerScene, "80-100");
+  assert.equal(request.totalNarrationTargetWords, "2400-3000");
+  assert.match(request.generationGuidance, /not a short outline stretched/i);
+  assert.equal(request.outputShape.scenes[0].durationSeconds, 40);
+  assert.equal(project.generationSource, "ai-assisted");
+  assert.equal(project.durationSeconds, 1200);
+  assert.equal(project.scenes.length, 30);
+  assert.doesNotMatch(project.generationNote, /shorter outline/i);
+});
+
+test("does not label a short AI response as a complete long-form script", async () => {
+  const project = await makeDraft({ format: "long-form" }, {
+    generate: async () => ({
+      title: "Short outline",
+      scenes: [
+        { heading: "Start", voiceover: "Introduce the idea.", onScreenText: "Start", durationSeconds: 8 },
+        { heading: "Explain", voiceover: "Explain the idea.", onScreenText: "Explain", durationSeconds: 8 },
+        { heading: "Finish", voiceover: "Summarize the idea.", onScreenText: "Finish", durationSeconds: 8 }
+      ]
+    })
+  });
+  assert.equal(project.generationSource, "ai-assisted");
+  assert.equal(project.durationSeconds, 24);
+  assert.match(project.generationNote, /shorter outline/i);
+  assert.match(project.generationNote, /not a complete 15-20 minute script/i);
+});
+
+test("explains when the local fallback is only a long-form outline", async () => {
+  const project = await makeDraft({ format: "long-form" });
+  assert.equal(project.generationSource, "local-template");
+  assert.match(project.generationNote, /not a finished 15-20 minute script/i);
+});
+
 test("parses fenced JSON output from a configured generator", async () => {
   const generated = JSON.stringify({
     title: "A clear concept",
