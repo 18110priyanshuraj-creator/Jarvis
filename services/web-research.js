@@ -179,7 +179,7 @@ function buildFallbackAnswer(query, sources) {
     "\n\nThese are search-result snippets, not a full-page review. Open the source links to verify details.";
 }
 
-async function requestSearch(query, config, fetchImpl) {
+async function requestSearch(query, config, fetchImpl, timeRange = "") {
   const endpoint = new URL(config.baseUrl + "/search");
   endpoint.searchParams.set("q", query);
   endpoint.searchParams.set("format", "json");
@@ -187,6 +187,7 @@ async function requestSearch(query, config, fetchImpl) {
   endpoint.searchParams.set("categories", "general");
   endpoint.searchParams.set("language", config.language);
   if (config.engines.length) endpoint.searchParams.set("engines", config.engines.join(","));
+  if (["day", "week", "month", "year"].includes(timeRange)) endpoint.searchParams.set("time_range", timeRange);
 
   let lastError;
   for (let attempt = 1; attempt <= config.retryAttempts; attempt++) {
@@ -246,7 +247,8 @@ async function requestSearch(query, config, fetchImpl) {
 
 export async function createWebResearch(query, {
   fetchImpl = globalThis.fetch,
-  aiCompletion = createChatCompletion
+  aiCompletion = createChatCompletion,
+  timeRange = ""
 } = {}) {
   const cleanQuery = cleanText(query, MAX_QUERY_LENGTH);
   if (!cleanQuery) throw new TypeError("Enter a research question first.");
@@ -268,7 +270,8 @@ export async function createWebResearch(query, {
     throw Object.assign(new Error("This server runtime does not provide HTTP fetch support."), { code: "WEB_SEARCH_FETCH_UNAVAILABLE" });
   }
 
-  const raw = await requestSearch(cleanQuery, config, fetchImpl);
+  const selectedTimeRange = ["day", "week", "month", "year"].includes(timeRange) ? timeRange : "";
+  const raw = await requestSearch(cleanQuery, config, fetchImpl, selectedTimeRange);
   const sources = normalizeSearchResults(raw, config.maxResults);
   if (!sources.length) {
     throw Object.assign(new Error("The search provider returned no usable HTTPS sources."), { code: "WEB_SEARCH_NO_RESULTS" });
@@ -313,7 +316,8 @@ export async function createWebResearch(query, {
     externalSearch: true,
     aiSynthesized,
     searchedAt: new Date().toISOString(),
-    searchProvider: "searxng"
+    searchProvider: "searxng",
+    timeRange: selectedTimeRange || null
   };
 }
 
