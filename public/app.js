@@ -2289,7 +2289,7 @@ $("#chat-form").addEventListener("submit", async (event) => {
   waiting.append(mark, wrap);
   $("#chat-messages").append(waiting);
   try {
-    const nativeLaunch = /^(?:jarvis[\\s,:;-]+)?(?:please\\s+)?(?:open|launch|start)\\s+[a-z0-9][a-z0-9 ._()+-]{0,59}$/i.test(message);
+    const nativeLaunch = /^(?:jarvis[\s,:;-]+)?(?:please\s+)?(?:open|launch|start)\s+[a-z0-9][a-z0-9 ._()+-]{0,59}$/i.test(message);
     if (nativeLaunch && window.JarvisNative && typeof window.JarvisNative.submitAppLaunch === "function") {
       let forwarded = false;
       try { forwarded = window.JarvisNative.submitAppLaunch(message) === true; } catch { /* fall back to normal chat */ }
