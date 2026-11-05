@@ -507,6 +507,34 @@ test("edits a draft without mutating the original and rejects edits after approv
   assert.throws(() => approveMediaProject(approved), /Only a draft/);
 });
 
+
+test("builds SRT captions from moved timeline clips and merges contiguous split scene clips", () => {
+  const project = normalizeMediaProject({
+    title: "Edited timeline captions",
+    brief,
+    format: "long-form",
+    scenes: [
+      { id: "scene-a", heading: "First", voiceover: "First narration belongs to the first scene.", durationSeconds: 8 },
+      { id: "scene-b", heading: "Second", voiceover: "Second narration belongs to the second scene.", durationSeconds: 8 }
+    ]
+  });
+  const mainTrack = structuredClone(project.tracks[0]);
+  const first = mainTrack.clips[0];
+  const second = mainTrack.clips[1];
+  mainTrack.clips = [
+    { ...first, start: 5, duration: 3 },
+    { ...first, id: "clip-scene-a-split-b", start: 8, duration: 3 },
+    { ...second, start: 20, duration: 6 }
+  ];
+  const edited = normalizeMediaProject({ ...project, tracks: [mainTrack] });
+  const captions = buildMediaCaptions(edited);
+
+  assert.match(captions, /00:00:05,000 --> 00:00:11,000/);
+  assert.match(captions, /00:00:20,000 --> 00:00:26,000/);
+  assert.equal((captions.match(/First narration/g) || []).length, 1);
+  assert.ok(captions.indexOf("First narration") < captions.indexOf("Second narration"));
+});
+
 test("builds ordered SRT captions and a human-readable production script", async () => {
   const project = await makeDraft();
   const captions = buildMediaCaptions(project);
