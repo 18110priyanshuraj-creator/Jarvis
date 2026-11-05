@@ -1159,7 +1159,8 @@ app.get("/api/export", requireAuth, (req, res) => {
       scheduleEvents: store.scheduleEvents,
       disabledIntegrations: store.disabledIntegrations,
       externalActions: store.externalActions,
-      youtubePublications: store.youtubePublications
+      youtubePublications: store.youtubePublications,
+      creatorCampaigns: store.creatorCampaigns
     },
     excluded: [
       "temporary conversation history",
