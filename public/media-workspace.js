@@ -1838,9 +1838,9 @@ export function createMediaWorkspace({ api, toast }) {
       .filter((clip) => clip.visible !== false && clip.muted !== true && clip.assetType === "audio" && timelineAssets.get(clip.id)?.file)
       .map((clip) => ({ clip, track })));
     const hasGlobalAudio = Boolean(audioFile || musicFile);
-    if (!clips.length && !hasGlobalAudio) return;
+    if (!clips.length && !hasGlobalAudio) return 0;
     const AudioContextType = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextType) return;
+    if (!AudioContextType) return 0;
     const context = new AudioContextType();
     previewAudioContext = context;
     previewAudioSources = [];
@@ -1853,6 +1853,13 @@ export function createMediaWorkspace({ api, toast }) {
       }
       return buffer;
     };
+    const filesToDecode = [...new Set([
+      ...clips.map(({ clip }) => timelineAssets.get(clip.id)?.file),
+      audioFile,
+      musicFile
+    ].filter(Boolean))];
+    await Promise.all(filesToDecode.map(loadBuffer));
+    if (!previewing || previewAudioContext !== context || context.state === "closed") return 0;
     const timelineStart = Math.max(0, offsetMs / 1000);
     const scheduleAt = context.currentTime + 0.06;
     const scheduleFile = async (file, startAt, offset, options = {}) => {
@@ -1926,6 +1933,7 @@ export function createMediaWorkspace({ api, toast }) {
         previewAudioSources.push(source);
       }
     }
+    return 60;
   }
 
   function stopPreview() {
@@ -1962,10 +1970,11 @@ export function createMediaWorkspace({ api, toast }) {
     const totalMs = Math.max(1, currentProject.durationSeconds * 1000);
     previewTimeMs = previewTimeMs >= totalMs ? 0 : previewTimeMs;
     byId("media-preview-button").textContent = "Stop preview";
-    try { await startTimelinePreviewAudio(previewTimeMs); }
+    let audioLeadMs = 0;
+    try { audioLeadMs = await startTimelinePreviewAudio(previewTimeMs) || 0; }
     catch (error) { setExportStatus("Timeline audio preview could not start: " + error.message, true); }
     if (!previewing) return;
-    previewStartedAt = performance.now() - previewTimeMs;
+    previewStartedAt = performance.now() + audioLeadMs - previewTimeMs;
     const tick = (now) => {
       if (!previewing || !currentProject) return;
       const elapsed = (now - previewStartedAt) % totalMs;
