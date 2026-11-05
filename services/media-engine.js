@@ -509,7 +509,7 @@ export async function createMediaDraft(input = {}, options = {}) {
     status: "draft",
     generationSource: "local-template",
     generationNote: isLongForm
-      ? "Local long-form outline only, not a finished 15–20 minute script. Add complete narration to every chapter or configure the AI generator for a full-length storyboard before export."
+      ? "Local long-form outline only, not a finished 15-20 minute script. Add complete narration to every chapter or configure the AI generator for a full-length storyboard before export."
       : "A structured local storyboard is ready. Review wording and verify factual claims before exporting.",
     createdAt: now,
     updatedAt: now
@@ -526,12 +526,12 @@ export async function createMediaDraft(input = {}, options = {}) {
       visualStyle: base.visualStyle,
       sceneLimit: MAX_SCENES,
       targetDurationSeconds,
-      targetDurationLabel: isLongForm ? "15–20 minutes" : formatKey(selectedFormat),
+      targetDurationLabel: isLongForm ? "15-20 minutes" : formatKey(selectedFormat),
       targetSceneCount: isLongForm ? 30 : null,
       narrationTargetWordsPerScene: isLongForm ? "80–100" : null,
-      totalNarrationTargetWords: isLongForm ? "2400–3000" : null,
+      totalNarrationTargetWords: isLongForm ? "2400-3000" : null,
       generationGuidance: isLongForm
-        ? "Create a genuinely complete long-form educational or storytelling script, not a short outline stretched across long scene durations. Return about 30 coherent scenes with 80–100 spoken words per scene, factual transitions, examples, a clear progression and a concise final recap. Aim for 15–20 minutes of spoken narration. Do not repeat filler to reach the target. If the supplied brief does not support enough factual detail, return a shorter honest outline and explain what needs research."
+        ? "Create a genuinely complete long-form educational or storytelling script, not a short outline stretched across long scene durations. Return about 30 coherent scenes with 80–100 spoken words per scene, factual transitions, examples, a clear progression and a concise final recap. Aim for 15-20 minutes of spoken narration. Do not repeat filler to reach the target. If the supplied brief does not support enough factual detail, return a shorter honest outline and explain what needs research."
         : "Create a concise, complete storyboard appropriate for the selected output format. Avoid filler and invented factual claims.",
       outputShape: {
         title: "string",
@@ -567,14 +567,14 @@ export async function createMediaDraft(input = {}, options = {}) {
     });
     if (isLongForm && normalized.durationSeconds < 600) {
       normalized.generationNote = "The AI provider returned a shorter outline (" +
-        normalized.durationSeconds + " seconds), not a complete 15–20 minute script. Expand the narration and chapters before treating this as long-form.";
+        normalized.durationSeconds + " seconds), not a complete 15-20 minute script. Expand the narration and chapters before treating this as long-form.";
     }
     return normalized;
   } catch {
     return {
       ...base,
       generationNote: isLongForm
-        ? "The AI content provider was unavailable or returned an invalid draft. This is only a local outline, not a finished 15–20 minute script."
+        ? "The AI content provider was unavailable or returned an invalid draft. This is only a local outline, not a finished 15-20 minute script."
         : "The AI content provider was unavailable or returned an invalid draft. A local storyboard template was used instead."
     };
   }
