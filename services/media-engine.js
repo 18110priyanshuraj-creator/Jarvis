@@ -17,7 +17,7 @@ const TIMELINE_ASSET_TYPES = new Set(["scene", "image", "video", "audio"]);
 
 const FORMATS = Object.freeze({
   "vertical-short": Object.freeze({ label: "Vertical short", width: 720, height: 1280, maxDurationSeconds: 90, maxSceneDurationSeconds: 30 }),
-  "landscape-explainer": Object.freeze({ label: "Landscape explainer", width: 1280, height: 720, maxDurationSeconds: MAX_PROJECT_DURATION_SECONDS, maxSceneDurationSeconds: 30 }),
+  "landscape-explainer": Object.freeze({ label: "Landscape explainer", width: 1280, height: 720, maxDurationSeconds: 180, maxSceneDurationSeconds: 30 }),
   "long-form": Object.freeze({ label: "Long-form video (up to 20 minutes)", width: 1280, height: 720, maxDurationSeconds: MAX_PROJECT_DURATION_SECONDS, maxSceneDurationSeconds: 120 }),
   "square-carousel": Object.freeze({ label: "Square carousel", width: 1080, height: 1080, maxDurationSeconds: 60, maxSceneDurationSeconds: 5 })
 });
@@ -249,8 +249,8 @@ export function sampleTimelineKeyframes(clip, timeSeconds) {
 }
 
 export function sampleTimelineSpeed(clip, timeSeconds) {
-  const points = normalizeSpeedRamp(clip?.speedRamp, boundedNumber(clip?.duration, 6, 0.25, 180), boundedNumber(clip?.speed, 1, 0.25, 4));
-  const time = boundedNumber(timeSeconds, 0, 0, 180);
+  const points = normalizeSpeedRamp(clip?.speedRamp, boundedNumber(clip?.duration, 6, 0.25, MAX_PROJECT_DURATION_SECONDS), boundedNumber(clip?.speed, 1, 0.25, 4));
+  const time = boundedNumber(timeSeconds, 0, 0, MAX_PROJECT_DURATION_SECONDS);
   const rightIndex = points.findIndex((point) => point.time >= time);
   if (rightIndex <= 0) return points[0].speed;
   if (rightIndex < 0) return points.at(-1).speed;
@@ -630,5 +630,5 @@ export const MEDIA_LIMITS = Object.freeze({
   scenes: MAX_SCENES,
   minScenes: MIN_SCENES,
   sceneText: MAX_SCENE_TEXT,
-  maxDurationSeconds: 180
+  maxDurationSeconds: MAX_PROJECT_DURATION_SECONDS
 });
