@@ -17,6 +17,7 @@ export function createMediaWorkspace({ api, toast }) {
   let exporting = false;
   let audioFile = null;
   let audioObjectUrl = null;
+  const sceneAssets = new Map();
 
   const byId = (id) => document.getElementById(id);
 
@@ -117,6 +118,104 @@ export function createMediaWorkspace({ api, toast }) {
     ["wipe", "Wipe"], ["zoom", "Zoom"]
   ];
 
+  function disposeSceneAsset(sceneId) {
+    const asset = sceneAssets.get(sceneId);
+    if (!asset) return;
+    if (asset.type === "video") {
+      asset.element.pause();
+      asset.element.removeAttribute("src");
+      asset.element.load();
+    }
+    URL.revokeObjectURL(asset.url);
+    sceneAssets.delete(sceneId);
+  }
+
+  function releaseProjectAssets(projectId) {
+    for (const [sceneId, asset] of sceneAssets.entries()) {
+      if (asset.projectId === projectId) disposeSceneAsset(sceneId);
+    }
+  }
+
+  async function setSceneAsset(scene, file) {
+    const projectId = currentProject?.id;
+    if (!projectId || !scene?.id) return;
+    disposeSceneAsset(scene.id);
+    if (!file) {
+      renderPreview(currentProject, currentProject.scenes.findIndex((item) => item.id === scene.id));
+      return;
+    }
+    const type = String(file.type || "").toLowerCase();
+    if (!type.startsWith("image/") && !type.startsWith("video/")) {
+      throw new Error("Choose an image or video file for this scene.");
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      throw new Error("Scene assets must be 100 MiB or smaller for local rendering.");
+    }
+    const url = URL.createObjectURL(file);
+    let element;
+    if (type.startsWith("image/")) {
+      element = new Image();
+      element.decoding = "async";
+      element.src = url;
+      try {
+        if (typeof element.decode === "function") await element.decode();
+        else await new Promise((resolve, reject) => {
+          element.onload = resolve;
+          element.onerror = () => reject(new Error("The selected image could not be opened."));
+        });
+      } catch {
+        URL.revokeObjectURL(url);
+        throw new Error("The selected image could not be opened.");
+      }
+    } else {
+      element = document.createElement("video");
+      element.muted = true;
+      element.loop = true;
+      element.playsInline = true;
+      element.preload = "auto";
+      element.src = url;
+      element.load();
+    }
+    if (currentProject?.id !== projectId ||
+        !currentProject.scenes.some((item) => item.id === scene.id)) {
+      URL.revokeObjectURL(url);
+      if (type.startsWith("video/")) {
+        element.pause();
+        element.removeAttribute("src");
+        element.load();
+      }
+      return;
+    }
+    sceneAssets.set(scene.id, {
+      projectId,
+      type: type.startsWith("video/") ? "video" : "image",
+      name: file.name,
+      url,
+      element
+    });
+    const index = currentProject.scenes.findIndex((item) => item.id === scene.id);
+    renderSceneEditors();
+    renderPreview(currentProject, index);
+    setExportStatus("Local scene asset selected: " + file.name + ". It will be included in the exported video and is not uploaded.");
+  }
+
+  async function playSceneVideos() {
+    const videos = [...sceneAssets.values()].filter((asset) => asset.type === "video");
+    await Promise.all(videos.map(async (asset) => {
+      try {
+        await asset.element.play();
+      } catch {
+        // A blocked local video remains visible as a still frame where available.
+      }
+    }));
+  }
+
+  function pauseSceneVideos() {
+    for (const asset of sceneAssets.values()) {
+      if (asset.type === "video") asset.element.pause();
+    }
+  }
+
   function renderProjectList() {
     const target = byId("media-project-list");
     if (!target) return;
@@ -206,11 +305,29 @@ export function createMediaWorkspace({ api, toast }) {
       card.append(makeSelectField("Motion", scene.animation || "rise", "animation", ANIMATION_CHOICES));
       card.append(makeSelectField("Background", scene.background || "midnight", "background", BACKGROUND_CHOICES));
       card.append(makeSelectField("Transition into scene", scene.transition || "fade", "transition", TRANSITION_CHOICES));
+      const assetField = makeElement("label", "media-field");
+      assetField.append(makeElement("span", "", "Optional local image or video"));
+      const assetInput = makeElement("input", "media-scene-input");
+      assetInput.type = "file";
+      assetInput.accept = "image/*,video/*";
+      assetInput.disabled = currentProject.status !== "draft";
+      assetInput.setAttribute("aria-label", "Choose a local image or video for scene " + (index + 1));
+      assetInput.addEventListener("change", async (event) => {
+        try { await setSceneAsset(scene, event.target.files?.[0] || null); }
+        catch (error) {
+          event.target.value = "";
+          toast(error.message, true);
+        }
+      });
+      const asset = sceneAssets.get(scene.id);
+      assetField.append(assetInput, makeElement("span", "small muted", asset ? asset.name : "No file selected; this scene uses generated motion graphics."));
+      card.append(assetField);
       if (currentProject.status === "draft") {
         const remove = makeElement("button", "item-action media-remove-scene", "Remove scene");
         remove.type = "button";
         remove.disabled = currentProject.scenes.length <= MIN_SCENES;
         remove.addEventListener("click", () => {
+          disposeSceneAsset(scene.id);
           currentProject.scenes.splice(index, 1);
           currentProject.scenes.forEach((item, order) => { item.order = order + 1; });
           renderSceneEditors();
@@ -259,7 +376,10 @@ export function createMediaWorkspace({ api, toast }) {
     const selected = projects.find((item) => item.id === id);
     if (!selected) return;
     stopPreview();
-    if (selectedProjectId && selectedProjectId !== id) setAudioTrack(null);
+    if (selectedProjectId && selectedProjectId !== id) {
+      releaseProjectAssets(selectedProjectId);
+      setAudioTrack(null);
+    }
     selectedProjectId = id;
     currentProject = structuredClone(selected);
     byId("media-editor").classList.remove("hidden");
@@ -437,6 +557,22 @@ export function createMediaWorkspace({ api, toast }) {
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
 
+    const asset = sceneAssets.get(scene.id);
+    const assetElement = asset?.element;
+    const assetWidth = asset?.type === "video" ? assetElement?.videoWidth : assetElement?.naturalWidth;
+    const assetHeight = asset?.type === "video" ? assetElement?.videoHeight : assetElement?.naturalHeight;
+    if (assetWidth > 0 && assetHeight > 0) {
+      const coverScale = Math.max(width / assetWidth, height / assetHeight);
+      const drawWidth = assetWidth * coverScale;
+      const drawHeight = assetHeight * coverScale;
+      ctx.globalAlpha = opacity * 0.52;
+      ctx.drawImage(assetElement, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+      ctx.globalAlpha = opacity * 0.48;
+      ctx.fillStyle = scene.background === "paper" ? "#f5ead6" : "#06101f";
+      ctx.fillRect(0, 0, width, height);
+      ctx.globalAlpha = opacity;
+    }
+
     const unit = Math.min(width, height);
     const light = scene.background === "paper" ? "rgba(56,48,40,0.10)" : "rgba(255,255,255,0.14)";
     ctx.globalAlpha = opacity * 0.22;
@@ -593,6 +729,7 @@ export function createMediaWorkspace({ api, toast }) {
 
   function stopPreview() {
     previewing = false;
+    pauseSceneVideos();
     if (previewFrame) cancelAnimationFrame(previewFrame);
     previewFrame = 0;
     const button = byId("media-preview-button");
@@ -606,6 +743,8 @@ export function createMediaWorkspace({ api, toast }) {
       return;
     }
     previewing = true;
+    await playSceneVideos();
+    if (!previewing) return;
     previewStartedAt = performance.now();
     byId("media-preview-button").textContent = "Stop preview";
     const totalMs = currentProject.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
@@ -648,7 +787,10 @@ export function createMediaWorkspace({ api, toast }) {
       const refreshed = projects.find((item) => item.id === currentProject.id);
       if (refreshed) selectProject(refreshed.id);
       else {
+        releaseProjectAssets(currentProject.id);
         currentProject = null;
+        selectedProjectId = null;
+        setAudioTrack(null);
         byId("media-editor").classList.add("hidden");
       }
     }
@@ -872,6 +1014,7 @@ export function createMediaWorkspace({ api, toast }) {
         }, { once: true });
       });
 
+      await playSceneVideos();
       const startedAt = performance.now();
       recorder.start(500);
       if (audioSource) audioSource.start();
@@ -900,6 +1043,7 @@ export function createMediaWorkspace({ api, toast }) {
     } finally {
       if (animation) cancelAnimationFrame(animation);
       if (recorder && recorder.state !== "inactive") recorder.stop();
+      pauseSceneVideos();
       for (const mediaStream of [stream, canvasStream, audioDestination?.stream]) {
         mediaStream?.getTracks().forEach((track) => track.stop());
       }
