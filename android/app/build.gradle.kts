@@ -5,6 +5,9 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val releaseKeystorePath = providers.environmentVariable("ANDROID_SIGNING_KEYSTORE_PATH").orNull
+val releaseSigningConfigured = !releaseKeystorePath.isNullOrBlank()
+
 android {
     namespace = "com.priyanshuraj.jarviscompanion"
     compileSdk = 36
@@ -21,19 +24,22 @@ android {
     // Debug builds remain usable without any signing secrets.
     signingConfigs {
         create("release") {
-            val keystorePath = providers.environmentVariable("ANDROID_SIGNING_KEYSTORE_PATH").orNull
-            if (!keystorePath.isNullOrBlank()) {
-                storeFile = file(keystorePath)
+            if (releaseSigningConfigured) {
+                storeFile = file(releaseKeystorePath!!)
+                storePassword = providers.environmentVariable("ANDROID_SIGNING_STORE_PASSWORD").orNull
+                keyAlias = providers.environmentVariable("ANDROID_SIGNING_KEY_ALIAS").orNull
+                keyPassword = providers.environmentVariable("ANDROID_SIGNING_KEY_PASSWORD").orNull
             }
-            storePassword = providers.environmentVariable("ANDROID_SIGNING_STORE_PASSWORD").orNull
-            keyAlias = providers.environmentVariable("ANDROID_SIGNING_KEY_ALIAS").orNull
-            keyPassword = providers.environmentVariable("ANDROID_SIGNING_KEY_PASSWORD").orNull
         }
     }
 
     buildTypes {
         getByName("release") {
-            signingConfig = signingConfigs.getByName("release")
+            // CI builds an unsigned release variant; the protected release workflow injects
+            // a keystore and signs the same variant for distribution.
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
         }
     }
@@ -88,6 +94,8 @@ val validateReleaseSigning = tasks.register("validateReleaseSigning") {
     }
 }
 
-tasks.matching { it.name == "validateSigningRelease" }.configureEach {
-    dependsOn(validateReleaseSigning)
+if (releaseSigningConfigured) {
+    tasks.matching { it.name == "validateSigningRelease" }.configureEach {
+        dependsOn(validateReleaseSigning)
+    }
 }
