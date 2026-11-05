@@ -6,6 +6,13 @@ const MAX_SCENES = 12;
 const MIN_SCENES = 2;
 const MAX_SCENE_TEXT = 900;
 const MAX_VISUAL_PROMPT = 360;
+const MAX_TIMELINE_TRACKS = 8;
+const MAX_TIMELINE_CLIPS = 48;
+const MAX_KEYFRAMES = 16;
+const MAX_SPEED_POINTS = 8;
+const TIMELINE_TRACK_KINDS = new Set(["video", "overlay", "audio"]);
+const TIMELINE_EASINGS = new Set(["linear", "ease-in", "ease-out", "ease-in-out", "hold", "cubic-bezier"]);
+const TIMELINE_ASSET_TYPES = new Set(["scene", "image", "video", "audio"]);
 
 const FORMATS = Object.freeze({
   "vertical-short": Object.freeze({ label: "Vertical short", width: 720, height: 1280, maxDurationSeconds: 90 }),
@@ -22,6 +29,7 @@ const FIGURE_POSES = new Set(["idle", "walk", "point", "think", "celebrate"]);
 const SCENE_ANIMATIONS = new Set(["fade", "rise", "bounce", "walk", "gesture"]);
 const SCENE_BACKGROUNDS = new Set(["midnight", "sunset", "paper", "mint", "violet"]);
 const SCENE_TRANSITIONS = new Set(["cut", "fade", "slide", "wipe", "zoom"]);
+const SCENE_CAMERA_MOTIONS = new Set(["static", "ken-burns", "push-in", "pull-out", "pan-left", "pan-right", "drift-up"]);
 const SECRET_PATTERN = /(?:\b|_)(?:api[_ -]?key|access[_ -]?token|password|passcode|one[- ]time code|otp|private key)\b\s*[:=]\s*\S+/i;
 const TOKEN_PATTERN = /\bBearer\s+[A-Za-z0-9._~+/-]{24,}/i;
 const RESTRICTED_MEDIA_PATTERN = /(?:\b(?:porn(?:ography|ographic)?|erotic|masturbat(?:e|ion)|explicit sexual|nude|suicid(?:e|al)|self[- ]harm|cutting tutorial|weapon construction|build (?:a )?(?:bomb|gun|weapon|knife|sword|taser)|make (?:a )?(?:bomb|explosive|weapon|gun)|explosive device|drug synthesis|how to (?:hide|use) (?:drugs|a weapon)|how to vape\b|how to (?:use|refill) (?:a )?(?:vape|e-cigarette)|how to (?:smoke|vape|drink|take|use|dose) (?:weed|marijuana|cannabis|cocaine|meth|heroin|ecstasy|mdma|alcohol|nicotine|tobacco|vapes?)|how to (?:use|carry|fight with) (?:a )?(?:gun|knife|sword|weapon|taser)|vape tricks|nicotine challenge)\b|आत्महत्या|खुदकुशी|खुद\s+को\s+नुकसान|बम\s+बनाना|बंदूक\s+बनाना|हथियार\s+बनाना|विस्फोटक\s+बनाना|ज़हर\s+बनाना|जहर\s+बनाना|शराब\s+(?:कैसे\s+)?(?:पीएं|पिएं)|सिगरेट\s+(?:कैसे\s+)?(?:पीएं|पिएं)|नशा\s+कैसे\s+करें|\b(?:khudkushi|aatmahatya|bomb|bam|bandook|hathiyar|zehar|zahar)\s+(?:kaise|banana|banaye|banane)\b|\b(?:daru|sharab|nasha|ganja|weed|cannabis)\s+(?:kaise|use|piye|peeye|le)\b)/iu;
@@ -39,6 +47,271 @@ function boundedDuration(value, fallback = 8) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(30, Math.max(3, Math.round(parsed)));
+}
+function boundedNumber(value, fallback, min, max) {
+  if (value === undefined || value === null || value === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+
+function normalizeCurve(value) {
+  return {
+    x1: boundedNumber(value?.x1, 0.25, 0, 1),
+    y1: boundedNumber(value?.y1, 0.1, 0, 1),
+    x2: boundedNumber(value?.x2, 0.25, 0, 1),
+    y2: boundedNumber(value?.y2, 1, 0, 1)
+  };
+}
+
+function normalizeEasing(value) {
+  return TIMELINE_EASINGS.has(value) ? value : "linear";
+}
+
+function normalizeKeyframes(value, durationSeconds) {
+  const source = Array.isArray(value) ? value.slice(0, MAX_KEYFRAMES) : [];
+  const points = source.map((point) => ({
+    time: boundedNumber(point?.time, 0, 0, durationSeconds),
+    x: boundedNumber(point?.x, 0, -2, 2),
+    y: boundedNumber(point?.y, 0, -2, 2),
+    scale: boundedNumber(point?.scale, 1, 0.1, 4),
+    opacity: boundedNumber(point?.opacity, 1, 0, 1),
+    rotation: boundedNumber(point?.rotation, 0, -360, 360),
+    easing: normalizeEasing(point?.easing),
+    curve: normalizeCurve(point?.curve)
+  })).sort((a, b) => a.time - b.time);
+  if (!points.length) {
+    return [
+      { time: 0, x: 0, y: 0, scale: 1, opacity: 1, rotation: 0, easing: "linear", curve: normalizeCurve() },
+      { time: durationSeconds, x: 0, y: 0, scale: 1, opacity: 1, rotation: 0, easing: "linear", curve: normalizeCurve() }
+    ];
+  }
+  if (points[0].time > 0) points.unshift({ ...points[0], time: 0 });
+  if (points.at(-1).time < durationSeconds) points.push({ ...points.at(-1), time: durationSeconds });
+  return points.slice(0, MAX_KEYFRAMES);
+}
+
+function normalizeSpeedRamp(value, durationSeconds, fallbackSpeed = 1) {
+  const source = Array.isArray(value) ? value.slice(0, MAX_SPEED_POINTS) : [];
+  const points = source.map((point) => ({
+    time: boundedNumber(point?.time, 0, 0, durationSeconds),
+    speed: boundedNumber(point?.speed, fallbackSpeed, 0.25, 4),
+    easing: normalizeEasing(point?.easing),
+    curve: normalizeCurve(point?.curve)
+  })).sort((a, b) => a.time - b.time);
+  if (!points.length) {
+    return [
+      { time: 0, speed: fallbackSpeed, easing: "linear", curve: normalizeCurve() },
+      { time: durationSeconds, speed: fallbackSpeed, easing: "linear", curve: normalizeCurve() }
+    ];
+  }
+  if (points[0].time > 0) points.unshift({ ...points[0], time: 0 });
+  if (points.at(-1).time < durationSeconds) points.push({ ...points.at(-1), time: durationSeconds });
+  return points.slice(0, MAX_SPEED_POINTS);
+}
+
+function normalizeTimelineClip(clip, index, trackKind) {
+  const duration = boundedNumber(clip?.duration, 6, 0.25, 180);
+  const start = boundedNumber(clip?.start, 0, 0, Math.max(0, 180 - duration));
+  const speed = boundedNumber(clip?.speed, 1, 0.25, 4);
+  const assetType = TIMELINE_ASSET_TYPES.has(clip?.assetType)
+    ? clip.assetType
+    : trackKind === "audio" ? "audio" : "video";
+  const sourceIn = boundedNumber(clip?.sourceIn, 0, 0, 36000);
+  const sourceOut = clip?.sourceOut === null || clip?.sourceOut === undefined || clip?.sourceOut === ""
+    ? null
+    : boundedNumber(clip.sourceOut, sourceIn + duration * speed, sourceIn + 0.05, 36000);
+  const key = clip?.chromaKey || {};
+  const color = typeof key.color === "string" && /^#[0-9a-f]{6}$/i.test(key.color) ? key.color.toLowerCase() : "#00ff00";
+  return {
+    id: cleanText(clip?.id, 80) || crypto.randomUUID(),
+    sceneId: cleanText(clip?.sceneId, 80) || null,
+    assetId: cleanText(clip?.assetId, 100) || null,
+    assetName: cleanText(clip?.assetName, 140),
+    assetType,
+    label: cleanText(clip?.label, 80) || "Clip " + (index + 1),
+    start,
+    duration,
+    sourceIn,
+    sourceOut,
+    speed,
+    volume: boundedNumber(clip?.volume, 1, 0, 1.5),
+    fit: clip?.fit === "contain" ? "contain" : "cover",
+    transform: {
+      x: boundedNumber(clip?.transform?.x, 0, -2, 2),
+      y: boundedNumber(clip?.transform?.y, 0, -2, 2),
+      scale: boundedNumber(clip?.transform?.scale, 1, 0.1, 4),
+      opacity: boundedNumber(clip?.transform?.opacity, 1, 0, 1),
+      rotation: boundedNumber(clip?.transform?.rotation, 0, -360, 360)
+    },
+    keyframes: normalizeKeyframes(clip?.keyframes, duration),
+    speedRamp: normalizeSpeedRamp(clip?.speedRamp, duration, speed),
+    chromaKey: {
+      enabled: key.enabled === true,
+      color,
+      similarity: boundedNumber(key.similarity, 0.34, 0.01, 1),
+      softness: boundedNumber(key.softness, 0.12, 0, 1)
+    },
+    mask: {
+      shape: ["none", "rectangle", "ellipse", "rounded"].includes(clip?.mask?.shape) ? clip.mask.shape : "none",
+      x: boundedNumber(clip?.mask?.x, 0, -1, 1),
+      y: boundedNumber(clip?.mask?.y, 0, -1, 1),
+      width: boundedNumber(clip?.mask?.width, 1, 0.05, 2),
+      height: boundedNumber(clip?.mask?.height, 1, 0.05, 2),
+      feather: boundedNumber(clip?.mask?.feather, 0, 0, 0.5),
+      invert: clip?.mask?.invert === true
+    },
+    visible: clip?.visible !== false,
+    muted: clip?.muted === true
+  };
+}
+
+export function normalizeTimelineTracks(value, scenes = []) {
+  const source = Array.isArray(value) ? value.slice(0, MAX_TIMELINE_TRACKS) : [];
+  const fallback = [{
+    id: "track-main-video",
+    name: "Main video",
+    kind: "video",
+    visible: true,
+    muted: false,
+    clips: scenes.map((scene, index) => ({
+      id: "clip-" + scene.id,
+      sceneId: scene.id,
+      assetType: "scene",
+      label: scene.heading || "Scene " + (index + 1),
+      start: scenes.slice(0, index).reduce((sum, item) => sum + item.durationSeconds, 0),
+      duration: scene.durationSeconds,
+      speed: 1
+    }))
+  }];
+  const tracks = (source.length ? source : fallback).map((track, index) => {
+    const kind = TIMELINE_TRACK_KINDS.has(track?.kind) ? track.kind : "video";
+    const clips = Array.isArray(track?.clips) ? track.clips.slice(0, MAX_TIMELINE_CLIPS) : [];
+    return {
+      id: cleanText(track?.id, 80) || "track-" + (index + 1),
+      name: cleanText(track?.name, 60) || (kind === "video" ? "Video" : kind === "overlay" ? "Overlay" : "Audio") + " " + (index + 1),
+      kind,
+      visible: track?.visible !== false,
+      muted: track?.muted === true,
+      clips: clips.map((clip, clipIndex) => normalizeTimelineClip(clip, clipIndex, kind))
+    };
+  });
+  return tracks;
+}
+
+function cubicBezierProgress(t, curve) {
+  const { x1, y1, x2, y2 } = normalizeCurve(curve);
+  const sample = (a, b, p) => 3 * a * (1 - p) ** 2 * p + 3 * b * (1 - p) * p ** 2 + p ** 3;
+  let low = 0;
+  let high = 1;
+  let parameter = Math.max(0, Math.min(1, t));
+  for (let i = 0; i < 12; i++) {
+    const x = sample(x1, x2, parameter);
+    if (Math.abs(x - t) < 0.0005) break;
+    if (x < t) low = parameter;
+    else high = parameter;
+    parameter = (low + high) / 2;
+  }
+  return sample(y1, y2, parameter);
+}
+
+function easedProgress(t, easing, curve) {
+  const bounded = Math.max(0, Math.min(1, t));
+  if (easing === "hold") return bounded < 1 ? 0 : 1;
+  if (easing === "ease-in") return bounded * bounded;
+  if (easing === "ease-out") return 1 - (1 - bounded) ** 2;
+  if (easing === "ease-in-out") return bounded < 0.5 ? 2 * bounded * bounded : 1 - ((-2 * bounded + 2) ** 2) / 2;
+  if (easing === "cubic-bezier") return cubicBezierProgress(bounded, curve);
+  return bounded;
+}
+
+export function sampleTimelineKeyframes(clip, timeSeconds) {
+  const points = normalizeKeyframes(clip?.keyframes, boundedNumber(clip?.duration, 6, 0.25, 180));
+  const time = boundedNumber(timeSeconds, 0, 0, 180);
+  let rightIndex = points.findIndex((point) => point.time >= time);
+  if (rightIndex <= 0) return { ...points[0] };
+  if (rightIndex < 0) return { ...points.at(-1) };
+  const left = points[rightIndex - 1];
+  const right = points[rightIndex];
+  const span = Math.max(0.0001, right.time - left.time);
+  const progress = easedProgress((time - left.time) / span, left.easing, left.curve);
+  return {
+    time,
+    x: left.x + (right.x - left.x) * progress,
+    y: left.y + (right.y - left.y) * progress,
+    scale: left.scale + (right.scale - left.scale) * progress,
+    opacity: left.opacity + (right.opacity - left.opacity) * progress,
+    rotation: left.rotation + (right.rotation - left.rotation) * progress
+  };
+}
+
+export function sampleTimelineSpeed(clip, timeSeconds) {
+  const points = normalizeSpeedRamp(clip?.speedRamp, boundedNumber(clip?.duration, 6, 0.25, 180), boundedNumber(clip?.speed, 1, 0.25, 4));
+  const time = boundedNumber(timeSeconds, 0, 0, 180);
+  const rightIndex = points.findIndex((point) => point.time >= time);
+  if (rightIndex <= 0) return points[0].speed;
+  if (rightIndex < 0) return points.at(-1).speed;
+  const left = points[rightIndex - 1];
+  const right = points[rightIndex];
+  const progress = easedProgress((time - left.time) / Math.max(0.0001, right.time - left.time), left.easing, left.curve);
+  return left.speed + (right.speed - left.speed) * progress;
+}
+
+export function integrateTimelineSpeed(clip, fromSeconds = 0, toSeconds = Number(clip?.duration || 0)) {
+  const from = Math.max(0, Number(fromSeconds) || 0);
+  const to = Math.max(from, Math.min(Number(clip?.duration || 0), Number(toSeconds) || 0));
+  if (to <= from) return 0;
+  const steps = Math.max(8, Math.ceil((to - from) * 20));
+  const step = (to - from) / steps;
+  let area = 0;
+  for (let index = 0; index < steps; index++) {
+    const left = sampleTimelineSpeed(clip, from + index * step);
+    const right = sampleTimelineSpeed(clip, from + (index + 1) * step);
+    area += (left + right) * 0.5 * step;
+  }
+  return area;
+}
+
+export function splitTimelineClip(clip, splitAtSeconds) {
+  const splitAt = Number(splitAtSeconds);
+  if (!Number.isFinite(splitAt) || splitAt <= 0.25 || splitAt >= Number(clip?.duration) - 0.25) {
+    throw new TypeError("Choose a split point at least 0.25 seconds from either clip edge.");
+  }
+  const firstDuration = splitAt;
+  const secondDuration = Number(clip.duration) - splitAt;
+  const splitSpeed = sampleTimelineSpeed(clip, splitAt);
+  const splitSource = Number(clip.sourceIn || 0) + integrateTimelineSpeed(clip, 0, splitAt);
+  const first = {
+    ...clip,
+    duration: firstDuration,
+    sourceOut: splitSource,
+    keyframes: normalizeKeyframes(clip.keyframes, clip.duration)
+      .filter((point) => point.time <= splitAt)
+      .map((point) => ({ ...point, time: Math.min(point.time, firstDuration) })),
+    speedRamp: normalizeSpeedRamp(clip.speedRamp, clip.duration, clip.speed)
+      .filter((point) => point.time <= splitAt)
+      .map((point) => ({ ...point, time: Math.min(point.time, firstDuration) }))
+  };
+  const second = {
+    ...clip,
+    id: crypto.randomUUID(),
+    label: (clip.label || "Clip") + " · B",
+    start: Number(clip.start || 0) + splitAt,
+    duration: secondDuration,
+    sourceIn: splitSource,
+    sourceOut: clip.sourceOut,
+    keyframes: normalizeKeyframes(clip.keyframes, clip.duration)
+      .filter((point) => point.time >= splitAt)
+      .map((point) => ({ ...point, time: point.time - splitAt })),
+    speedRamp: normalizeSpeedRamp(clip.speedRamp, clip.duration, clip.speed)
+      .filter((point) => point.time >= splitAt)
+      .map((point) => ({ ...point, time: point.time - splitAt }))
+  };
+  return [
+    normalizeTimelineClip(first, 0, "video"),
+    normalizeTimelineClip(second, 1, "video")
+  ];
 }
 
 function formatKey(value) {
@@ -138,6 +411,13 @@ function normalizeScene(scene, index, format, now, visualStyle) {
     transition: SCENE_TRANSITIONS.has(scene?.transition)
       ? scene.transition
       : index === 0 ? "fade" : ["fade", "slide", "wipe", "zoom"][index % 4],
+    cameraMotion: SCENE_CAMERA_MOTIONS.has(scene?.cameraMotion) ? scene.cameraMotion : "static",
+    grade: {
+      brightness: boundedNumber(scene?.grade?.brightness, 100, 50, 150),
+      contrast: boundedNumber(scene?.grade?.contrast, 100, 50, 150),
+      saturation: boundedNumber(scene?.grade?.saturation, 100, 0, 180),
+      blur: boundedNumber(scene?.grade?.blur, 0, 0, 12)
+    },
     durationSeconds: format === "square-carousel" ? 5 : boundedDuration(scene?.durationSeconds),
     order: index + 1,
     createdAt: validDate(scene?.createdAt, now)
@@ -173,7 +453,13 @@ export function normalizeMediaProject(input = {}) {
   scenes = scenes.slice(0, maxCount);
   const maxPerScene = Math.max(3, Math.floor(format.maxDurationSeconds / scenes.length));
   scenes = scenes.map((scene) => ({ ...scene, durationSeconds: Math.min(scene.durationSeconds, maxPerScene) }));
-  const durationSeconds = scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0);
+  const sceneDurationSeconds = scenes.reduce((sum, scene) => sum + scene.durationSeconds, 0);
+  const tracks = normalizeTimelineTracks(input.tracks, scenes);
+  const timelineDuration = Math.max(0, ...tracks.flatMap((track) =>
+    track.clips.map((clip) => clip.start + clip.duration)
+  ));
+  const durationSeconds = Math.min(format.maxDurationSeconds,
+    Array.isArray(input.tracks) && input.tracks.length ? timelineDuration : Math.max(sceneDurationSeconds, timelineDuration));
   const state = PROJECT_STATES.has(input.status) ? input.status : "draft";
   const createdAt = validDate(input.createdAt, now);
   const updatedAt = validDate(input.updatedAt, createdAt);
@@ -191,6 +477,7 @@ export function normalizeMediaProject(input = {}) {
     audience,
     visualStyle,
     scenes,
+    tracks,
     durationSeconds,
     status: state,
     generationSource: input.generationSource === "ai-assisted" ? "ai-assisted" : "local-template",
@@ -237,7 +524,10 @@ export async function createMediaDraft(input = {}, options = {}) {
         scenes: [{
           heading: "string", voiceover: "string", onScreenText: "string",
           visualPrompt: "string", visualType: "stick-figure", figurePose: "point",
-          animation: "gesture", background: "midnight", transition: "fade", durationSeconds: 8
+          animation: "gesture", background: "midnight", transition: "fade",
+          cameraMotion: "ken-burns",
+          grade: { brightness: 100, contrast: 100, saturation: 100, blur: 0 },
+          durationSeconds: 8
         }]
       }
     }));
@@ -256,6 +546,7 @@ export async function createMediaDraft(input = {}, options = {}) {
       approvedAt: null,
       generationSource: "ai-assisted",
       generationNote: "AI-assisted storyboard. Review all wording and verify factual claims before export.",
+      tracks: undefined,
       createdAt: base.createdAt,
       updatedAt: new Date().toISOString()
     });
@@ -274,6 +565,7 @@ export function updateMediaProject(existing, updates = {}) {
     tone: updates.tone ?? existing.tone,
     visualStyle: updates.visualStyle ?? existing.visualStyle,
     scenes: updates.scenes ?? existing.scenes,
+    tracks: updates.tracks ?? existing.tracks,
     updatedAt: new Date().toISOString(),
     status: "draft",
     approvedAt: null

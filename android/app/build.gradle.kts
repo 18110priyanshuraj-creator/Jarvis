@@ -13,8 +13,8 @@ android {
         applicationId = "com.priyanshuraj.jarviscompanion"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.8.0-phase8"
+        versionCode = 6
+        versionName = "0.8.1-web-workspace"
     }
 
     compileOptions {

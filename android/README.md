@@ -2,6 +2,28 @@
 
 This is an additive native Android companion for the existing JARVIS Node.js application. It does not replace the web dashboard or the existing offline brain.
 
+## Website-first Android app
+
+The launcher opens the deployed JARVIS Workspace at `https://jarvis-personal-assistant-nutriton.vercel.app` on a fresh install. The workspace runs inside the Android app's HTTPS-only WebView; sign in with the same web account used in a browser. Pairing is not required just to open and use the website.
+
+- The Workspace toolbar's Home control opens the native JARVIS orb.
+- Setup retains device pairing, voice, privacy and Android permission controls.
+- If a custom server URL has already been saved, the app keeps using it instead of replacing it with the default deployment.
+- The website requires an internet connection; it is not copied into the APK as an offline website bundle.
+
+## Advanced Media Studio timeline
+
+The browser-based Media Studio now includes a bounded, multi-track editor:
+
+- Up to 8 video, overlay and audio tracks, with up to 48 clips per track. Video/overlay clips accept local video or image media; audio tracks accept local audio clips.
+- Non-destructive timeline start, duration and source in/out controls, plus clip splitting that calculates the source offset from the active speed ramp.
+- Per-clip transform keyframes for position, scale, opacity and rotation. Keyframe segments support linear/ease presets, hold and editable cubic-Bezier control points.
+- Per-clip speed ramps from 0.25× to 4×, with editable speed points and easing. Preview/export uses browser video playback-rate controls and Web Audio scheduling.
+- Green-screen chroma key with selectable key colour, similarity and edge softness; rectangular, elliptical and rounded masks with position, size, feathering and inversion.
+- Separate audio timeline clips can be mixed with the independent voiceover and music tracks. Local audio files are not sent to the server by the editor.
+
+Media files are kept in browser memory/object URLs rather than stored in the project database. Project metadata (track layout, trims, keyframes, speed ramps and mask settings) is saved, but local video/image/audio files must be re-attached after reopening the project in a new browser session or on another device. Export still uses the browser Canvas/MediaRecorder path and is limited by browser codec support and available memory. This is not yet a frame-accurate desktop NLE: it has no freehand vector masks, audio waveform editing, arbitrary blend modes or full-resolution proxy/render queue.
+
 ## Phase 1
 
 - Short-lived, single-use device pairing code generated from the authenticated web dashboard.

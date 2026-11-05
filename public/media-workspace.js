@@ -14,10 +14,20 @@ export function createMediaWorkspace({ api, toast }) {
   let previewFrame = 0;
   let previewStartedAt = 0;
   let previewing = false;
+  let previewAudioContext = null;
+  let previewAudioSources = [];
+  const previewAudioBuffers = new WeakMap();
+  let previewTimeMs = 0;
+  let lastPlayheadUpdate = 0;
   let exporting = false;
   let audioFile = null;
   let audioObjectUrl = null;
+  let musicFile = null;
+  let musicObjectUrl = null;
   const sceneAssets = new Map();
+  const timelineAssets = new Map();
+  let selectedTimelineClipId = null;
+  const activeTimelineClipIds = new Set();
   let activeVideoSceneId = null;
 
   const byId = (id) => document.getElementById(id);
@@ -95,6 +105,24 @@ export function createMediaWorkspace({ api, toast }) {
     return wrapper;
   }
 
+  function makeRangeField(labelText, value, field, min, max, step = 1, suffix = "") {
+    const wrapper = makeElement("label", "media-field media-range-field");
+    const heading = makeElement("span", "", labelText);
+    const readout = makeElement("output", "media-range-value", Number(value) + suffix);
+    const input = makeElement("input", "media-scene-input");
+    input.type = "range";
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(step);
+    input.value = String(value);
+    input.dataset.field = field;
+    input.addEventListener("input", () => {
+      readout.textContent = Number(input.value) + suffix;
+    });
+    wrapper.append(heading, readout, input);
+    return wrapper;
+  }
+
   const VISUAL_CHOICES = [
     ["auto", "Automatic layout"],
     ["stick-figure", "Stick figure"],
@@ -119,6 +147,16 @@ export function createMediaWorkspace({ api, toast }) {
     ["wipe", "Wipe"], ["zoom", "Zoom"]
   ];
 
+  const CAMERA_CHOICES = [
+    ["static", "Static"],
+    ["ken-burns", "Ken Burns"],
+    ["push-in", "Push in"],
+    ["pull-out", "Pull out"],
+    ["pan-left", "Pan left"],
+    ["pan-right", "Pan right"],
+    ["drift-up", "Drift up"]
+  ];
+
   function disposeSceneAsset(sceneId) {
     const asset = sceneAssets.get(sceneId);
     if (!asset) return;
@@ -134,6 +172,17 @@ export function createMediaWorkspace({ api, toast }) {
   function releaseProjectAssets(projectId) {
     for (const [sceneId, asset] of sceneAssets.entries()) {
       if (asset.projectId === projectId) disposeSceneAsset(sceneId);
+    }
+    for (const [clipId, asset] of timelineAssets.entries()) {
+      if (asset.projectId !== projectId) continue;
+      if (asset.element?.tagName === "VIDEO") {
+        asset.element.pause();
+        asset.element.removeAttribute("src");
+        asset.element.load();
+      }
+      if (asset.url) URL.revokeObjectURL(asset.url);
+      timelineAssets.delete(clipId);
+      activeTimelineClipIds.delete(clipId);
     }
   }
 
@@ -202,6 +251,978 @@ export function createMediaWorkspace({ api, toast }) {
     setExportStatus("Local scene asset selected: " + file.name + ". It will be included in the exported video and is not uploaded.");
   }
 
+  function timelineCurveProgress(t, easing = "linear", curve = {}) {
+    const p = Math.max(0, Math.min(1, t));
+    if (easing === "hold") return p < 1 ? 0 : 1;
+    if (easing === "ease-in") return p * p;
+    if (easing === "ease-out") return 1 - (1 - p) ** 2;
+    if (easing === "ease-in-out") return p < 0.5 ? 2 * p * p : 1 - ((-2 * p + 2) ** 2) / 2;
+    if (easing !== "cubic-bezier") return p;
+    const x1 = Math.max(0, Math.min(1, Number(curve.x1 ?? 0.25)));
+    const y1 = Math.max(0, Math.min(1, Number(curve.y1 ?? 0.1)));
+    const x2 = Math.max(0, Math.min(1, Number(curve.x2 ?? 0.25)));
+    const y2 = Math.max(0, Math.min(1, Number(curve.y2 ?? 1)));
+    const bezier = (a, b, tValue) =>
+      3 * a * (1 - tValue) ** 2 * tValue + 3 * b * (1 - tValue) * tValue ** 2 + tValue ** 3;
+    let low = 0;
+    let high = 1;
+    let value = p;
+    for (let step = 0; step < 12; step++) {
+      const x = bezier(x1, x2, value);
+      if (Math.abs(x - p) < 0.0005) break;
+      if (x < p) low = value;
+      else high = value;
+      value = (low + high) / 2;
+    }
+    return bezier(y1, y2, value);
+  }
+
+  function sampleTimelinePoints(points, time, fields) {
+    const ordered = [...(Array.isArray(points) ? points : [])].sort((a, b) => a.time - b.time);
+    if (!ordered.length) return {};
+    const rightIndex = ordered.findIndex((point) => point.time >= time);
+    if (rightIndex === 0) return { ...ordered[0] };
+    if (rightIndex < 0) return { ...ordered[ordered.length - 1] };
+    const left = ordered[rightIndex - 1];
+    const right = ordered[rightIndex];
+    const span = Math.max(0.0001, right.time - left.time);
+    const progress = timelineCurveProgress((time - left.time) / span, left.easing, left.curve);
+    const value = { time };
+    for (const field of fields) {
+      const a = Number(left[field] ?? (field === "scale" || field === "opacity" || field === "speed" ? 1 : 0));
+      const b = Number(right[field] ?? a);
+      value[field] = a + (b - a) * progress;
+    }
+    return value;
+  }
+
+  function sampleClipTransform(clip, time) {
+    const base = clip.transform || {};
+    const animated = sampleTimelinePoints(clip.keyframes, time, ["x", "y", "scale", "opacity", "rotation"]);
+    return {
+      x: Number(base.x || 0) + Number(animated.x || 0),
+      y: Number(base.y || 0) + Number(animated.y || 0),
+      scale: Number(base.scale || 1) * Number(animated.scale || 1),
+      opacity: Number(base.opacity ?? 1) * Number(animated.opacity ?? 1),
+      rotation: Number(base.rotation || 0) + Number(animated.rotation || 0)
+    };
+  }
+
+  function sampleClipSpeed(clip, time) {
+    const points = clip.speedRamp?.length ? clip.speedRamp : [
+      { time: 0, speed: clip.speed || 1 },
+      { time: clip.duration, speed: clip.speed || 1 }
+    ];
+    return Math.max(0.25, Math.min(4, Number(sampleTimelinePoints(points, time, ["speed"]).speed || clip.speed || 1)));
+  }
+
+  function integrateClipSpeed(clip, toTime) {
+    const to = Math.max(0, Math.min(clip.duration, Number(toTime) || 0));
+    const steps = Math.max(8, Math.ceil(to * 20));
+    const step = to / steps;
+    let sourceSeconds = 0;
+    for (let index = 0; index < steps; index++) {
+      const a = sampleClipSpeed(clip, index * step);
+      const b = sampleClipSpeed(clip, (index + 1) * step);
+      sourceSeconds += (a + b) * 0.5 * step;
+    }
+    return sourceSeconds;
+  }
+
+  async function loadTimelineAsset(clip, file) {
+    const projectId = currentProject?.id;
+    if (!projectId || !clip?.id || !file) return;
+    if (file.size > 100 * 1024 * 1024) throw new Error("Timeline media must be 100 MiB or smaller for local editing.");
+    const type = String(file.type || "").toLowerCase();
+    const isAudio = type.startsWith("audio/");
+    const isImage = type.startsWith("image/");
+    const isVideo = type.startsWith("video/");
+    if (!isAudio && !isImage && !isVideo) throw new Error("Choose a video, image or audio file.");
+    const track = currentProject.tracks.find((item) => item.clips.some((candidate) => candidate.id === clip.id));
+    if (!track) throw new Error("The selected timeline track no longer exists.");
+    if (track.kind === "audio" && !isAudio) throw new Error("Audio tracks accept audio files only.");
+    if (track.kind !== "audio" && isAudio) throw new Error("Add audio files to an Audio track.");
+    const url = URL.createObjectURL(file);
+    let element = null;
+    let duration = 6;
+    if (isImage) {
+      element = new Image();
+      element.decoding = "async";
+      element.src = url;
+      try {
+        if (typeof element.decode === "function") await element.decode();
+        else await new Promise((resolve, reject) => {
+          element.onload = resolve;
+          element.onerror = () => reject(new Error("The selected image could not be opened."));
+        });
+      } catch {
+        URL.revokeObjectURL(url);
+        throw new Error("The selected image could not be opened.");
+      }
+    } else if (isVideo) {
+      element = document.createElement("video");
+      element.muted = true;
+      element.loop = false;
+      element.playsInline = true;
+      element.preload = "auto";
+      element.src = url;
+      element.load();
+      try {
+        await new Promise((resolve, reject) => {
+          if (element.readyState >= 1) return resolve();
+          element.addEventListener("loadedmetadata", resolve, { once: true });
+          element.addEventListener("error", () => reject(new Error("The selected video could not be decoded.")), { once: true });
+        });
+        duration = Number.isFinite(element.duration) ? Math.max(0.25, Math.min(180, element.duration)) : 6;
+      } catch (error) {
+        URL.revokeObjectURL(url);
+        throw error;
+      }
+    }
+    if (currentProject?.id !== projectId || !currentProject.tracks.some((item) => item.id === track.id)) {
+      URL.revokeObjectURL(url);
+      if (element?.tagName === "VIDEO") {
+        element.pause();
+        element.removeAttribute("src");
+        element.load();
+      }
+      return;
+    }
+    const currentClip = track.clips.find((item) => item.id === clip.id);
+    if (!currentClip) {
+      URL.revokeObjectURL(url);
+      return;
+    }
+    const reattaching = Boolean(currentClip.assetId && currentClip.assetName);
+    currentClip.assetId = clip.id;
+    currentClip.assetName = file.name;
+    currentClip.assetType = isAudio ? "audio" : isImage ? "image" : "video";
+    currentClip.label = file.name.slice(0, 80);
+    if (!reattaching && isVideo) {
+      currentClip.duration = Math.min(180 - currentClip.start, duration);
+      currentClip.sourceIn = 0;
+      currentClip.sourceOut = duration;
+    } else if (!reattaching && isImage) {
+      currentClip.duration = 6;
+    }
+    timelineAssets.set(clip.id, { projectId, type: currentClip.assetType, name: file.name, file, url, element, started: false, keyCanvas: null });
+    currentProject.durationSeconds = Math.min(180, Math.max(currentProject.durationSeconds || 0, currentClip.start + currentClip.duration));
+    selectedTimelineClipId = clip.id;
+    renderTimelineEditor();
+    renderPreviewAtTime(currentClip.start * 1000);
+    setExportStatus("Added " + file.name + " to the " + track.name + " track. Media remains local to this browser session.");
+  }
+
+  function addTimelineTrack(kind) {
+    if (!currentProject || currentProject.status !== "draft") return;
+    if (!["video", "overlay", "audio"].includes(kind)) return;
+    if (currentProject.tracks.length >= 8) {
+      toast("A project can contain up to 8 tracks.", true);
+      return;
+    }
+    const count = currentProject.tracks.filter((track) => track.kind === kind).length + 1;
+    const track = {
+      id: "track-" + crypto.randomUUID(),
+      name: (kind === "video" ? "Video" : kind === "overlay" ? "Overlay" : "Audio") + " " + count,
+      kind,
+      visible: true,
+      muted: false,
+      clips: []
+    };
+    currentProject.tracks.push(track);
+    renderTimelineEditor();
+    setExportStatus(track.name + " created. Add local media to start editing.");
+  }
+
+  function addTimelineClip(trackId) {
+    if (!currentProject || currentProject.status !== "draft") return null;
+    const track = currentProject.tracks.find((item) => item.id === trackId);
+    if (!track) return null;
+    const start = track.clips.length
+      ? Math.max(...track.clips.map((item) => item.start + item.duration))
+      : 0;
+    const id = "clip-" + crypto.randomUUID();
+    const duration = Math.max(0.25, Math.min(180 - start, 6));
+    const clip = {
+      id,
+      assetId: null,
+      assetName: "",
+      assetType: track.kind === "audio" ? "audio" : "video",
+      label: "New clip",
+      start,
+      duration,
+      sourceIn: 0,
+      sourceOut: null,
+      speed: 1,
+      volume: 1,
+      fit: "cover",
+      transform: { x: 0, y: 0, scale: 1, opacity: 1, rotation: 0 },
+      keyframes: [
+        { time: 0, x: 0, y: 0, scale: 1, opacity: 1, rotation: 0, easing: "linear", curve: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 } },
+        { time: duration, x: 0, y: 0, scale: 1, opacity: 1, rotation: 0, easing: "linear", curve: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 } }
+      ],
+      speedRamp: [
+        { time: 0, speed: 1, easing: "linear", curve: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 } },
+        { time: duration, speed: 1, easing: "linear", curve: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 } }
+      ],
+      chromaKey: { enabled: false, color: "#00ff00", similarity: 0.34, softness: 0.12 },
+      mask: { shape: "none", x: 0, y: 0, width: 1, height: 1, feather: 0, invert: false },
+      visible: true,
+      muted: false
+    };
+    track.clips.push(clip);
+    selectedTimelineClipId = clip.id;
+    renderTimelineEditor();
+    return clip;
+  }
+
+  function selectedTimelineClip() {
+    if (!currentProject || !selectedTimelineClipId) return null;
+    for (const track of currentProject.tracks) {
+      const clip = track.clips.find((item) => item.id === selectedTimelineClipId);
+      if (clip) return { track, clip };
+    }
+    return null;
+  }
+
+  function renderTimelineInspector() {
+    const target = byId("media-timeline-inspector");
+    if (!target) return;
+    target.replaceChildren();
+    const selection = selectedTimelineClip();
+    if (!selection) {
+      target.append(makeElement("p", "small muted", "Select a clip to trim, split, animate, key or retime it."));
+      return;
+    }
+    const { track, clip } = selection;
+    const section = (title) => {
+      const box = makeElement("section", "timeline-inspector-section");
+      box.append(makeElement("strong", "timeline-inspector-title", title));
+      target.append(box);
+      return box;
+    };
+    const field = (parent, label, value, path, options = {}) => {
+      const wrapper = makeElement("label", "media-field timeline-control");
+      wrapper.append(makeElement("span", "", label));
+      const input = makeElement("input", "media-scene-input");
+      input.type = options.type || "number";
+      input.value = value ?? "";
+      if (options.min !== undefined) input.min = String(options.min);
+      if (options.max !== undefined) input.max = String(options.max);
+      if (options.step !== undefined) input.step = String(options.step);
+      input.dataset.timelineField = path;
+      input.dataset.clipId = clip.id;
+      wrapper.append(input);
+      parent.append(wrapper);
+      return input;
+    };
+    const select = (parent, label, value, path, choices) => {
+      const wrapper = makeElement("label", "media-field timeline-control");
+      wrapper.append(makeElement("span", "", label));
+      const input = makeElement("select", "media-scene-input");
+      for (const [choiceValue, choiceLabel] of choices) {
+        const option = makeElement("option", "", choiceLabel);
+        option.value = choiceValue;
+        input.append(option);
+      }
+      input.value = value;
+      input.dataset.timelineField = path;
+      input.dataset.clipId = clip.id;
+      wrapper.append(input);
+      parent.append(wrapper);
+      return input;
+    };
+    const toggle = (parent, label, value, path) => {
+      const wrapper = makeElement("label", "timeline-toggle");
+      const input = makeElement("input");
+      input.type = "checkbox";
+      input.checked = value === true;
+      input.dataset.timelineField = path;
+      input.dataset.clipId = clip.id;
+      wrapper.append(input, makeElement("span", "", label));
+      parent.append(wrapper);
+    };
+    const range = (parent, label, value, path, min, max, step = 0.01) => {
+      const wrapper = makeElement("label", "media-field timeline-control");
+      wrapper.append(makeElement("span", "", label));
+      const input = makeElement("input", "media-scene-input");
+      input.type = "range";
+      input.min = String(min);
+      input.max = String(max);
+      input.step = String(step);
+      input.value = String(value);
+      input.dataset.timelineField = path;
+      input.dataset.clipId = clip.id;
+      wrapper.append(input);
+      parent.append(wrapper);
+    };
+    const actions = makeElement("div", "timeline-action-row");
+    const splitAt = makeElement("input", "media-scene-input timeline-split-input");
+    splitAt.type = "number";
+    splitAt.min = "0.25";
+    splitAt.max = String(Math.max(0.25, clip.duration - 0.25));
+    splitAt.step = "0.05";
+    splitAt.value = String(Math.round(clip.duration * 0.5 * 100) / 100);
+    splitAt.dataset.splitAt = "true";
+    const split = makeElement("button", "item-action", "Split clip");
+    split.type = "button";
+    split.dataset.timelineAction = "split";
+    split.dataset.clipId = clip.id;
+    const remove = makeElement("button", "item-action media-delete", "Delete clip");
+    remove.type = "button";
+    remove.dataset.timelineAction = "delete";
+    remove.dataset.clipId = clip.id;
+    actions.append(splitAt, split, remove);
+    const timing = section("Clip timing and trimming");
+    field(timing, "Timeline start (s)", clip.start, "start", { min: 0, max: 180, step: 0.05 });
+    field(timing, "Clip duration (s)", clip.duration, "duration", { min: 0.25, max: 180, step: 0.05 });
+    field(timing, "Source in (s)", clip.sourceIn, "sourceIn", { min: 0, max: 36000, step: 0.05 });
+    field(timing, "Source out (s)", clip.sourceOut ?? "", "sourceOut", { min: 0, max: 36000, step: 0.05 });
+    field(timing, "Base speed (×)", clip.speed, "speed", { min: 0.25, max: 4, step: 0.05 });
+    if (track.kind === "audio") field(timing, "Clip volume", clip.volume ?? 1, "volume", { min: 0, max: 1.5, step: 0.05 });
+    select(timing, "Fit", clip.fit || "cover", "fit", [["cover", "Fill / cover"], ["contain", "Fit inside"]]);
+    target.append(actions);
+
+    toggle(timing, "Show clip", clip.visible !== false, "visible");
+    if (track.kind === "audio") toggle(timing, "Mute this audio clip", clip.muted === true, "muted");
+
+    const keying = section("Green screen / chroma key");
+    toggle(keying, "Enable chroma key", clip.chromaKey?.enabled, "chromaKey.enabled");
+    const colorField = makeElement("label", "media-field timeline-control");
+    colorField.append(makeElement("span", "", "Key colour"));
+    const color = makeElement("input");
+    color.type = "color";
+    color.value = clip.chromaKey?.color || "#00ff00";
+    color.dataset.timelineField = "chromaKey.color";
+    color.dataset.clipId = clip.id;
+    colorField.append(color);
+    keying.append(colorField);
+    range(keying, "Similarity", clip.chromaKey?.similarity ?? 0.34, "chromaKey.similarity", 0.01, 1, 0.01);
+    range(keying, "Edge softness", clip.chromaKey?.softness ?? 0.12, "chromaKey.softness", 0, 1, 0.01);
+
+    const maskBox = section("Shape mask");
+    select(maskBox, "Mask shape", clip.mask?.shape || "none", "mask.shape", [
+      ["none", "No mask"], ["rectangle", "Rectangle"], ["ellipse", "Ellipse / circle"], ["rounded", "Rounded rectangle"]
+    ]);
+    toggle(maskBox, "Invert mask", clip.mask?.invert === true, "mask.invert");
+    field(maskBox, "Mask X", clip.mask?.x ?? 0, "mask.x", { min: -1, max: 1, step: 0.01 });
+    field(maskBox, "Mask Y", clip.mask?.y ?? 0, "mask.y", { min: -1, max: 1, step: 0.01 });
+    range(maskBox, "Mask width", clip.mask?.width ?? 1, "mask.width", 0.05, 2, 0.01);
+    range(maskBox, "Mask height", clip.mask?.height ?? 1, "mask.height", 0.05, 2, 0.01);
+    range(maskBox, "Mask feather", clip.mask?.feather ?? 0, "mask.feather", 0, 0.5, 0.01);
+
+    const speedBox = section("Speed ramp");
+    const speedAdd = makeElement("button", "item-action", "Add speed point");
+    speedAdd.type = "button";
+    speedAdd.dataset.timelineAction = "add-speed-point";
+    speedAdd.dataset.clipId = clip.id;
+    speedBox.append(speedAdd);
+    clip.speedRamp.forEach((point, index) => {
+      const row = makeElement("div", "timeline-point-editor");
+      row.append(makeElement("span", "timeline-point-label", "Speed point " + (index + 1)));
+      field(row, "Time", point.time, "speedRamp." + index + ".time", { min: 0, max: clip.duration, step: 0.05 });
+      field(row, "Speed ×", point.speed, "speedRamp." + index + ".speed", { min: 0.25, max: 4, step: 0.05 });
+      select(row, "Curve", point.easing || "linear", "speedRamp." + index + ".easing", [
+        ["linear", "Linear"], ["ease-in", "Ease in"], ["ease-out", "Ease out"],
+        ["ease-in-out", "Ease in/out"], ["hold", "Hold"], ["cubic-bezier", "Custom Bezier"]
+      ]);
+      if (point.easing === "cubic-bezier") {
+        for (const key of ["x1", "y1", "x2", "y2"]) {
+          field(row, key.toUpperCase(), point.curve?.[key] ?? 0.25, "speedRamp." + index + ".curve." + key, { min: 0, max: 1, step: 0.01 });
+        }
+      }
+      speedBox.append(row);
+    });
+
+    const keyframes = section("Transform keyframes");
+    const keyAdd = makeElement("button", "item-action", "Add keyframe");
+    keyAdd.type = "button";
+    keyAdd.dataset.timelineAction = "add-keyframe";
+    keyAdd.dataset.clipId = clip.id;
+    keyframes.append(keyAdd);
+    clip.keyframes.forEach((point, index) => {
+      const row = makeElement("div", "timeline-point-editor");
+      row.append(makeElement("span", "timeline-point-label", "Keyframe " + (index + 1)));
+      for (const [label, key, min, max, step] of [
+        ["Time (s)", "time", 0, clip.duration, 0.05],
+        ["X", "x", -2, 2, 0.01], ["Y", "y", -2, 2, 0.01],
+        ["Scale", "scale", 0.1, 4, 0.05], ["Opacity", "opacity", 0, 1, 0.05],
+        ["Rotation°", "rotation", -360, 360, 1]
+      ]) field(row, label, point[key] ?? 0, "keyframes." + index + "." + key, { min, max, step });
+      select(row, "Curve", point.easing || "linear", "keyframes." + index + ".easing", [
+        ["linear", "Linear"], ["ease-in", "Ease in"], ["ease-out", "Ease out"],
+        ["ease-in-out", "Ease in/out"], ["hold", "Hold"], ["cubic-bezier", "Custom Bezier"]
+      ]);
+      if (point.easing === "cubic-bezier") {
+        for (const key of ["x1", "y1", "x2", "y2"]) {
+          field(row, key.toUpperCase(), point.curve?.[key] ?? 0.25, "keyframes." + index + ".curve." + key, { min: 0, max: 1, step: 0.01 });
+        }
+      }
+      keyframes.append(row);
+    });
+    if (clip.assetId && clip.assetName && !timelineAssets.has(clip.id)) {
+      const attach = makeElement("label", "item-action timeline-add-clip", "Re-attach " + clip.assetName);
+      const input = makeElement("input");
+      input.type = "file";
+      input.accept = clip.assetType === "audio" ? "audio/*" : clip.assetType === "image" ? "image/*" : "video/*";
+      input.addEventListener("change", async (event) => {
+        try { await loadTimelineAsset(clip, event.target.files?.[0]); }
+        catch (error) { toast(error.message, true); }
+      });
+      attach.append(input);
+      target.append(attach);
+    }
+    target.append(makeElement("p", "small muted", "Asset files stay on this device. After reopening a saved project, re-attach local files to their timeline clips."));
+  }
+
+  function renderTimelineEditor() {
+    const root = byId("media-timeline-tracks");
+    if (!root || !currentProject) return;
+    root.replaceChildren();
+    const total = Math.max(1, currentProject.durationSeconds || 1);
+    for (const track of currentProject.tracks || []) {
+      const row = makeElement("section", "timeline-track-row");
+      const header = makeElement("div", "timeline-track-header");
+      header.append(makeElement("strong", "", track.name));
+      header.append(makeElement("span", "timeline-track-kind", track.kind.toUpperCase()));
+      const visible = makeElement("label", "timeline-toggle");
+      const visibleInput = makeElement("input");
+      visibleInput.type = "checkbox";
+      visibleInput.checked = track.kind === "audio" ? track.muted !== true : track.visible !== false;
+      visibleInput.dataset.trackId = track.id;
+      visibleInput.dataset.trackField = track.kind === "audio" ? "muted" : "visible";
+      visible.append(visibleInput, makeElement("span", "", track.kind === "audio" ? "Enabled" : "Visible"));
+      header.append(visible);
+      const addLabel = makeElement("label", "item-action timeline-add-clip", "＋ Add media");
+      const file = makeElement("input");
+      file.type = "file";
+      file.accept = track.kind === "audio" ? "audio/*" : track.kind === "overlay" ? "image/*,video/*" : "video/*";
+      file.disabled = currentProject.status !== "draft";
+      file.addEventListener("change", async (event) => {
+        const clip = addTimelineClip(track.id);
+        try {
+          if (clip) await loadTimelineAsset(clip, event.target.files?.[0]);
+        } catch (error) {
+          if (clip) track.clips = track.clips.filter((item) => item.id !== clip.id);
+          renderTimelineEditor();
+          toast(error.message, true);
+        }
+      });
+      addLabel.append(file);
+      header.append(addLabel);
+      row.append(header);
+
+      const lane = makeElement("div", "timeline-track-lane");
+      for (const clip of track.clips.slice().sort((a, b) => a.start - b.start)) {
+        const button = makeElement("button", "timeline-clip-block" + (selectedTimelineClipId === clip.id ? " selected" : ""));
+        button.type = "button";
+        button.dataset.clipId = clip.id;
+        button.style.left = (clip.start / total * 100) + "%";
+        button.style.width = Math.max(1.2, clip.duration / total * 100) + "%";
+        button.style.touchAction = "none";
+        const leftHandle = makeElement("span", "timeline-clip-handle left");
+        leftHandle.dataset.dragEdge = "left";
+        leftHandle.setAttribute("aria-label", "Trim clip start");
+        const rightHandle = makeElement("span", "timeline-clip-handle right");
+        rightHandle.dataset.dragEdge = "right";
+        rightHandle.setAttribute("aria-label", "Trim clip end");
+        button.append(leftHandle);
+        const asset = timelineAssets.get(clip.id);
+        button.append(makeElement("strong", "", clip.label || asset?.name || "Clip"));
+        const timeLabel = makeElement("span", "timeline-clip-time",
+          Number(clip.start).toFixed(1) + "s · " + Number(clip.duration).toFixed(1) + "s");
+        button.append(timeLabel);
+        if (clip.assetId && !asset) button.append(makeElement("small", "", "Re-attach media"));
+        button.append(rightHandle);
+        button.addEventListener("pointerdown", (event) => {
+          if (currentProject.status !== "draft" || event.button > 0) return;
+          event.preventDefault();
+          selectedTimelineClipId = clip.id;
+          const edge = event.target?.closest?.("[data-drag-edge]")?.dataset?.dragEdge || "move";
+          const rect = lane.getBoundingClientRect();
+          if (!rect.width) return;
+          const pointerId = event.pointerId;
+          const startX = event.clientX;
+          const initial = {
+            start: clip.start,
+            duration: clip.duration,
+            sourceIn: clip.sourceIn || 0,
+            sourceOut: clip.sourceOut,
+            speed: clip.speed || 1
+          };
+          button.setPointerCapture(pointerId);
+          button.classList.add("dragging");
+          const onMove = (moveEvent) => {
+            if (moveEvent.pointerId !== pointerId) return;
+            const delta = (moveEvent.clientX - startX) / rect.width * total;
+            if (edge === "move") {
+              clip.start = Math.max(0, Math.min(180 - initial.duration, initial.start + delta));
+            } else if (edge === "left") {
+              const boundedDelta = Math.max(-Math.min(initial.sourceIn, initial.start),
+                Math.min(initial.duration - 0.25, delta));
+              clip.start = Math.max(0, initial.start + boundedDelta);
+              clip.duration = Math.max(0.25, initial.duration - boundedDelta);
+              clip.sourceIn = Math.max(0, initial.sourceIn + (boundedDelta >= 0
+                ? integrateClipSpeed({ ...clip, duration: initial.duration }, boundedDelta)
+                : -integrateClipSpeed({ ...clip, duration: initial.duration }, -boundedDelta)));
+              if (initial.sourceOut !== null && initial.sourceOut !== undefined) clip.sourceOut = initial.sourceOut;
+            } else if (edge === "right") {
+              clip.duration = Math.max(0.25, Math.min(180 - initial.start, initial.duration + delta));
+              if (initial.sourceOut !== null && initial.sourceOut !== undefined) {
+                clip.sourceOut = initial.sourceIn + integrateClipSpeed({ ...clip, duration: initial.duration }, clip.duration);
+              }
+            }
+            clip.keyframes = clip.keyframes.map((point) => ({ ...point, time: Math.max(0, Math.min(clip.duration, point.time)) }));
+            clip.speedRamp = clip.speedRamp.map((point) => ({ ...point, time: Math.max(0, Math.min(clip.duration, point.time)) }));
+            button.style.left = (clip.start / total * 100) + "%";
+            button.style.width = Math.max(1.2, clip.duration / total * 100) + "%";
+            timeLabel.textContent = Number(clip.start).toFixed(1) + "s · " + Number(clip.duration).toFixed(1) + "s";
+            currentProject.durationSeconds = Math.min(180, Math.max(0,
+              ...currentProject.tracks.flatMap((item) => item.clips.map((candidate) => candidate.start + candidate.duration))
+            ));
+          };
+          const onEnd = (endEvent) => {
+            if (endEvent.pointerId !== pointerId) return;
+            button.classList.remove("dragging");
+            button.removeEventListener("pointermove", onMove);
+            button.removeEventListener("pointerup", onEnd);
+            button.removeEventListener("pointercancel", onEnd);
+            renderTimelineEditor();
+            renderPreviewAtTime(clip.start * 1000);
+          };
+          button.addEventListener("pointermove", onMove);
+          button.addEventListener("pointerup", onEnd);
+          button.addEventListener("pointercancel", onEnd);
+        });
+        button.addEventListener("click", () => {
+          selectedTimelineClipId = clip.id;
+          renderTimelineEditor();
+          renderPreviewAtTime(clip.start * 1000);
+        });
+        lane.append(button);
+      }
+      row.append(lane);
+      root.append(row);
+    }
+    renderTimelineInspector();
+    for (const id of ["media-timeline-add-video", "media-timeline-add-overlay", "media-timeline-add-audio"]) {
+      const button = byId(id);
+      if (button) button.disabled = currentProject.status !== "draft" || currentProject.tracks.length >= 8;
+    }
+  }
+
+  function updateTimelineField(event) {
+    const target = event.target;
+    const path = target?.dataset?.timelineField;
+    const clipId = target?.dataset?.clipId;
+    if (!path || !clipId || !currentProject) return;
+    const selection = (() => {
+      for (const track of currentProject.tracks) {
+        const clip = track.clips.find((item) => item.id === clipId);
+        if (clip) return { track, clip };
+      }
+      return null;
+    })();
+    if (!selection) return;
+    const emptySourceOut = path === "sourceOut" && target.value === "";
+    const value = target.type === "checkbox" ? target.checked
+      : target.type === "number" || target.type === "range" ? Number(target.value)
+        : target.value;
+    const parts = path.split(".");
+    let object = selection.clip;
+    for (let index = 0; index < parts.length - 1; index++) {
+      const part = parts[index];
+      const arrayIndex = /^\d+$/.test(part) ? Number(part) : part;
+      object = object[arrayIndex];
+      if (!object) return;
+    }
+    const last = parts[parts.length - 1];
+    object[last] = emptySourceOut ? null : value;
+    if (["start", "duration", "sourceIn", "sourceOut", "speed", "volume"].includes(path)) {
+      selection.clip[path] = emptySourceOut ? null : value;
+    }
+    currentProject.durationSeconds = Math.min(180, Math.max(0,
+      ...currentProject.tracks.flatMap((track) => track.clips.map((item) => item.start + item.duration))
+    ));
+    renderPreviewAtTime(selection.clip.start * 1000);
+  }
+
+  function splitSelectedTimelineClip(clipId, splitAt) {
+    const selection = (() => {
+      for (const track of currentProject.tracks) {
+        const clip = track.clips.find((item) => item.id === clipId);
+        if (clip) return { track, clip };
+      }
+      return null;
+    })();
+    if (!selection) return;
+    const { track, clip } = selection;
+    const at = Number(splitAt);
+    if (!Number.isFinite(at) || at <= 0.25 || at >= clip.duration - 0.25) {
+      toast("Split point must be at least 0.25 seconds from either edge.", true);
+      return;
+    }
+    const sampledSpeed = sampleClipSpeed(clip, at);
+    const transform = sampleClipTransform(clip, at);
+    const sourceSplit = clip.sourceIn + integrateClipSpeed(clip, at);
+    const second = structuredClone(clip);
+    second.id = "clip-" + crypto.randomUUID();
+    second.label = (clip.label || "Clip") + " · B";
+    second.start = clip.start + at;
+    second.duration = clip.duration - at;
+    second.sourceIn = sourceSplit;
+    second.keyframes = [
+      { time: 0, ...transform, easing: "linear", curve: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 } },
+      ...clip.keyframes.filter((point) => point.time > at).map((point) => ({ ...point, time: point.time - at }))
+    ];
+    second.speedRamp = [
+      { time: 0, speed: sampledSpeed, easing: "linear", curve: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 } },
+      ...clip.speedRamp.filter((point) => point.time > at).map((point) => ({ ...point, time: point.time - at }))
+    ];
+    clip.duration = at;
+    clip.sourceOut = sourceSplit;
+    clip.keyframes = [
+      ...clip.keyframes.filter((point) => point.time < at),
+      { time: at, ...transform, easing: "linear", curve: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 } }
+    ];
+    clip.speedRamp = [
+      ...clip.speedRamp.filter((point) => point.time < at),
+      { time: at, speed: sampledSpeed, easing: "linear", curve: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 } }
+    ];
+    track.clips.push(second);
+    const asset = timelineAssets.get(clipId);
+    if (asset) {
+      timelineAssets.set(second.id, { ...asset, started: false, keyCanvas: null });
+    }
+    selectedTimelineClipId = second.id;
+    renderTimelineEditor();
+    renderPreviewAtTime(second.start * 1000);
+  }
+
+  function handleTimelineAction(event) {
+    const button = event.target?.closest?.("[data-timeline-action]");
+    if (!button || !currentProject || currentProject.status !== "draft") return;
+    const clipId = button.dataset.clipId;
+    const selection = selectedTimelineClip();
+    if (button.dataset.timelineAction === "split") {
+      const value = byId("media-timeline-inspector")?.querySelector("[data-split-at]")?.value;
+      splitSelectedTimelineClip(clipId, value);
+    } else if (button.dataset.timelineAction === "delete") {
+      for (const track of currentProject.tracks) {
+        const found = track.clips.find((clip) => clip.id === clipId);
+        if (found) {
+          track.clips = track.clips.filter((clip) => clip.id !== clipId);
+          const asset = timelineAssets.get(clipId);
+          if (asset?.url) URL.revokeObjectURL(asset.url);
+          asset?.element?.pause?.();
+          timelineAssets.delete(clipId);
+          activeTimelineClipIds.delete(clipId);
+          currentProject.durationSeconds = Math.min(180, Math.max(0,
+            ...currentProject.tracks.flatMap((item) => item.clips.map((candidate) => candidate.start + candidate.duration))
+          ));
+          selectedTimelineClipId = null;
+          renderTimelineEditor();
+          renderPreviewAtTime(0);
+          return;
+        }
+      }
+    } else if (button.dataset.timelineAction === "add-keyframe" && selection) {
+      const clip = selection.clip;
+      if (clip.keyframes.length >= 16) return toast("A clip supports up to 16 keyframes.", true);
+      const time = Math.round(clip.duration * 0.5 * 100) / 100;
+      const value = sampleClipTransform(clip, time);
+      clip.keyframes.push({ time, ...value, easing: "cubic-bezier", curve: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 } });
+      clip.keyframes.sort((a, b) => a.time - b.time);
+      renderTimelineEditor();
+    } else if (button.dataset.timelineAction === "add-speed-point" && selection) {
+      const clip = selection.clip;
+      if (clip.speedRamp.length >= 8) return toast("A clip supports up to 8 speed points.", true);
+      const time = Math.round(clip.duration * 0.5 * 100) / 100;
+      clip.speedRamp.push({ time, speed: 2, easing: "cubic-bezier", curve: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 } });
+      clip.speedRamp.sort((a, b) => a.time - b.time);
+      renderTimelineEditor();
+    }
+  }
+
+  function syncSceneTimeline(project) {
+    const main = project.tracks?.find((track) => track.id === "track-main-video");
+    if (!main) return;
+    const scenesById = new Map(project.scenes.map((scene) => [scene.id, scene]));
+    main.clips = main.clips.filter((clip) => !clip.sceneId || scenesById.has(clip.sceneId));
+    for (const clip of main.clips) {
+      const scene = clip.sceneId ? scenesById.get(clip.sceneId) : null;
+      if (scene) clip.label = scene.heading;
+    }
+    project.durationSeconds = Math.min(180, Math.max(0,
+      ...project.tracks.flatMap((track) => track.clips.map((clip) => clip.start + clip.duration))
+    ));
+  }
+
+  function addSceneTimelineClip(project, scene) {
+    const main = project.tracks?.find((track) => track.id === "track-main-video");
+    if (!main || main.clips.some((clip) => clip.sceneId === scene.id)) return;
+    const start = Math.max(0, ...main.clips.map((clip) => clip.start + clip.duration));
+    main.clips.push({
+      id: "clip-" + scene.id,
+      sceneId: scene.id,
+      assetId: null,
+      assetName: "",
+      assetType: "scene",
+      label: scene.heading,
+      start,
+      duration: Math.min(scene.durationSeconds, Math.max(0.25, 180 - start)),
+      sourceIn: 0,
+      sourceOut: null,
+      speed: 1,
+      speedRamp: [],
+      keyframes: [],
+      chromaKey: { enabled: false, color: "#00ff00", similarity: 0.34, softness: 0.12 }
+    });
+    syncSceneTimeline(project);
+  }
+
+  function reorderMainSceneClips(project) {
+    const main = project.tracks?.find((track) => track.id === "track-main-video");
+    if (!main) return;
+    let cursor = 0;
+    for (const scene of project.scenes) {
+      const group = main.clips.filter((item) => item.sceneId === scene.id);
+      if (!group.length) continue;
+      const groupStart = Math.min(...group.map((clip) => clip.start));
+      const groupEnd = Math.max(...group.map((clip) => clip.start + clip.duration));
+      const groupDuration = Math.max(0, groupEnd - groupStart);
+      for (const clip of group) {
+        clip.start = cursor + (clip.start - groupStart);
+      }
+      cursor += groupDuration;
+    }
+    syncSceneTimeline(project);
+  }
+
+  function seekTimelineAssets(elapsedMs) {
+    if (!currentProject) return;
+    const time = Math.max(0, elapsedMs / 1000);
+    for (const track of currentProject.tracks || []) {
+      if (track.kind === "audio" || track.visible === false) continue;
+      for (const clip of track.clips) {
+        if (clip.assetType !== "video" || !clip.assetId) continue;
+        const asset = timelineAssets.get(clip.id);
+        const video = asset?.element;
+        if (!video) continue;
+        const localTime = Math.max(0, Math.min(clip.duration, time - clip.start));
+        video.pause();
+        if (asset) asset.started = false;
+        if (time < clip.start || time >= clip.start + clip.duration) continue;
+        const sourceTime = (clip.sourceIn || 0) + integrateClipSpeed(clip, localTime);
+        const maxTime = clip.sourceOut === null ? Number.MAX_SAFE_INTEGER : clip.sourceOut;
+        const targetTime = Math.max(0, Math.min(maxTime, sourceTime));
+        try {
+          if (Math.abs(video.currentTime - targetTime) > 0.04) {
+            video.currentTime = targetTime;
+            if (!asset.seekHandler) {
+              asset.seekHandler = () => {
+                if (previewing || !currentProject) return;
+                const canvas = byId("media-preview-canvas");
+                const ctx = canvas?.getContext("2d");
+                if (ctx) drawTimelineFrame(ctx, canvas.width, canvas.height, currentProject, previewTimeMs);
+              };
+              video.addEventListener("seeked", asset.seekHandler);
+            }
+          }
+        } catch { /* Some media sources cannot seek until metadata is ready. */ }
+      }
+    }
+  }
+
+  function activateTimelineClipAssets(elapsedMs) {
+    if (!currentProject) return;
+    const seconds = elapsedMs / 1000;
+    const activeNow = new Set();
+    for (const track of currentProject.tracks || []) {
+      if (track.kind === "audio" || track.visible === false) continue;
+      for (const clip of track.clips) {
+        if (clip.assetType !== "video" || !clip.assetId) continue;
+        const asset = timelineAssets.get(clip.id);
+        const video = asset?.element;
+        if (!video || seconds < clip.start || seconds >= clip.start + clip.duration) {
+          if (video && activeTimelineClipIds.has(clip.id)) {
+            video.pause();
+            asset.started = false;
+          }
+          continue;
+        }
+        activeNow.add(clip.id);
+        const localTime = seconds - clip.start;
+        video.playbackRate = sampleClipSpeed(clip, localTime);
+        if (!asset.started) {
+          const sourceTime = (clip.sourceIn || 0) + integrateClipSpeed(clip, localTime);
+          try { video.currentTime = clip.sourceOut === null ? sourceTime : Math.min(sourceTime, clip.sourceOut); }
+          catch { /* metadata is not ready yet */ }
+          asset.started = true;
+          video.play().catch(() => {});
+        }
+        if (clip.sourceOut !== null && Number.isFinite(clip.sourceOut) && video.currentTime >= clip.sourceOut) {
+          video.pause();
+        }
+      }
+    }
+    for (const id of activeTimelineClipIds) {
+      if (!activeNow.has(id)) {
+        const asset = timelineAssets.get(id);
+        asset?.element?.pause?.();
+        if (asset) asset.started = false;
+      }
+    }
+    activeTimelineClipIds.clear();
+    for (const id of activeNow) activeTimelineClipIds.add(id);
+  }
+
+  function keyedFrameForAsset(asset, width, height, key) {
+    const element = asset?.element;
+    if (!element) return null;
+    const sourceWidth = element.videoWidth || element.naturalWidth || 0;
+    const sourceHeight = element.videoHeight || element.naturalHeight || 0;
+    if (!sourceWidth || !sourceHeight) return null;
+    const maxWidth = Math.min(480, sourceWidth);
+    const ratio = maxWidth / sourceWidth;
+    const keyCanvas = asset.keyCanvas || document.createElement("canvas");
+    asset.keyCanvas = keyCanvas;
+    keyCanvas.width = Math.max(1, Math.round(sourceWidth * ratio));
+    keyCanvas.height = Math.max(1, Math.round(sourceHeight * ratio));
+    const keyContext = keyCanvas.getContext("2d", { willReadFrequently: true });
+    if (!keyContext) return element;
+    keyContext.clearRect(0, 0, keyCanvas.width, keyCanvas.height);
+    keyContext.drawImage(element, 0, 0, keyCanvas.width, keyCanvas.height);
+    try {
+      const frame = keyContext.getImageData(0, 0, keyCanvas.width, keyCanvas.height);
+      const data = frame.data;
+      const hex = String(key.color || "#00ff00").replace("#", "");
+      const kr = parseInt(hex.slice(0, 2), 16);
+      const kg = parseInt(hex.slice(2, 4), 16);
+      const kb = parseInt(hex.slice(4, 6), 16);
+      const threshold = Math.max(6, Math.min(180, Number(key.similarity ?? 0.34) * 105));
+      const softness = Math.max(1, Number(key.softness ?? 0.12) * 90);
+      for (let index = 0; index < data.length; index += 4) {
+        const dr = data[index] - kr;
+        const dg = data[index + 1] - kg;
+        const db = data[index + 2] - kb;
+        const distance = Math.sqrt(dr * dr + dg * dg + db * db);
+        const alpha = Math.max(0, Math.min(1, (distance - threshold) / softness));
+        data[index + 3] = Math.round(data[index + 3] * alpha);
+        if (alpha < 1 && kg > kr && kg > kb) {
+          data[index + 1] = Math.min(data[index + 1], Math.round((data[index] + data[index + 2]) * 0.5 + 16));
+        }
+      }
+      keyContext.putImageData(frame, 0, 0);
+      return keyCanvas;
+    } catch {
+      return element;
+    }
+  }
+
+  function applyTimelineMask(asset, source, mask) {
+    if (!mask || mask.shape === "none") return source;
+    const originalWidth = source.width || source.videoWidth || source.naturalWidth || 0;
+    const originalHeight = source.height || source.videoHeight || source.naturalHeight || 0;
+    if (!originalWidth || !originalHeight) return source;
+    const scale = Math.min(1, 480 / originalWidth);
+    const width = Math.max(1, Math.round(originalWidth * scale));
+    const height = Math.max(1, Math.round(originalHeight * scale));
+    const maskCanvas = asset.maskCanvas || document.createElement("canvas");
+    asset.maskCanvas = maskCanvas;
+    maskCanvas.width = width;
+    maskCanvas.height = height;
+    const maskContext = maskCanvas.getContext("2d");
+    if (!maskContext) return source;
+    maskContext.clearRect(0, 0, width, height);
+    if (mask.invert) {
+      maskContext.fillStyle = "#fff";
+      maskContext.fillRect(0, 0, width, height);
+      maskContext.globalCompositeOperation = "destination-out";
+    }
+    const centerX = width * (0.5 + Number(mask.x || 0) * 0.5);
+    const centerY = height * (0.5 + Number(mask.y || 0) * 0.5);
+    const maskWidth = width * Math.max(0.05, Math.min(2, Number(mask.width || 1)));
+    const maskHeight = height * Math.max(0.05, Math.min(2, Number(mask.height || 1)));
+    const left = centerX - maskWidth / 2;
+    const top = centerY - maskHeight / 2;
+    const featherPx = Math.max(0, Math.min(0.5, Number(mask.feather || 0))) * Math.min(width, height);
+    maskContext.save();
+    maskContext.fillStyle = "#fff";
+    if (featherPx > 0) {
+      maskContext.shadowColor = "#fff";
+      maskContext.shadowBlur = featherPx;
+    }
+    maskContext.beginPath();
+    if (mask.shape === "ellipse") {
+      maskContext.ellipse(centerX, centerY, maskWidth / 2, maskHeight / 2, 0, 0, Math.PI * 2);
+    } else if (mask.shape === "rounded" && typeof maskContext.roundRect === "function") {
+      maskContext.roundRect(left, top, maskWidth, maskHeight, Math.min(maskWidth, maskHeight) * 0.12);
+    } else {
+      maskContext.rect(left, top, maskWidth, maskHeight);
+    }
+    maskContext.fill();
+    maskContext.restore();
+    maskContext.globalCompositeOperation = "source-over";
+
+    const output = asset.compositeCanvas || document.createElement("canvas");
+    asset.compositeCanvas = output;
+    output.width = width;
+    output.height = height;
+    const outputContext = output.getContext("2d");
+    if (!outputContext) return source;
+    outputContext.clearRect(0, 0, width, height);
+    outputContext.drawImage(source, 0, 0, width, height);
+    outputContext.globalCompositeOperation = "destination-in";
+    outputContext.drawImage(maskCanvas, 0, 0);
+    outputContext.globalCompositeOperation = "source-over";
+    return output;
+  }
+
+  function drawTimelineOverlays(ctx, width, height, project, elapsedMs) {
+    const time = elapsedMs / 1000;
+    for (const track of project.tracks || []) {
+      if (track.kind === "audio" || track.visible === false) continue;
+      for (const clip of track.clips) {
+        if (!clip.visible || clip.assetType === "scene" || !clip.assetId) continue;
+        if (time < clip.start || time >= clip.start + clip.duration) continue;
+        const asset = timelineAssets.get(clip.id);
+        if (!asset?.element || (asset.type === "video" && asset.element.readyState < 2)) continue;
+        const element = asset.element;
+        if (asset.type === "video" && clip.sourceOut !== null && Number.isFinite(clip.sourceOut) &&
+            element.currentTime >= clip.sourceOut) continue;
+        const sourceWidth = element.videoWidth || element.naturalWidth || 0;
+        const sourceHeight = element.videoHeight || element.naturalHeight || 0;
+        if (!sourceWidth || !sourceHeight) continue;
+        const localTime = time - clip.start;
+        const transform = sampleClipTransform(clip, localTime);
+        const boxWidth = width * Math.max(0.1, Math.min(4, transform.scale));
+        const boxHeight = height * Math.max(0.1, Math.min(4, transform.scale));
+        const sourceRatio = sourceWidth / sourceHeight;
+        const boxRatio = boxWidth / boxHeight;
+        let drawWidth = boxWidth;
+        let drawHeight = boxHeight;
+        if ((clip.fit || "cover") === "contain") {
+          if (sourceRatio > boxRatio) drawHeight = boxWidth / sourceRatio;
+          else drawWidth = boxHeight * sourceRatio;
+        } else if (sourceRatio > boxRatio) {
+          drawWidth = boxHeight * sourceRatio;
+        } else {
+          drawHeight = boxWidth / sourceRatio;
+        }
+        let source = element;
+        if (clip.chromaKey?.enabled) source = keyedFrameForAsset(asset, width, height, clip.chromaKey) || element;
+        if (clip.mask?.shape && clip.mask.shape !== "none") source = applyTimelineMask(asset, source, clip.mask) || source;
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, Math.min(1, transform.opacity));
+        ctx.translate(width * (0.5 + transform.x), height * (0.5 + transform.y));
+        ctx.rotate(transform.rotation * Math.PI / 180);
+        ctx.drawImage(source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+        ctx.restore();
+      }
+    }
+  }
+
   function activateVideoForScene(sceneId) {
     if (activeVideoSceneId === sceneId) return;
     activeVideoSceneId = sceneId || null;
@@ -266,6 +1287,7 @@ export function createMediaWorkspace({ api, toast }) {
     [currentProject.scenes[index], currentProject.scenes[destination]] =
       [currentProject.scenes[destination], currentProject.scenes[index]];
     currentProject.scenes.forEach((scene, order) => { scene.order = order + 1; });
+    reorderMainSceneClips(currentProject);
     renderSceneEditors();
     renderPreview(currentProject, destination);
   }
@@ -314,6 +1336,15 @@ export function createMediaWorkspace({ api, toast }) {
       card.append(makeSelectField("Motion", scene.animation || "rise", "animation", ANIMATION_CHOICES));
       card.append(makeSelectField("Background", scene.background || "midnight", "background", BACKGROUND_CHOICES));
       card.append(makeSelectField("Transition into scene", scene.transition || "fade", "transition", TRANSITION_CHOICES));
+      card.append(makeSelectField("Camera movement", scene.cameraMotion || "static", "cameraMotion", CAMERA_CHOICES));
+      const grade = scene.grade || {};
+      const gradePanel = makeElement("div", "media-grade-controls");
+      gradePanel.append(makeElement("strong", "media-grade-title", "Colour grading"));
+      gradePanel.append(makeRangeField("Brightness", grade.brightness ?? 100, "grade.brightness", 50, 150, 1, "%"));
+      gradePanel.append(makeRangeField("Contrast", grade.contrast ?? 100, "grade.contrast", 50, 150, 1, "%"));
+      gradePanel.append(makeRangeField("Saturation", grade.saturation ?? 100, "grade.saturation", 0, 180, 1, "%"));
+      gradePanel.append(makeRangeField("Soft focus", grade.blur ?? 0, "grade.blur", 0, 12, 0.5, " px"));
+      card.append(gradePanel);
       const assetField = makeElement("label", "media-field");
       assetField.append(makeElement("span", "", "Optional local image or video"));
       const assetInput = makeElement("input", "media-scene-input");
@@ -350,6 +1381,7 @@ export function createMediaWorkspace({ api, toast }) {
           disposeSceneAsset(scene.id);
           currentProject.scenes.splice(index, 1);
           currentProject.scenes.forEach((item, order) => { item.order = order + 1; });
+          syncSceneTimeline(currentProject);
           renderSceneEditors();
           renderPreview(currentProject, 0);
         });
@@ -363,6 +1395,7 @@ export function createMediaWorkspace({ api, toast }) {
     if (count) count.textContent = currentProject.scenes.length + " / " + MAX_SCENES + " scenes";
     const add = byId("media-add-scene");
     if (add) add.disabled = currentProject.status !== "draft" || currentProject.scenes.length >= MAX_SCENES;
+    renderTimelineEditor();
   }
 
   function setEditorControls() {
@@ -380,12 +1413,28 @@ export function createMediaWorkspace({ api, toast }) {
       const element = byId(id);
       if (element) element.disabled = !approved || exporting;
     }
-    const audioInput = byId("media-audio-file");
-    if (audioInput) audioInput.disabled = exporting;
-    const volume = byId("media-audio-volume");
-    if (volume) volume.disabled = exporting;
+    for (const id of ["media-audio-file", "media-music-file", "media-audio-volume", "media-music-volume"]) {
+      const element = byId(id);
+      if (element) element.disabled = exporting;
+    }
     const exportButton = byId("media-export-webm");
-    if (exportButton) exportButton.textContent = audioFile ? "Export video + audio" : "Export video (silent)";
+    const hasTimelineAudio = Boolean(currentProject?.tracks?.some((track) =>
+      track.kind === "audio" && track.muted !== true && track.clips.some((clip) => timelineAssets.has(clip.id))
+    ));
+    if (exportButton) exportButton.textContent = audioFile || musicFile || hasTimelineAudio
+      ? "Export video + mixed audio" : "Export video (silent)";
+    const timelineRoot = byId("media-timeline-tracks");
+    if (timelineRoot) timelineRoot.querySelectorAll("input, select").forEach((control) => {
+      control.disabled = !editable || exporting;
+    });
+    const timelineInspector = byId("media-timeline-inspector");
+    if (timelineInspector) timelineInspector.querySelectorAll("input, select, button").forEach((control) => {
+      control.disabled = !editable || exporting;
+    });
+    for (const id of ["media-timeline-add-video", "media-timeline-add-overlay", "media-timeline-add-audio"]) {
+      const control = byId(id);
+      if (control) control.disabled = !editable || exporting || (currentProject?.tracks?.length || 0) >= 8;
+    }
     const status = byId("media-export-status");
     if (status) status.textContent = approved
       ? "Approved storyboard. Export files are generated locally in this browser."
@@ -399,6 +1448,7 @@ export function createMediaWorkspace({ api, toast }) {
     if (selectedProjectId && selectedProjectId !== id) {
       releaseProjectAssets(selectedProjectId);
       setAudioTrack(null);
+      setMusicTrack(null);
     }
     selectedProjectId = id;
     currentProject = structuredClone(selected);
@@ -413,6 +1463,7 @@ export function createMediaWorkspace({ api, toast }) {
       currentProject.durationSeconds + " seconds · " + currentProject.status;
     byId("media-generation-note").textContent = currentProject.generationNote || "";
     renderSceneEditors();
+    renderTimelineEditor();
     renderPreview(currentProject, 0);
     setEditorControls();
   }
@@ -577,6 +1628,42 @@ export function createMediaWorkspace({ api, toast }) {
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
 
+    const p = Math.max(0, Math.min(1, progress));
+    const motion = scene.cameraMotion || "static";
+    let zoom = 1;
+    let offsetX = 0;
+    let offsetY = 0;
+    if (motion === "ken-burns") {
+      zoom = 1.035 + p * 0.14;
+      offsetX = -0.018 * p;
+      offsetY = -0.012 * p;
+    } else if (motion === "push-in") {
+      zoom = 1 + p * 0.2;
+    } else if (motion === "pull-out") {
+      zoom = 1.2 - p * 0.2;
+    } else if (motion === "pan-left") {
+      zoom = 1.12;
+      offsetX = 0.05 - p * 0.1;
+    } else if (motion === "pan-right") {
+      zoom = 1.12;
+      offsetX = -0.05 + p * 0.1;
+    } else if (motion === "drift-up") {
+      zoom = 1.12;
+      offsetY = 0.045 - p * 0.09;
+    }
+    ctx.save();
+    ctx.translate(width / 2 + offsetX * width, height / 2 + offsetY * height);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-width / 2, -height / 2);
+
+    const grade = scene.grade || {};
+    const brightness = Math.max(50, Math.min(150, Number(grade.brightness ?? 100)));
+    const contrast = Math.max(50, Math.min(150, Number(grade.contrast ?? 100)));
+    const saturation = Math.max(0, Math.min(180, Number(grade.saturation ?? 100)));
+    const blur = Math.max(0, Math.min(12, Number(grade.blur ?? 0)));
+    ctx.filter = "brightness(" + brightness + "%) contrast(" + contrast + "%) saturate(" +
+      saturation + "%) blur(" + blur + "px)";
+
     const asset = sceneAssets.get(scene.id);
     const assetElement = asset?.element;
     const assetWidth = asset?.type === "video" ? assetElement?.videoWidth : assetElement?.naturalWidth;
@@ -666,37 +1753,80 @@ export function createMediaWorkspace({ api, toast }) {
     ctx.fillStyle = isPaper ? "rgba(38,51,66,0.62)" : "rgba(255,255,255,0.68)";
     ctx.font = "500 " + Math.round(unit * 0.016) + "px system-ui, sans-serif";
     ctx.fillText(project.title, margin, height * 0.955);
-    ctx.restore();
+    ctx.restore(); // Restore the camera transform.
+    ctx.restore(); // Restore the scene opacity and drawing state.
   }
 
   function sceneAtTime(project, elapsedMs) {
-    const totalMs = project.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
+    const totalMs = Math.max(0, (project.durationSeconds || 0) * 1000);
     const bounded = Math.max(0, Math.min(totalMs, elapsedMs));
+    const mainTrack = project.tracks?.find((track) => track.id === "track-main-video");
+    if (mainTrack) {
+      if (mainTrack.visible === false) return { index: -1, previousIndex: -1, sceneElapsedMs: 0, progress: 0, totalMs };
+      const time = bounded / 1000;
+      const clips = mainTrack.clips
+        .filter((clip) => clip.sceneId && clip.visible !== false)
+        .slice()
+        .sort((a, b) => a.start - b.start);
+      const activeIndex = clips.findIndex((clip) => time >= clip.start && time < clip.start + clip.duration);
+      if (activeIndex < 0) return { index: -1, previousIndex: -1, sceneElapsedMs: 0, progress: 0, totalMs };
+      const clip = clips[activeIndex];
+      const index = project.scenes.findIndex((scene) => scene.id === clip.sceneId);
+      if (index < 0) return { index: -1, previousIndex: -1, sceneElapsedMs: 0, progress: 0, totalMs };
+      const scene = project.scenes[index];
+      const localTime = Math.max(0, time - clip.start);
+      const sourceTime = Math.max(0, Number(clip.sourceIn || 0) + integrateClipSpeed(clip, localTime));
+      const sceneElapsedMs = Math.min(scene.durationSeconds * 1000, sourceTime * 1000);
+      let previousIndex = -1;
+      for (let cursor = activeIndex - 1; cursor >= 0; cursor--) {
+        const previous = project.scenes.findIndex((item) => item.id === clips[cursor].sceneId);
+        if (previous >= 0 && previous !== index) {
+          previousIndex = previous;
+          break;
+        }
+      }
+      return {
+        index,
+        previousIndex,
+        sceneElapsedMs,
+        progress: Math.min(1, sceneElapsedMs / Math.max(1, scene.durationSeconds * 1000)),
+        totalMs
+      };
+    }
+
+    const sceneDurationMs = project.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
+    const legacyTime = Math.max(0, Math.min(sceneDurationMs, bounded));
     let cursor = 0;
     for (let index = 0; index < project.scenes.length; index++) {
       const durationMs = project.scenes[index].durationSeconds * 1000;
-      if (bounded < cursor + durationMs || index === project.scenes.length - 1) {
-        return { index, sceneElapsedMs: Math.min(durationMs, bounded - cursor), progress: Math.min(1, Math.max(0, (bounded - cursor) / durationMs)), totalMs };
+      if (legacyTime < cursor + durationMs || index === project.scenes.length - 1) {
+        return {
+          index,
+          previousIndex: index - 1,
+          sceneElapsedMs: Math.min(durationMs, Math.max(0, legacyTime - cursor)),
+          progress: Math.min(1, Math.max(0, (legacyTime - cursor) / durationMs)),
+          totalMs
+        };
       }
       cursor += durationMs;
     }
-    return { index: 0, sceneElapsedMs: 0, progress: 0, totalMs };
+    return { index: -1, previousIndex: -1, sceneElapsedMs: 0, progress: 0, totalMs };
   }
 
   function drawTimelineFrame(ctx, width, height, project, elapsedMs) {
     const frame = sceneAtTime(project, elapsedMs);
-    const { index, sceneElapsedMs, progress } = frame;
-    const scene = project.scenes[index];
+    const { index, previousIndex, sceneElapsedMs, progress } = frame;
+    const scene = index >= 0 ? project.scenes[index] : null;
     const transitionMs = 650;
     const transitionProgress = Math.min(1, sceneElapsedMs / transitionMs);
-    const transition = scene.transition || "fade";
+    const transition = scene?.transition || "cut";
     ctx.clearRect(0, 0, width, height);
-    if (index === 0 || sceneElapsedMs >= transitionMs || transition === "cut") {
+    if (!scene) {
+      ctx.fillStyle = "#06101f";
+      ctx.fillRect(0, 0, width, height);
+    } else if (previousIndex < 0 || sceneElapsedMs >= transitionMs || transition === "cut") {
       drawScene(ctx, width, height, project, index, progress);
-      return;
-    }
-    const previousIndex = index - 1;
-    if (transition === "fade") {
+    } else if (transition === "fade") {
       drawScene(ctx, width, height, project, previousIndex, 1, 1 - transitionProgress);
       drawScene(ctx, width, height, project, index, progress, transitionProgress);
     } else if (transition === "slide") {
@@ -727,29 +1857,161 @@ export function createMediaWorkspace({ api, toast }) {
     } else {
       drawScene(ctx, width, height, project, index, progress);
     }
+    drawTimelineOverlays(ctx, width, height, project, elapsedMs);
   }
 
-  function renderPreview(project, index = 0) {
+  function renderPreviewAtTime(elapsedMs) {
     const canvas = byId("media-preview-canvas");
-    if (!canvas || !project?.scenes?.length) return;
-    const size = FORMATS[project.format] || FORMATS["vertical-short"];
+    if (!canvas || !currentProject?.scenes?.length) return;
+    previewTimeMs = Math.max(0, Math.min(currentProject.durationSeconds * 1000, elapsedMs));
+    seekTimelineAssets(previewTimeMs);
+    const playhead = byId("media-timeline-playhead");
+    const playheadValue = byId("media-timeline-playhead-value");
+    if (playhead) {
+      playhead.max = String(Math.max(0.25, currentProject.durationSeconds || 1));
+      playhead.value = String(previewTimeMs / 1000);
+    }
+    if (playheadValue) playheadValue.textContent = (previewTimeMs / 1000).toFixed(2) + "s";
+    const size = FORMATS[currentProject.format] || FORMATS["vertical-short"];
     canvas.width = Math.min(size.width, 960);
     canvas.height = Math.round(canvas.width * size.height / size.width);
     if (canvas.height > 960) {
       canvas.height = 960;
       canvas.width = Math.round(canvas.height * size.width / size.height);
     }
-    let startMs = 0;
-    for (let cursor = 0; cursor < Math.min(index, project.scenes.length); cursor++) {
-      startMs += project.scenes[cursor].durationSeconds * 1000;
-    }
     const ctx = canvas.getContext("2d");
-    if (ctx) drawTimelineFrame(ctx, canvas.width, canvas.height, project, startMs + 1);
+    if (ctx) drawTimelineFrame(ctx, canvas.width, canvas.height, currentProject, Math.max(0, elapsedMs));
+  }
+
+  function renderPreview(project, index = 0) {
+    const scene = project.scenes[index];
+    const main = project.tracks?.find((track) => track.id === "track-main-video");
+    const clip = main?.clips.find((item) => item.sceneId === scene?.id);
+    renderPreviewAtTime(clip ? clip.start * 1000 + 1 : 0);
+  }
+
+  async function startTimelinePreviewAudio(offsetMs) {
+    const audioTracks = (currentProject?.tracks || []).filter((track) => track.kind === "audio" && track.visible !== false && track.muted !== true);
+    const clips = audioTracks.flatMap((track) => track.clips
+      .filter((clip) => clip.visible !== false && clip.muted !== true && clip.assetType === "audio" && timelineAssets.get(clip.id)?.file)
+      .map((clip) => ({ clip, track })));
+    const hasGlobalAudio = Boolean(audioFile || musicFile);
+    if (!clips.length && !hasGlobalAudio) return 0;
+    const AudioContextType = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextType) return 0;
+    const context = new AudioContextType();
+    previewAudioContext = context;
+    previewAudioSources = [];
+    await context.resume();
+    const loadBuffer = async (file) => {
+      let buffer = previewAudioBuffers.get(file);
+      if (!buffer) {
+        buffer = await context.decodeAudioData(await file.arrayBuffer());
+        previewAudioBuffers.set(file, buffer);
+      }
+      return buffer;
+    };
+    const filesToDecode = [...new Set([
+      ...clips.map(({ clip }) => timelineAssets.get(clip.id)?.file),
+      audioFile,
+      musicFile
+    ].filter(Boolean))];
+    await Promise.all(filesToDecode.map(loadBuffer));
+    if (!previewing || previewAudioContext !== context || context.state === "closed") return 0;
+    const timelineStart = Math.max(0, offsetMs / 1000);
+    const scheduleAt = context.currentTime + 0.06;
+    const scheduleFile = async (file, startAt, offset, options = {}) => {
+      const buffer = await loadBuffer(file);
+      if (!previewing || previewAudioContext !== context || context.state === "closed") return;
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.loop = options.loop === true;
+      const gain = context.createGain();
+      gain.gain.value = Math.max(0, Math.min(1.5, Number(options.volume ?? 1)));
+      source.connect(gain);
+      gain.connect(context.destination);
+      if (options.rampClip) {
+        const clip = options.rampClip;
+        const localStart = options.localStart || 0;
+        source.playbackRate.setValueAtTime(sampleClipSpeed(clip, localStart), startAt);
+        const steps = Math.max(1, Math.ceil((clip.duration - localStart) * 20));
+        for (let step = 1; step <= steps; step++) {
+          const localTime = localStart + (clip.duration - localStart) * step / steps;
+          source.playbackRate.setValueAtTime(sampleClipSpeed(clip, localTime), startAt + (localTime - localStart));
+        }
+      }
+      if (options.endAt !== undefined) source.stop(options.endAt);
+      source.start(startAt, Math.max(0, Math.min(Math.max(0, buffer.duration - 0.01), offset)));
+      previewAudioSources.push(source);
+    };
+
+    for (const { clip } of clips) {
+      const clipEnd = clip.start + clip.duration;
+      if (timelineStart >= clipEnd) continue;
+      const localStart = Math.max(0, timelineStart - clip.start);
+      const delay = Math.max(0, clip.start - timelineStart);
+      const startAt = scheduleAt + delay;
+      const sourceTime = Math.max(0, Number(clip.sourceIn || 0) + integrateClipSpeed(clip, localStart));
+      const availableEnd = clip.sourceOut === null ? undefined : Number(clip.sourceOut);
+      const clipEndAt = scheduleAt + delay + (clip.duration - localStart);
+      await scheduleFile(timelineAssets.get(clip.id).file, startAt, sourceTime, {
+        volume: clip.volume ?? 1,
+        rampClip: clip,
+        localStart,
+        endAt: clipEndAt
+      });
+      if (!previewing || previewAudioContext !== context) return;
+      if (availableEnd !== undefined && availableEnd <= sourceTime) continue;
+    }
+    if (audioFile) {
+      const buffer = await loadBuffer(audioFile);
+      if (previewing && previewAudioContext === context && timelineStart < buffer.duration) {
+        const source = context.createBufferSource();
+        source.buffer = buffer;
+        const gain = context.createGain();
+        gain.gain.value = Math.max(0, Math.min(1.5, Number(byId("media-audio-volume")?.value ?? 1)));
+        source.connect(gain);
+        gain.connect(context.destination);
+        source.start(scheduleAt, timelineStart);
+        previewAudioSources.push(source);
+      }
+    }
+    if (musicFile) {
+      const buffer = await loadBuffer(musicFile);
+      if (previewing && previewAudioContext === context && buffer.duration > 0) {
+        const source = context.createBufferSource();
+        source.buffer = buffer;
+        source.loop = true;
+        const gain = context.createGain();
+        const requested = Math.max(0, Math.min(1.5, Number(byId("media-music-volume")?.value ?? 0.65)));
+        gain.gain.value = requested * (audioFile ? 0.32 : 1);
+        source.connect(gain);
+        gain.connect(context.destination);
+        source.start(scheduleAt, timelineStart % buffer.duration);
+        previewAudioSources.push(source);
+      }
+    }
+    return 60;
   }
 
   function stopPreview() {
     previewing = false;
     pauseSceneVideos();
+    for (const source of previewAudioSources) {
+      try { source.stop(); } catch { /* source may already have ended */ }
+    }
+    previewAudioSources = [];
+    if (previewAudioContext && previewAudioContext.state !== "closed") {
+      const context = previewAudioContext;
+      previewAudioContext = null;
+      context.close().catch(() => {});
+    }
+    for (const id of activeTimelineClipIds) {
+      const asset = timelineAssets.get(id);
+      asset?.element?.pause?.();
+      if (asset) asset.started = false;
+    }
+    activeTimelineClipIds.clear();
     if (previewFrame) cancelAnimationFrame(previewFrame);
     previewFrame = 0;
     const button = byId("media-preview-button");
@@ -763,14 +2025,28 @@ export function createMediaWorkspace({ api, toast }) {
       return;
     }
     previewing = true;
-    previewStartedAt = performance.now();
+    const totalMs = Math.max(1, currentProject.durationSeconds * 1000);
+    previewTimeMs = previewTimeMs >= totalMs ? 0 : previewTimeMs;
     byId("media-preview-button").textContent = "Stop preview";
-    const totalMs = currentProject.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
+    let audioLeadMs = 0;
+    try { audioLeadMs = await startTimelinePreviewAudio(previewTimeMs) || 0; }
+    catch (error) { setExportStatus("Timeline audio preview could not start: " + error.message, true); }
+    if (!previewing) return;
+    previewStartedAt = performance.now() + audioLeadMs - previewTimeMs;
     const tick = (now) => {
       if (!previewing || !currentProject) return;
       const elapsed = (now - previewStartedAt) % totalMs;
+      previewTimeMs = elapsed;
+      if (now - lastPlayheadUpdate > 100) {
+        const playhead = byId("media-timeline-playhead");
+        const value = byId("media-timeline-playhead-value");
+        if (playhead) playhead.value = String(elapsed / 1000);
+        if (value) value.textContent = (elapsed / 1000).toFixed(2) + "s";
+        lastPlayheadUpdate = now;
+      }
       const current = sceneAtTime(currentProject, elapsed);
       activateVideoForScene(currentProject.scenes[current.index]?.id);
+      activateTimelineClipAssets(elapsed);
       const canvas = byId("media-preview-canvas");
       const ctx = canvas?.getContext("2d");
       if (ctx) drawTimelineFrame(ctx, canvas.width, canvas.height, currentProject, elapsed);
@@ -794,6 +2070,13 @@ export function createMediaWorkspace({ api, toast }) {
         animation: value("animation"),
         background: value("background"),
         transition: value("transition"),
+        cameraMotion: value("cameraMotion"),
+        grade: {
+          brightness: Number(value("grade.brightness")),
+          contrast: Number(value("grade.contrast")),
+          saturation: Number(value("grade.saturation")),
+          blur: Number(value("grade.blur"))
+        },
         durationSeconds: Number(value("durationSeconds"))
       };
     });
@@ -811,6 +2094,7 @@ export function createMediaWorkspace({ api, toast }) {
         currentProject = null;
         selectedProjectId = null;
         setAudioTrack(null);
+        setMusicTrack(null);
         byId("media-editor").classList.add("hidden");
       }
     }
@@ -823,8 +2107,11 @@ export function createMediaWorkspace({ api, toast }) {
       audience: byId("media-editor-audience").value,
       tone: byId("media-editor-tone").value,
       visualStyle: byId("media-editor-visual-style").value,
-      scenes: readSceneEditors()
+      scenes: readSceneEditors(),
+      tracks: currentProject.tracks
     };
+    syncSceneTimeline(currentProject);
+    currentProject.tracks = structuredClone(currentProject.tracks);
     const result = await api("/api/media/projects/" + encodeURIComponent(currentProject.id), {
       method: "PATCH",
       body: JSON.stringify(payload)
@@ -978,7 +2265,7 @@ export function createMediaWorkspace({ api, toast }) {
   async function exportWebm() {
     const project = approvedProject();
     if (typeof MediaRecorder === "undefined" || typeof HTMLCanvasElement.prototype.captureStream !== "function") {
-      throw new Error("WebM export is not supported by this browser. Export the storyboard, script, captions or scene PNGs instead.");
+      throw new Error("Video export is not supported by this browser. Export the storyboard, script, captions or scene PNGs instead.");
     }
     const size = FORMATS[project.format] || FORMATS["vertical-short"];
     const canvas = document.createElement("canvas");
@@ -988,43 +2275,87 @@ export function createMediaWorkspace({ api, toast }) {
     if (!ctx) throw new Error("The browser could not create a video canvas.");
 
     let audioContext = null;
-    let audioSource = null;
+    const audioSources = [];
+    const scheduledAudioSources = new Set();
     let audioDestination = null;
     let canvasStream = null;
     let stream = null;
     let animation = 0;
     let recorder = null;
-    const totalMs = project.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
+    const totalMs = Math.max(1, project.durationSeconds * 1000);
     const chunks = [];
+    const timelineAudioClips = (project.tracks || []).filter((track) => track.kind === "audio" && track.visible !== false && track.muted !== true)
+      .flatMap((track) => track.clips.filter((clip) => !clip.muted && clip.visible !== false && clip.assetType === "audio" && timelineAssets.get(clip.id)?.file));
+    const hasAudio = Boolean(audioFile || musicFile || timelineAudioClips.length);
 
-    setExportBusy(true, audioFile
-      ? "Preparing the local audio track and rendering the video. Keep this tab open until export finishes."
-      : "Rendering motion graphics without an audio track. Add a local audio file above to include voiceover or music.");
+    setExportBusy(true, hasAudio
+      ? "Preparing voiceover and background music, then rendering locally. Keep this tab open until export finishes."
+      : "Rendering motion graphics without audio. Add voiceover or background music to create a mixed soundtrack.");
 
     try {
       canvasStream = canvas.captureStream(20);
       let audioTracks = [];
-      if (audioFile) {
+      if (hasAudio) {
         const AudioContextType = window.AudioContext || window.webkitAudioContext;
         if (!AudioContextType || typeof MediaStream === "undefined") {
-          throw new Error("This browser cannot mix a local audio track into WebM. Remove the audio file and export silent motion graphics.");
+          throw new Error("This browser cannot mix local audio tracks into video. Remove the audio tracks and export silent motion graphics.");
         }
         audioContext = new AudioContextType();
         await audioContext.resume();
-        const decoded = await audioContext.decodeAudioData(await audioFile.arrayBuffer());
         audioDestination = audioContext.createMediaStreamDestination();
-        audioSource = audioContext.createBufferSource();
-        audioSource.buffer = decoded;
-        const gain = audioContext.createGain();
-        gain.gain.value = Math.max(0, Math.min(1.5, Number(byId("media-audio-volume")?.value || 1)));
-        audioSource.connect(gain);
-        gain.connect(audioDestination);
+        const sources = [
+          { file: audioFile, volumeId: "media-audio-volume", loop: false, role: "voiceover" },
+          { file: musicFile, volumeId: "media-music-volume", loop: true, role: "music" }
+        ].filter((track) => track.file);
+        for (const track of sources) {
+          const decoded = await audioContext.decodeAudioData(await track.file.arrayBuffer());
+          const source = audioContext.createBufferSource();
+          source.buffer = decoded;
+          source.loop = track.loop;
+          const gain = audioContext.createGain();
+          const control = byId(track.volumeId);
+          const requestedVolume = Math.max(0, Math.min(1.5, Number(control?.value ?? 1)));
+          // Keep background music under narration without requiring a separate side-chain compressor.
+          const effectiveVolume = track.role === "music" && audioFile ? requestedVolume * 0.32 : requestedVolume;
+          gain.gain.value = effectiveVolume;
+          source.connect(gain);
+          gain.connect(audioDestination);
+          audioSources.push(source);
+        }
+
+        for (const clip of timelineAudioClips) {
+          const asset = timelineAssets.get(clip.id);
+          if (!asset?.file) continue;
+          const decoded = await audioContext.decodeAudioData(await asset.file.arrayBuffer());
+          const source = audioContext.createBufferSource();
+          source.buffer = decoded;
+          const gain = audioContext.createGain();
+          gain.gain.value = Math.max(0, Math.min(1.5, Number(clip.volume ?? 1)));
+          source.connect(gain);
+          gain.connect(audioDestination);
+          const startAt = audioContext.currentTime + 0.2 + Math.max(0, clip.start);
+          const initialRate = sampleClipSpeed(clip, 0);
+          source.playbackRate.setValueAtTime(initialRate, startAt);
+          const sampleCount = Math.max(2, Math.ceil(clip.duration * 12));
+          for (let index = 1; index <= sampleCount; index++) {
+            const localTime = clip.duration * index / sampleCount;
+            source.playbackRate.setValueAtTime(sampleClipSpeed(clip, localTime), startAt + localTime);
+          }
+          const sourceOffset = Math.max(0, Number(clip.sourceIn || 0));
+          const availableSourceDuration = clip.sourceOut === null
+            ? Math.max(0.05, decoded.duration - sourceOffset)
+            : Math.max(0.05, Number(clip.sourceOut) - sourceOffset);
+          source.start(startAt, sourceOffset, availableSourceDuration);
+          source.stop(startAt + Math.max(0.05, clip.duration));
+          audioSources.push(source);
+          scheduledAudioSources.add(source);
+        }
         audioTracks = audioDestination.stream.getAudioTracks();
       }
       stream = typeof MediaStream !== "undefined"
         ? new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks])
         : canvasStream;
-      const mediaTypes = audioFile
+      const mediaTypes = hasAudio
         ? [
             { mime: "video/mp4;codecs=avc1.42E01E,mp4a.40.2", extension: ".mp4" },
             { mime: "video/webm;codecs=vp9,opus", extension: ".webm" },
@@ -1057,15 +2388,18 @@ export function createMediaWorkspace({ api, toast }) {
       activateVideoForScene(project.scenes[0]?.id);
       const startedAt = performance.now();
       recorder.start(500);
-      if (audioSource) audioSource.start();
+      for (const source of audioSources) {
+        if (!scheduledAudioSources.has(source)) source.start();
+      }
       await new Promise((resolve) => {
         const frame = (now) => {
           const elapsed = Math.min(totalMs, now - startedAt);
           drawTimelineFrame(ctx, canvas.width, canvas.height, project, elapsed);
           const current = sceneAtTime(project, elapsed);
           activateVideoForScene(project.scenes[current.index]?.id);
+          activateTimelineClipAssets(elapsed);
           setExportStatus("Rendering scene " + (current.index + 1) + " of " + project.scenes.length +
-            (audioFile ? " · audio mixed locally" : " · no audio track") + "…");
+            (hasAudio ? " · voiceover/music mixed locally" : " · no audio track") + "…");
           if (elapsed >= totalMs) {
             if (recorder?.state !== "inactive") recorder.stop();
             resolve();
@@ -1076,19 +2410,27 @@ export function createMediaWorkspace({ api, toast }) {
         animation = requestAnimationFrame(frame);
       });
       const blob = await finished;
-      const suffix = audioFile ? "-with-audio" + extension : extension;
+      const suffix = hasAudio ? "-mixed-audio" + extension : extension;
       downloadBlob(cleanFileName(project.title) + suffix, blob);
       setExportStatus("Video export finished as " + extension.slice(1).toUpperCase() +
-        (audioFile ? " with the selected local audio track." : " without an audio track.") +
+        (hasAudio ? " with the selected local audio mix." : " without audio.") +
         " Preview the downloaded file before using it.");
     } finally {
       if (animation) cancelAnimationFrame(animation);
       if (recorder && recorder.state !== "inactive") recorder.stop();
       pauseSceneVideos();
+      for (const id of activeTimelineClipIds) {
+        const asset = timelineAssets.get(id);
+        asset?.element?.pause?.();
+        if (asset) asset.started = false;
+      }
+      activeTimelineClipIds.clear();
       for (const mediaStream of [stream, canvasStream, audioDestination?.stream]) {
         mediaStream?.getTracks().forEach((track) => track.stop());
       }
-      try { audioSource?.stop(); } catch { /* source may already have ended */ }
+      for (const source of audioSources) {
+        try { source.stop(); } catch { /* source may already have ended */ }
+      }
       if (audioContext && audioContext.state !== "closed") await audioContext.close().catch(() => {});
       setExportBusy(false);
     }
@@ -1108,7 +2450,9 @@ export function createMediaWorkspace({ api, toast }) {
         preview.classList.add("hidden");
         preview.load();
       }
-      setExportStatus("No audio track selected. The next WebM export will be silent.");
+      setExportStatus(musicFile
+        ? "Background music remains selected. Add a voiceover to create a layered mix."
+        : "No audio tracks selected. The next video export will be silent.");
       setEditorControls();
       return;
     }
@@ -1126,6 +2470,43 @@ export function createMediaWorkspace({ api, toast }) {
       preview.load();
     }
     setExportStatus("Local audio selected: " + file.name + ". It will be mixed into the next WebM export on this device.");
+    setEditorControls();
+  }
+
+  function setMusicTrack(file) {
+    const preview = byId("media-music-preview");
+    if (musicObjectUrl) {
+      URL.revokeObjectURL(musicObjectUrl);
+      musicObjectUrl = null;
+    }
+    musicFile = null;
+    if (!file) {
+      preview?.pause();
+      if (preview) {
+        preview.removeAttribute("src");
+        preview.classList.add("hidden");
+        preview.load();
+      }
+      setExportStatus(audioFile
+        ? "Voiceover track ready. Add background music for a layered audio mix."
+        : "No audio tracks selected. The next video export will be silent.");
+      setEditorControls();
+      return;
+    }
+    if (!String(file.type || "").toLowerCase().startsWith("audio/")) {
+      throw new Error("Choose an audio file such as MP3, WAV, M4A or OGG for background music.");
+    }
+    if (file.size > 60 * 1024 * 1024) {
+      throw new Error("Music files must be 60 MiB or smaller for in-browser export.");
+    }
+    musicFile = file;
+    musicObjectUrl = URL.createObjectURL(file);
+    if (preview) {
+      preview.src = musicObjectUrl;
+      preview.classList.remove("hidden");
+      preview.load();
+    }
+    setExportStatus("Local background music selected: " + file.name + ". It loops to the video duration and is mixed locally.");
     setEditorControls();
   }
 
@@ -1169,7 +2550,9 @@ export function createMediaWorkspace({ api, toast }) {
       transition: "fade",
       order: currentProject.scenes.length + 1
     });
+    addSceneTimelineClip(currentProject, currentProject.scenes[currentProject.scenes.length - 1]);
     renderSceneEditors();
+    renderTimelineEditor();
     renderPreview(currentProject, currentProject.scenes.length - 1);
   }
 
@@ -1213,13 +2596,57 @@ export function createMediaWorkspace({ api, toast }) {
       const cards = [...byId("media-editor-scenes").querySelectorAll(".media-scene-editor")];
       const index = cards.indexOf(card);
       if (index < 0 || !currentProject.scenes[index]) return;
-      currentProject.scenes[index][field] = field === "durationSeconds"
-        ? Number(event.target.value)
-        : event.target.value;
+      if (field === "durationSeconds") {
+        const main = currentProject.tracks.find((track) => track.id === "track-main-video");
+        const clip = main?.clips.find((item) => item.sceneId === currentProject.scenes[index].id);
+        if (clip) clip.duration = currentProject.scenes[index].durationSeconds;
+      }
+      if (field.startsWith("grade.")) {
+        const gradeField = field.slice("grade.".length);
+        currentProject.scenes[index].grade ||= { brightness: 100, contrast: 100, saturation: 100, blur: 0 };
+        currentProject.scenes[index].grade[gradeField] = Number(event.target.value);
+      } else {
+        currentProject.scenes[index][field] = field === "durationSeconds"
+          ? Number(event.target.value)
+          : event.target.value;
+      }
+      syncSceneTimeline(currentProject);
+      currentProject.durationSeconds = Math.min(180, Math.max(0,
+        ...currentProject.tracks.flatMap((track) => track.clips.map((clip) => clip.start + clip.duration))
+      ));
+      renderTimelineEditor();
       renderPreview(currentProject, index);
     };
     byId("media-editor-scenes")?.addEventListener("input", updateSceneField);
     byId("media-editor-scenes")?.addEventListener("change", updateSceneField);
+    byId("media-timeline-tracks")?.addEventListener("input", (event) => {
+      if (event.target?.dataset?.timelineField) updateTimelineField(event);
+    });
+    byId("media-timeline-tracks")?.addEventListener("change", (event) => {
+      if (event.target?.dataset?.trackField) {
+        const track = currentProject?.tracks.find((item) => item.id === event.target.dataset.trackId);
+        if (track) track[event.target.dataset.trackField] = event.target.dataset.trackField === "muted" ? !event.target.checked : event.target.checked;
+        renderPreviewAtTime(0);
+      } else if (event.target?.dataset?.timelineField) {
+        updateTimelineField(event);
+        renderTimelineEditor();
+      }
+    });
+    byId("media-timeline-playhead")?.addEventListener("input", (event) => {
+      if (previewing) stopPreview();
+      renderPreviewAtTime(Number(event.target.value) * 1000);
+    });
+    byId("media-timeline-inspector")?.addEventListener("input", updateTimelineField);
+    byId("media-timeline-inspector")?.addEventListener("change", (event) => {
+      if (event.target?.dataset?.timelineField) {
+        updateTimelineField(event);
+        renderTimelineEditor();
+      }
+    });
+    byId("media-timeline-inspector")?.addEventListener("click", handleTimelineAction);
+    byId("media-timeline-add-video")?.addEventListener("click", () => addTimelineTrack("video"));
+    byId("media-timeline-add-overlay")?.addEventListener("click", () => addTimelineTrack("overlay"));
+    byId("media-timeline-add-audio")?.addEventListener("click", () => addTimelineTrack("audio"));
     byId("media-add-scene")?.addEventListener("click", addScene);
     byId("media-save-button")?.addEventListener("click", async () => {
       const button = byId("media-save-button");
@@ -1260,11 +2687,25 @@ export function createMediaWorkspace({ api, toast }) {
       catch (error) {
         event.target.value = "";
         setAudioTrack(null);
+        setMusicTrack(null);
         setExportStatus(error.message, true);
       }
     });
     byId("media-audio-volume")?.addEventListener("input", (event) => {
       setExportStatus("Export volume: " + Math.round(Number(event.target.value) * 100) + "%.");
+    });
+    byId("media-music-file")?.addEventListener("change", (event) => {
+      try { setMusicTrack(event.target.files?.[0] || null); }
+      catch (error) {
+        event.target.value = "";
+        setMusicTrack(null);
+        setExportStatus(error.message, true);
+      }
+    });
+    byId("media-music-volume")?.addEventListener("input", (event) => {
+      const requested = Math.round(Number(event.target.value) * 100);
+      const note = audioFile ? " (auto-lowered under voiceover)" : "";
+      setExportStatus("Background music level: " + requested + "%" + note + ".");
     });
   }
 
