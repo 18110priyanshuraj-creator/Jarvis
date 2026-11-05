@@ -18,6 +18,7 @@ export function createMediaWorkspace({ api, toast }) {
   let audioFile = null;
   let audioObjectUrl = null;
   const sceneAssets = new Map();
+  let activeVideoSceneId = null;
 
   const byId = (id) => document.getElementById(id);
 
@@ -201,18 +202,24 @@ export function createMediaWorkspace({ api, toast }) {
     setExportStatus("Local scene asset selected: " + file.name + ". It will be included in the exported video and is not uploaded.");
   }
 
-  async function playSceneVideos() {
-    const videos = [...sceneAssets.values()].filter((asset) => asset.type === "video");
-    await Promise.all(videos.map(async (asset) => {
-      try {
-        await asset.element.play();
-      } catch {
-        // A blocked local video remains visible as a still frame where available.
+  function activateVideoForScene(sceneId) {
+    if (activeVideoSceneId === sceneId) return;
+    activeVideoSceneId = sceneId || null;
+    for (const [id, asset] of sceneAssets.entries()) {
+      if (asset.type !== "video") continue;
+      if (id === sceneId) {
+        try { asset.element.currentTime = 0; } catch { /* metadata may not be ready */ }
+        asset.element.play().catch(() => {
+          // A blocked local video remains visible as a still frame where available.
+        });
+      } else {
+        asset.element.pause();
       }
-    }));
+    }
   }
 
   function pauseSceneVideos() {
+    activeVideoSceneId = null;
     for (const asset of sceneAssets.values()) {
       if (asset.type === "video") asset.element.pause();
     }
@@ -756,14 +763,14 @@ export function createMediaWorkspace({ api, toast }) {
       return;
     }
     previewing = true;
-    await playSceneVideos();
-    if (!previewing) return;
     previewStartedAt = performance.now();
     byId("media-preview-button").textContent = "Stop preview";
     const totalMs = currentProject.scenes.reduce((sum, scene) => sum + scene.durationSeconds * 1000, 0);
     const tick = (now) => {
       if (!previewing || !currentProject) return;
       const elapsed = (now - previewStartedAt) % totalMs;
+      const current = sceneAtTime(currentProject, elapsed);
+      activateVideoForScene(currentProject.scenes[current.index]?.id);
       const canvas = byId("media-preview-canvas");
       const ctx = canvas?.getContext("2d");
       if (ctx) drawTimelineFrame(ctx, canvas.width, canvas.height, currentProject, elapsed);
@@ -1046,7 +1053,7 @@ export function createMediaWorkspace({ api, toast }) {
         }, { once: true });
       });
 
-      await playSceneVideos();
+      activateVideoForScene(project.scenes[0]?.id);
       const startedAt = performance.now();
       recorder.start(500);
       if (audioSource) audioSource.start();
@@ -1055,6 +1062,7 @@ export function createMediaWorkspace({ api, toast }) {
           const elapsed = Math.min(totalMs, now - startedAt);
           drawTimelineFrame(ctx, canvas.width, canvas.height, project, elapsed);
           const current = sceneAtTime(project, elapsed);
+          activateVideoForScene(project.scenes[current.index]?.id);
           setExportStatus("Rendering scene " + (current.index + 1) + " of " + project.scenes.length +
             (audioFile ? " · audio mixed locally" : " · no audio track") + "…");
           if (elapsed >= totalMs) {
