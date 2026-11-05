@@ -9,6 +9,7 @@ const MIN_SCENES = 2;
 export function createMediaWorkspace({ api, toast }) {
   let projects = [];
   let currentProject = null;
+  let selectedProjectId = null;
   let initialized = false;
   let previewFrame = 0;
   let previewStartedAt = 0;
@@ -258,6 +259,8 @@ export function createMediaWorkspace({ api, toast }) {
     const selected = projects.find((item) => item.id === id);
     if (!selected) return;
     stopPreview();
+    if (selectedProjectId && selectedProjectId !== id) setAudioTrack(null);
+    selectedProjectId = id;
     currentProject = structuredClone(selected);
     byId("media-editor").classList.remove("hidden");
     byId("media-editor-project-title").value = currentProject.title;
@@ -687,6 +690,8 @@ export function createMediaWorkspace({ api, toast }) {
     projects = projects.filter((item) => item.id !== id);
     if (currentProject?.id === id) {
       currentProject = null;
+      selectedProjectId = null;
+      setAudioTrack(null);
       byId("media-editor").classList.add("hidden");
       stopPreview();
     }
@@ -968,7 +973,7 @@ export function createMediaWorkspace({ api, toast }) {
       onScreenText: "New idea",
       visualPrompt: "Describe a simple visual that supports the narration.",
       durationSeconds: 8,
-      visualType: currentProject.visualStyle === "stick-figure-story" ? "stick-figure" : "auto",
+      visualType: byId("media-editor-visual-style").value === "stick-figure-story" ? "stick-figure" : "auto",
       figurePose: "walk",
       animation: "walk",
       background: "midnight",
