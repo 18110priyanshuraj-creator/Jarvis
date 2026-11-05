@@ -731,16 +731,16 @@ export function createCreatorStudio({ api, toast }) {
       const disconnect = $("creator-disconnect-canva");
       const create = $("creator-create-canva-thumbnail");
       if (connect) {
-        connect.textContent = canvaStatus.connected ? "Canva connected" : "Connect Canva account";
+        connect.textContent = canvaStatus.connected ? "Thumbnail export connected" : "Connect thumbnail export (optional)";
         connect.disabled = !canvaStatus.canConnect || canvaStatus.connected;
       }
       if (disconnect) disconnect.classList.toggle("hidden", !canvaStatus.connected);
       if (create) create.disabled = !canvaStatus.connected;
       setCanvaStatus(canvaStatus.connected
-        ? "Canva is connected. JARVIS can upload your approved thumbnail PNG and create a new 16:9 design."
+        ? "Optional Canva thumbnail export is connected. It uploads a flat PNG to create a new 16:9 design; it does not edit the video timeline. Opening Canva on Android and using JARVIS Accessibility does not require this connection."
         : canvaStatus.canConnect
-          ? "Canva credentials are configured. Connect your Canva account to create the thumbnail design."
-          : "Canva Connect needs a registered developer integration, client ID, client secret, callback URL and the JARVIS encrypted-token key on the server.");
+          ? "Optional thumbnail export is configured. Connect it only to upload a flat thumbnail PNG; it is not needed for Canva app control on Android."
+          : "Optional Canva thumbnail export is not configured. You can still open Canva on Android and use JARVIS screen controls without adding Canva client credentials.");
       return canvaStatus;
     } catch (error) {
       setCanvaStatus(error.message || "Canva connection status is unavailable.", true);
