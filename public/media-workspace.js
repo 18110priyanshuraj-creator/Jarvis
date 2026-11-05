@@ -388,15 +388,16 @@ export function createMediaWorkspace({ api, toast }) {
       URL.revokeObjectURL(url);
       return;
     }
+    const reattaching = Boolean(currentClip.assetId && currentClip.assetName);
     currentClip.assetId = clip.id;
     currentClip.assetName = file.name;
     currentClip.assetType = isAudio ? "audio" : isImage ? "image" : "video";
     currentClip.label = file.name.slice(0, 80);
-    if (isVideo) {
+    if (!reattaching && isVideo) {
       currentClip.duration = Math.min(180 - currentClip.start, duration);
       currentClip.sourceIn = 0;
       currentClip.sourceOut = duration;
-    } else if (isImage) {
+    } else if (!reattaching && isImage) {
       currentClip.duration = 6;
     }
     timelineAssets.set(clip.id, { projectId, type: currentClip.assetType, name: file.name, file, url, element, started: false, keyCanvas: null });
@@ -642,6 +643,18 @@ export function createMediaWorkspace({ api, toast }) {
       }
       keyframes.append(row);
     });
+    if (clip.assetId && clip.assetName && !timelineAssets.has(clip.id)) {
+      const attach = makeElement("label", "item-action timeline-add-clip", "Re-attach " + clip.assetName);
+      const input = makeElement("input");
+      input.type = "file";
+      input.accept = clip.assetType === "audio" ? "audio/*" : clip.assetType === "image" ? "image/*" : "video/*";
+      input.addEventListener("change", async (event) => {
+        try { await loadTimelineAsset(clip, event.target.files?.[0]); }
+        catch (error) { toast(error.message, true); }
+      });
+      attach.append(input);
+      target.append(attach);
+    }
     target.append(makeElement("p", "small muted", "Asset files stay on this device. After reopening a saved project, re-attach local files to their timeline clips."));
   }
 
@@ -816,6 +829,7 @@ export function createMediaWorkspace({ api, toast }) {
           if (asset?.url) URL.revokeObjectURL(asset.url);
           asset?.element?.pause?.();
           timelineAssets.delete(clipId);
+          activeTimelineClipIds.delete(clipId);
           selectedTimelineClipId = null;
           renderTimelineEditor();
           renderPreviewAtTime(0);
@@ -1195,7 +1209,11 @@ export function createMediaWorkspace({ api, toast }) {
       if (element) element.disabled = exporting;
     }
     const exportButton = byId("media-export-webm");
-    if (exportButton) exportButton.textContent = audioFile || musicFile ? "Export video + mixed audio" : "Export video (silent)";
+    const hasTimelineAudio = Boolean(currentProject?.tracks?.some((track) =>
+      track.kind === "audio" && track.muted !== true && track.clips.some((clip) => timelineAssets.has(clip.id))
+    ));
+    if (exportButton) exportButton.textContent = audioFile || musicFile || hasTimelineAudio
+      ? "Export video + mixed audio" : "Export video (silent)";
     const timelineRoot = byId("media-timeline-tracks");
     if (timelineRoot) timelineRoot.querySelectorAll("input, select").forEach((control) => {
       control.disabled = !editable || exporting;
@@ -1617,7 +1635,11 @@ export function createMediaWorkspace({ api, toast }) {
   function stopPreview() {
     previewing = false;
     pauseSceneVideos();
-    for (const id of activeTimelineClipIds) timelineAssets.get(id)?.element?.pause?.();
+    for (const id of activeTimelineClipIds) {
+      const asset = timelineAssets.get(id);
+      asset?.element?.pause?.();
+      if (asset) asset.started = false;
+    }
     activeTimelineClipIds.clear();
     if (previewFrame) cancelAnimationFrame(previewFrame);
     previewFrame = 0;
