@@ -49,23 +49,43 @@ function vttTime(milliseconds) {
   return srtTime(milliseconds).replace(",", ".");
 }
 function csv(value) {
-  return '"' + String(value ?? "").replace(/"/g, '""').replace(/\r?\n/g, " ") + '"';
+  let text = String(value ?? "").replace(/\r?\n/g, " ").trim();
+  if (/^[=+@-]/.test(text)) text = "'" + text;
+  return '"' + text.replace(/"/g, '""') + '"';
+}
+
+function splitCueWords(value, maxCues) {
+  const words = clean(value, 1200).split(/\s+/u).filter(Boolean);
+  if (!words.length) return [];
+  const count = Math.max(1, Math.min(maxCues, Math.ceil(words.join(" ").length / 76)));
+  const groups = [];
+  let cursor = 0;
+  for (let index = 0; index < count; index++) {
+    const remainingGroups = count - index;
+    const take = Math.ceil((words.length - cursor) / remainingGroups);
+    const part = words.slice(cursor, cursor + take);
+    cursor += take;
+    groups.push({ text: wrapWords(part.join(" "), 42, 2).join("\n"), words: part.length });
+  }
+  return groups.filter(item => item.text);
 }
 
 export function buildCreatorCaptions(pack) {
   let cursorMs = 0;
+  let cueIndex = 1;
   const cues = [];
-  for (const [index, scene] of (pack.shortVideo?.scenes || []).entries()) {
-    const durationMs = Math.max(1000, Math.round(Number(scene.durationSeconds || 8) * 1000));
-    const text = clean(scene.voiceover || scene.onScreenText || scene.heading, 1200);
-    if (text) {
-      const lines = wrapWords(text, 58, 5);
-      cues.push({
-        index: index + 1,
-        start: cursorMs,
-        end: cursorMs + durationMs,
-        text: lines.join("\n")
-      });
+  for (const scene of (pack.shortVideo?.scenes || [])) {
+    const durationMs = Math.max(1000, Math.round(Math.min(180, Number(scene.durationSeconds) || 8) * 1000));
+    const speech = clean(scene.voiceover || scene.onScreenText || scene.heading, 1200);
+    const maxCues = Math.max(1, Math.min(6, Math.floor(durationMs / 1500)));
+    const groups = splitCueWords(speech, maxCues);
+    const totalWords = groups.reduce((sum, item) => sum + item.words, 0);
+    let consumedWords = 0;
+    for (const group of groups) {
+      const start = cursorMs + durationMs * consumedWords / Math.max(1, totalWords);
+      consumedWords += group.words;
+      const end = cursorMs + durationMs * consumedWords / Math.max(1, totalWords);
+      cues.push({ index: cueIndex++, start: Math.round(start), end: Math.round(end), text: group.text });
     }
     cursorMs += durationMs;
   }
