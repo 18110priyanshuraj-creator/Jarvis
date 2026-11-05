@@ -182,6 +182,67 @@ export function buildCarouselSlideSvg(slide, index, total, brandKit = {}, topic 
   ].join("");
 }
 
+export function buildCreatorCoverSvg(pack, format = "vertical") {
+  if (format !== "vertical" && format !== "landscape") {
+    throw new TypeError("Choose a vertical Reel cover or landscape YouTube thumbnail.");
+  }
+  const vertical = format === "vertical";
+  const width = vertical ? 1080 : 1280;
+  const height = vertical ? 1920 : 720;
+  const brand = escapeXml(pack.brandKit?.brandName || "JARVIS CREATOR");
+  const accent = safeHex(pack.brandKit?.accentColor, "#65e2e7");
+  const background = safeHex(pack.brandKit?.backgroundColor, "#081b28");
+  const foreground = safeHex(pack.brandKit?.textColor, "#f3fbff");
+  const title = pack.shortVideo?.title || pack.title || pack.topic || "Creator video";
+  const hook = pack.shortVideo?.hook || pack.shortVideo?.caption || pack.topic || "";
+  const visual = pack.shortVideo?.scenes?.[0]?.visualPrompt || "Replace the abstract visual placeholder with your reviewed footage or original artwork.";
+  const titleLines = wrapWords(title, vertical ? 22 : 24, vertical ? 4 : 3);
+  const hookLines = wrapWords(hook, vertical ? 34 : 38, vertical ? 5 : 3);
+  const visualLines = wrapWords(visual, vertical ? 34 : 28, 3);
+  const textBlock = (lines, x, y, size, lineHeight, fill, anchor = "middle", maxWidth = width - 160) =>
+    lines.map((line, index) => '<text x="' + x + '" y="' + (y + index * lineHeight) +
+      '" text-anchor="' + anchor + '" font-family="Arial,sans-serif" font-size="' + size +
+      '" font-weight="700" fill="' + fill + '">' + escapeXml(line) + "</text>").join("");
+  if (vertical) {
+    return [
+      '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920" role="img" aria-label="Editable vertical short-video cover template">',
+      '<defs><linearGradient id="cover-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="' + background + '"/><stop offset="1" stop-color="#02080d"/></linearGradient></defs>',
+      '<rect width="1080" height="1920" fill="url(#cover-bg)"/>',
+      '<circle cx="860" cy="420" r="360" fill="' + accent + '" opacity=".12"/>',
+      '<circle cx="150" cy="1480" r="420" fill="' + accent + '" opacity=".08"/>',
+      '<rect x="76" y="76" width="928" height="1768" rx="48" fill="none" stroke="' + accent + '" stroke-opacity=".45" stroke-width="3"/>',
+      textBlock([brand.toUpperCase()], 540, 190, 26, 36, accent),
+      '<rect x="380" y="270" width="320" height="8" rx="4" fill="' + accent + '"/>',
+      '<circle cx="540" cy="590" r="175" fill="' + accent + '" opacity=".12"/>',
+      '<circle cx="540" cy="590" r="118" fill="none" stroke="' + accent + '" stroke-width="5" opacity=".8"/>',
+      '<path d="M510 520 L510 660 L620 590Z" fill="' + foreground + '" opacity=".88"/>',
+      '<text x="540" y="870" text-anchor="middle" font-family="Arial,sans-serif" font-size="18" letter-spacing="5" fill="' + accent + '">THE BIG IDEA</text>',
+      textBlock(titleLines, 540, 970, 62, 76, foreground),
+      textBlock(hookLines, 540, 1320, 31, 46, foreground),
+      '<rect x="180" y="1620" width="720" height="2" fill="' + foreground + '" opacity=".35"/>',
+      textBlock(visualLines, 540, 1690, 18, 28, accent),
+      textBlock(["REPLACE THE PLAY PLACEHOLDER WITH YOUR FOOTAGE"], 540, 1790, 15, 24, foreground),
+      "</svg>"
+    ].join("");
+  }
+  return [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-label="Editable 16 by 9 YouTube thumbnail template">',
+    '<defs><linearGradient id="thumb-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="' + background + '"/><stop offset="1" stop-color="#02080d"/></linearGradient></defs>',
+    '<rect width="1280" height="720" fill="url(#thumb-bg)"/>',
+    '<circle cx="1010" cy="350" r="280" fill="' + accent + '" opacity=".13"/>',
+    '<circle cx="1010" cy="350" r="205" fill="none" stroke="' + accent + '" stroke-width="5" opacity=".72"/>',
+    '<path d="M965 265 L965 435 L1105 350Z" fill="' + foreground + '" opacity=".9"/>',
+    '<rect x="58" y="58" width="1164" height="604" rx="32" fill="none" stroke="' + accent + '" stroke-opacity=".4" stroke-width="3"/>',
+    textBlock([brand.toUpperCase()], 100, 130, 22, 30, accent, "start"),
+    '<rect x="100" y="170" width="180" height="7" rx="3" fill="' + accent + '"/>',
+    textBlock(titleLines, 100, 300, 54, 68, foreground, "start"),
+    textBlock(hookLines, 100, 500, 25, 36, foreground, "start"),
+    '<text x="100" y="620" font-family="Arial,sans-serif" font-size="17" fill="' + accent + '">' + escapeXml(visualLines.join(" · ")) + "</text>",
+    '<text x="1180" y="620" text-anchor="end" font-family="Arial,sans-serif" font-size="16" fill="' + foreground + '">REPLACE PLAY PLACEHOLDER WITH ORIGINAL VISUALS</text>',
+    "</svg>"
+  ].join("");
+}
+
 export function buildCreatorAssetFiles(pack) {
   const captions = buildCreatorCaptions(pack);
   let cursor = 0;
@@ -191,6 +252,7 @@ export function buildCreatorAssetFiles(pack) {
     "Review all wording, source claims, image rights, music rights and platform requirements before publishing.",
     "Captions are scene-level draft cues. Check timing and punctuation against the recorded voiceover.",
     "Carousel slides are 1080x1080 SVG design drafts using the campaign brand kit. Edit them in a graphics editor after import if needed.",
+    "Video cover templates are editable SVG layouts: vertical 1080x1920 for Reels/Shorts and landscape 1280x720 for YouTube. Replace abstract placeholders with your original visuals.",
     "YouTube chapters are generated only when the scene plan can form at least three 10-second segments.",
     ""
   ].join("\n");
@@ -264,6 +326,8 @@ export function buildCreatorAssetFiles(pack) {
     { name: "video/storyboard.csv", content: buildCreatorStoryboardCsv(pack) },
     { name: "video/captions.srt", content: captions.srt },
     { name: "video/captions.vtt", content: captions.vtt },
+    { name: "video/reel-cover-template.svg", content: buildCreatorCoverSvg(pack, "vertical") },
+    { name: "video/youtube-thumbnail-template.svg", content: buildCreatorCoverSvg(pack, "landscape") },
     { name: "website/seo-page-draft.html", content: seoHtml },
     { name: "social/platform-copy.md", content: socialMarkdown },
     { name: "ideas/idea-backlog.csv", content: ideasCsv },
