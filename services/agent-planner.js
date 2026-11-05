@@ -83,7 +83,7 @@ function extractCanvaDragIntent(input) {
  */
 function normalizePublicBrowserUrl(value) {
   const raw = cleanLocalIntent(value, 2048);
-  if (!raw || /\\s/.test(raw)) return "";
+  if (!raw || /\s/.test(raw)) return "";
   let parsed;
   try {
     parsed = new URL(raw.includes("://") ? raw : "https://" + raw);
@@ -96,9 +96,10 @@ function normalizePublicBrowserUrl(value) {
   if (host.includes(":") || host === "localhost" || host.endsWith(".localhost") ||
     host.endsWith(".local") || host.endsWith(".internal")) return "";
   if (!host.includes(".")) return "";
-  const ipv4 = host.match(/^(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})$/);
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (ipv4) {
-    const [a, b] = ipv4.slice(1).map(Number);
+    const [a, b, c, d] = ipv4.slice(1).map(Number);
+    if ([a,b,c,d].some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return "";
     const privateOrReserved = a === 0 || a === 10 || a === 127 || a >= 224 ||
       (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
       (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) ||
@@ -109,16 +110,14 @@ function normalizePublicBrowserUrl(value) {
   for (const key of parsed.searchParams.keys()) {
     if (sensitiveQueryKey.test(key)) return "";
   }
-  parsed.username = "";
-  parsed.password = "";
   return parsed.toString();
 }
 
 function extractPublicUrlIntent(input) {
   const patterns = [
-    /^(?:please\\s+)?(?:open|visit|browse|go to|navigate to)\\s+(.+)$/i,
-    /^(.+?)\\s+(?:website|site)\\s+(?:kholo|khol do|open karo)$/i,
-    /^(?:website|site)\\s+(?:kholo|khol do)\\s+(.+)$/i
+    /^(?:please\s+)?(?:open|visit|browse|go to|navigate to)\s+(.+)$/i,
+    /^(.+?)\s+(?:website|site)\s+(?:kholo|khol do|open karo)$/i,
+    /^(?:website|site)\s+(?:kholo|khol do)\s+(.+)$/i
   ];
   for (const pattern of patterns) {
     const match = input.match(pattern);
