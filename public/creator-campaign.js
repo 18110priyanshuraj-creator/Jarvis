@@ -1,3 +1,11 @@
+import {
+  buildCreatorAssetFiles,
+  buildCreatorCaptions,
+  buildCreatorStoryboardCsv,
+  buildStoredZip,
+  buildYouTubeChapters
+} from "./creator-campaign-assets.js";
+
 const $ = id => document.getElementById(id);
 
 function node(tag, className, value) {
@@ -78,6 +86,22 @@ function markdown(pack) {
   return lines.join("\n");
 }
 
+function readinessChecks(pack) {
+  const scenes = pack.shortVideo?.scenes || [];
+  const slides = pack.carousel?.slides || [];
+  const platforms = new Set((pack.socialDrafts || []).map(item => item.platform));
+  const sourcesReady = Boolean(pack.sourceNotesProvided || pack.trendRadar?.sources?.length);
+  return [
+    { label: "Source material attached", ready: sourcesReady, detail: sourcesReady ? "Source notes or trend links are present." : "Add reviewed notes or verify reliable sources before publishing." },
+    { label: "Opening hook", ready: (pack.shortVideo?.hook || "").trim().length >= 28, detail: "The first line should make the topic and viewer benefit clear." },
+    { label: "Narration plan", ready: scenes.length >= 3 && scenes.every(item => (item.voiceover || "").trim().length >= 15), detail: "At least three scenes have narration." },
+    { label: "Carousel readability", ready: slides.length >= 4 && slides.every(item => item.body && item.body.length <= 240), detail: "Four or more slides with concise body copy." },
+    { label: "SEO metadata", ready: (pack.seoPage?.metaTitle || "").length > 0 && (pack.seoPage?.metaTitle || "").length <= 60 && (pack.seoPage?.metaDescription || "").length > 0 && (pack.seoPage?.metaDescription || "").length <= 155 && Boolean(pack.seoPage?.slug), detail: "Title, description and slug fit the draft limits." },
+    { label: "Platform drafts", ready: platforms.size === 3 && ["instagram", "youtube-shorts", "facebook"].every(item => platforms.has(item)), detail: "Instagram, YouTube Shorts and Facebook drafts are present." },
+    { label: "Lead reply boundary", ready: Boolean(pack.leadMachine?.followUpRule && pack.leadMachine.followUpRule.length >= 24), detail: "Reply guidance is present; all outreach remains manual." }
+  ];
+}
+
 export function createCreatorCampaignStudio({ api, toast }) {
   let current = null;
   let mediaProjectCreated = false;
@@ -133,6 +157,17 @@ export function createCreatorCampaignStudio({ api, toast }) {
 
     const heading = card(target, pack.title, "Draft pack · " + pack.engine + " · " + pack.language);
     add(heading, "p", "small muted", "Topic: " + pack.topic + " · Audience: " + pack.audience);
+
+    const checks = readinessChecks(pack);
+    const readyCount = checks.filter(item => item.ready).length;
+    const review = card(target, "Pre-publish structure check · " + readyCount + "/" + checks.length, "Automated completeness checks only. This does not verify factual accuracy, image rights or platform compliance.");
+    const checkList = add(review, "ul", "creator-campaign-checklist");
+    for (const item of checks) {
+      const row = add(checkList, "li", item.ready ? "is-ready" : "needs-review");
+      add(row, "strong", "", (item.ready ? "✓ " : "Review · ") + item.label);
+      add(row, "span", "small muted", item.detail);
+    }
+    add(review, "p", "small muted", "Before publishing: verify factual claims against primary sources, check image/audio licences, review captions and preview the final export.");
 
     const trend = card(target, "Trend Radar · last 24 hours", pack.trendRadar.status);
     add(trend, "p", "", pack.trendRadar.summary || "No trend summary.");
@@ -214,6 +249,11 @@ export function createCreatorCampaignStudio({ api, toast }) {
     setStatus(pack.generationNote || "Campaign draft is ready. Review sources and claims.");
     $("creator-campaign-export-json").disabled = false;
     $("creator-campaign-export-md").disabled = false;
+    $("creator-campaign-export-assets").disabled = false;
+    $("creator-campaign-export-srt").disabled = false;
+    $("creator-campaign-export-vtt").disabled = false;
+    $("creator-campaign-export-csv").disabled = false;
+    $("creator-campaign-export-chapters").disabled = false;
     $("creator-campaign-to-media").disabled = false;
   }
 
@@ -246,6 +286,43 @@ export function createCreatorCampaignStudio({ api, toast }) {
     } finally {
       loading = false;
       button.disabled = false;
+    }
+  }
+
+  function exportAssetBundle() {
+    if (!current) return;
+    try {
+      const files = buildCreatorAssetFiles(current);
+      const zip = buildStoredZip(files);
+      download(safeName(current.topic) + "-creator-assets.zip", zip, "application/zip");
+      setStatus("Downloaded " + files.length + " creator assets: carousel SVGs, storyboard CSV, subtitles and chapter readiness. Review the files before use.");
+    } catch (error) {
+      setStatus(error.message || "The creator asset ZIP could not be built.", true);
+    }
+  }
+
+  function exportCaptions(format) {
+    if (!current) return;
+    const result = buildCreatorCaptions(current);
+    const isSrt = format === "srt";
+    download(safeName(current.topic) + "-captions." + format, isSrt ? result.srt : result.vtt,
+      isSrt ? "application/x-subrip;charset=utf-8" : "text/vtt;charset=utf-8");
+    setStatus("Exported " + format.toUpperCase() + " scene captions. Check their timing against the recorded voiceover.");
+  }
+
+  function exportStoryboard() {
+    if (!current) return;
+    download(safeName(current.topic) + "-storyboard.csv", buildCreatorStoryboardCsv(current), "text/csv;charset=utf-8");
+    setStatus("Storyboard CSV exported with scene timings and visual notes.");
+  }
+
+  function exportChapters() {
+    if (!current) return;
+    try {
+      download(safeName(current.topic) + "-youtube-chapters.txt", buildYouTubeChapters(current), "text/plain;charset=utf-8");
+      setStatus("YouTube chapter timestamps exported. Confirm them against the final video duration.");
+    } catch (error) {
+      setStatus(error.message || "This scene plan is too short for valid YouTube chapters.", true);
     }
   }
 
@@ -282,6 +359,11 @@ export function createCreatorCampaignStudio({ api, toast }) {
       if (!current) return;
       download(safeName(current.topic) + "-campaign.md", markdown(current), "text/markdown;charset=utf-8");
     });
+    $("creator-campaign-export-assets").addEventListener("click", exportAssetBundle);
+    $("creator-campaign-export-srt").addEventListener("click", () => exportCaptions("srt"));
+    $("creator-campaign-export-vtt").addEventListener("click", () => exportCaptions("vtt"));
+    $("creator-campaign-export-csv").addEventListener("click", exportStoryboard);
+    $("creator-campaign-export-chapters").addEventListener("click", exportChapters);
     $("creator-campaign-to-media").addEventListener("click", sendToMediaStudio);
     void loadHistory();
   }
