@@ -434,6 +434,11 @@ export function createMediaWorkspace({ api, toast }) {
     currentProject.durationSeconds = Math.min(projectDurationLimit(currentProject), Math.max(currentProject.durationSeconds || 0, currentClip.start + currentClip.duration));
     selectedTimelineClipId = clip.id;
     renderTimelineEditor();
+    renderAssetLibrary(await assetLibrary.list({
+      query: byId("media-asset-library-search")?.value || "",
+      kind: byId("media-asset-library-kind")?.value || "all",
+      tag: byId("media-asset-library-tag-filter")?.value || ""
+    }));
     renderPreviewAtTime(currentClip.start * 1000);
     setExportStatus("Added " + file.name + " to the " + track.name + " track. Media remains local to this browser session.");
   }
@@ -447,7 +452,10 @@ export function createMediaWorkspace({ api, toast }) {
   }
 
   function projectReferencesAsset(assetId) {
-    return projects.some((project) => (project.tracks || []).some((track) =>
+    const allProjects = currentProject
+      ? [...projects.filter((project) => project.id !== currentProject.id), currentProject]
+      : projects;
+    return allProjects.some((project) => (project.tracks || []).some((track) =>
       (track.clips || []).some((clip) => clip.assetId === assetId)
     ));
   }
@@ -924,6 +932,7 @@ export function createMediaWorkspace({ api, toast }) {
           if (currentProject.status !== "draft" || event.button > 0) return;
           event.preventDefault();
           selectedTimelineClipId = clip.id;
+          refreshAssetLibrary();
           const edge = event.target?.closest?.("[data-drag-edge]")?.dataset?.dragEdge || "move";
           const rect = lane.getBoundingClientRect();
           if (!rect.width) return;
@@ -983,6 +992,7 @@ export function createMediaWorkspace({ api, toast }) {
         button.addEventListener("click", () => {
           selectedTimelineClipId = clip.id;
           renderTimelineEditor();
+          refreshAssetLibrary();
           renderPreviewAtTime(clip.start * 1000);
         });
         lane.append(button);
