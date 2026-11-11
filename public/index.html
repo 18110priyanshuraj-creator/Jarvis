@@ -1090,12 +1090,15 @@
               <label for="creator-canva-mcp-page">Page to edit
                 <select id="creator-canva-mcp-page" disabled></select>
               </label>
+              <div class="creator-export-row">
+                <button type="button" class="item-action" id="creator-canva-mcp-insert-media">Insert image/video asset</button>
+              </div>
               <h4>Editable elements returned by Canva</h4>
               <div id="creator-canva-mcp-elements" class="creator-canva-mcp-elements" aria-live="polite"></div>
               <label for="creator-canva-mcp-operations">Editing operations (JSON)
                 <textarea id="creator-canva-mcp-operations" rows="9" spellcheck="false">[]</textarea>
               </label>
-              <p class="small muted">Element IDs come from the active editing transaction. You can use the Replace text / Format text / Replace media buttons above, or edit this JSON directly. For responsive pages, use find_and_replace_text; unsupported layout changes are rejected.</p>
+              <p class="small muted">Element IDs come from the active editing transaction. Quick actions include replace text/media, format text, move, resize and delete. Use the JSON editor for text colour/alignment, links, line height, aspect-ratio-preserving resize and other supported options. New media needs a Canva asset ID already in your account. Responsive pages only support find_and_replace_text for text.</p>
               <div class="creator-export-row">
                 <button type="button" class="primary" id="creator-canva-mcp-apply">Apply draft edits</button>
                 <button type="button" class="item-action" id="creator-canva-mcp-preview-button">Preview draft page</button>
@@ -1107,7 +1110,7 @@
               </div>
               <div class="creator-canva-mcp-subpanel">
                 <h4>Page order and structure</h4>
-                <p class="small muted">Move, insert, or permanently delete whole pages. Each request requires a separate confirmation.</p>
+                <p class="small muted">Move, insert, or permanently delete whole pages. Canva accepts one page operation per request; deleting pages is permanent and each operation requires confirmation.</p>
                 <label for="creator-canva-mcp-page-operations">Page operations (JSON)
                   <textarea id="creator-canva-mcp-page-operations" rows="5" spellcheck="false">[]</textarea>
                 </label>
