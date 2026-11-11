@@ -1,5 +1,6 @@
 import { collectTimelineSnapPoints, snapTimelineEdge, snapTimelineMoveStart } from "./media-timeline-snapping.js";
 import { createMediaAssetLibrary, formatMediaAssetSize } from "./media-asset-library.js";
+import { clampMediaEditorTime, resolveMediaEditorShortcut } from "./media-editor-shortcuts.js";
 
 const FORMATS = {
   "vertical-short": { width: 720, height: 1280, maxDurationSeconds: 90 },
@@ -475,6 +476,22 @@ export function createMediaWorkspace({ api, toast }) {
       card.append(header);
       if (record.tags?.length) card.append(makeElement("p", "media-library-tags", record.tags.map((tag) => "#" + tag).join("  ")));
       const actions = makeElement("div", "media-library-actions");
+      const download = makeElement("button", "item-action", "Download file");
+      download.type = "button";
+      download.addEventListener("click", async () => {
+        download.disabled = true;
+        try {
+          const saved = await assetLibrary.get(record.id);
+          if (!saved?.blob) throw new Error("This saved asset is unavailable in this browser.");
+          downloadBlob(saved.name, saved.blob);
+          setAssetLibraryStatus("Downloaded " + saved.name + ". On another device, choose the file above and save it to that device's library.");
+        } catch (error) {
+          setAssetLibraryStatus(error.message || "The asset could not be downloaded.", true);
+        } finally {
+          download.disabled = false;
+        }
+      });
+      actions.append(download);
       const attach = makeElement("button", "item-action", "Attach to selected clip");
       attach.type = "button";
       const selectionCanAttach = Boolean(selection && currentProject?.status === "draft" &&
@@ -2266,6 +2283,29 @@ export function createMediaWorkspace({ api, toast }) {
     previewFrame = requestAnimationFrame(tick);
   }
 
+  function handleMediaEditorShortcut(event) {
+    const editor = byId("media-editor");
+    const target = event.target;
+    if (!currentProject || !editor || editor.classList.contains("hidden") ||
+        !(target instanceof Element) || !editor.contains(target)) return;
+    const isEditing = Boolean(target.closest("input, textarea, select, button, a, [contenteditable='true'], [role='textbox']"));
+    const command = resolveMediaEditorShortcut(event, { isEditing });
+    if (!command) return;
+    event.preventDefault();
+    if (command.action === "toggle-playback") {
+      void playPreview();
+      return;
+    }
+    if (previewing) stopPreview();
+    const currentSeconds = previewTimeMs / 1000;
+    const targetSeconds = command.action === "seek-start"
+      ? 0
+      : command.action === "seek-end"
+        ? currentProject.durationSeconds
+        : clampMediaEditorTime(currentSeconds, command.deltaSeconds, currentProject.durationSeconds);
+    renderPreviewAtTime(targetSeconds * 1000);
+  }
+
   function readSceneEditors() {
     const cards = [...byId("media-editor-scenes").querySelectorAll(".media-scene-editor")];
     return cards.map((card, index) => {
@@ -2796,6 +2836,7 @@ export function createMediaWorkspace({ api, toast }) {
       }
     });
     byId("media-asset-library-save")?.addEventListener("click", savePendingAssetToLibrary);
+    document.addEventListener("keydown", handleMediaEditorShortcut);
     byId("media-asset-library-search")?.addEventListener("input", refreshAssetLibrary);
     byId("media-asset-library-kind")?.addEventListener("change", refreshAssetLibrary);
     byId("media-asset-library-tag-filter")?.addEventListener("input", refreshAssetLibrary);
