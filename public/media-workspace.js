@@ -1,3 +1,4 @@
+import { collectTimelineSnapPoints, snapTimelineEdge, snapTimelineMoveStart } from "./media-timeline-snapping.js";
 import { createMediaAssetLibrary, formatMediaAssetSize } from "./media-asset-library.js";
 
 const FORMATS = {
@@ -941,16 +942,26 @@ export function createMediaWorkspace({ api, toast }) {
             sourceOut: clip.sourceOut,
             speed: clip.speed || 1
           };
+          const snapPoints = collectTimelineSnapPoints(
+            currentProject,
+            clip.id,
+            byId("media-timeline-playhead")?.value
+          );
           button.setPointerCapture(pointerId);
           button.classList.add("dragging");
           const onMove = (moveEvent) => {
             if (moveEvent.pointerId !== pointerId) return;
             const delta = (moveEvent.clientX - startX) / rect.width * total;
             if (edge === "move") {
-              clip.start = Math.max(0, Math.min(projectDurationLimit(currentProject) - initial.duration, initial.start + delta));
+              const proposedStart = initial.start + delta;
+              const snappedStart = snapTimelineMoveStart(proposedStart, initial.duration, snapPoints);
+              clip.start = Math.max(0, Math.min(projectDurationLimit(currentProject) - initial.duration, snappedStart));
             } else if (edge === "left") {
-              const boundedDelta = Math.max(-Math.min(initial.sourceIn, initial.start),
+              const proposedDelta = Math.max(-Math.min(initial.sourceIn, initial.start),
                 Math.min(initial.duration - 0.25, delta));
+              const snappedStart = snapTimelineEdge(initial.start + proposedDelta, snapPoints);
+              const boundedDelta = Math.max(-Math.min(initial.sourceIn, initial.start),
+                Math.min(initial.duration - 0.25, snappedStart - initial.start));
               clip.start = Math.max(0, initial.start + boundedDelta);
               clip.duration = Math.max(0.25, initial.duration - boundedDelta);
               clip.sourceIn = Math.max(0, initial.sourceIn + (boundedDelta >= 0
@@ -958,7 +969,9 @@ export function createMediaWorkspace({ api, toast }) {
                 : -integrateClipSpeed({ ...clip, duration: initial.duration }, -boundedDelta)));
               if (initial.sourceOut !== null && initial.sourceOut !== undefined) clip.sourceOut = initial.sourceOut;
             } else if (edge === "right") {
-              clip.duration = Math.max(0.25, Math.min(projectDurationLimit(currentProject) - initial.start, initial.duration + delta));
+              const proposedEnd = initial.start + initial.duration + delta;
+              const snappedEnd = snapTimelineEdge(proposedEnd, snapPoints);
+              clip.duration = Math.max(0.25, Math.min(projectDurationLimit(currentProject) - initial.start, snappedEnd - initial.start));
               if (initial.sourceOut !== null && initial.sourceOut !== undefined) {
                 clip.sourceOut = initial.sourceIn + integrateClipSpeed({ ...clip, duration: initial.duration }, clip.duration);
               }
