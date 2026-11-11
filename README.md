@@ -504,6 +504,13 @@ Implementation contract: `docs/JARVIS_PHASE_20_KNOWLEDGE_MANAGER.md`. Physical G
 - The Android Companion has native Orb, setup/pairing, voice controls, local encrypted memory and a WebView-hosted JARVIS Workspace.
 - The full dashboard is **not yet a fully native Android workspace**. Converting Chat, Workflows, Research, Knowledge, Creator Studio, Media Studio, integrations and diagnostics into native Android screens with native offline parity remains separate work; this feature branch does not claim that conversion is complete.
 
+## External editor and Canva project harvest
+
+- JARVIS's original Media Studio now has a browser-local IndexedDB library for reusable image/video/audio files, tags, search and reattaching saved assets to clips in the same browser profile.
+- Timeline moves and trims use magnetic snap points from nearby clip boundaries and the playhead.
+- Android hands-free commands can toggle selected Canva text formatting, set a bounded font size, and open the selected-media Replace control when the installed Canva app is foregrounded. File selection and final visual verification remain manual.
+- Repository license and compatibility decisions are recorded in [JARVIS repository feature harvest](docs/JARVIS_REPOSITORY_FEATURE_HARVEST.md).
+
 ## Android release and final acceptance
 
 Main includes the advanced multitrack Media Studio, bounded Canva accessibility drag support, and Creator Campaign Studio. See [JARVIS release and acceptance status](docs/JARVIS_RELEASE_AND_ACCEPTANCE.md) for the exact feature boundaries, the signed-APK workflow, required private GitHub Actions secrets, and the physical Galaxy Tab A9 acceptance checklist.
