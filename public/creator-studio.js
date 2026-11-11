@@ -921,8 +921,12 @@ export function createCreatorStudio({ api, toast }) {
     const type = String(field?.type || field?.value_type || field?.field_type || "text").toLowerCase();
     if (type.includes("image")) return { type: "image", asset_id: "REPLACE_WITH_CANVA_ASSET_ID" };
     if (type.includes("video")) return { type: "video", asset_id: "REPLACE_WITH_CANVA_ASSET_ID" };
-    if (type.includes("chart")) return { type: "chart", chart_data: {} };
-    if (type.includes("sheet")) return { type: "sheet", sheet_data: {} };
+    const table = {
+      column_configs: [{ name: "Column 1", type: "string" }],
+      rows: [{ cells: [{ type: "string", value: "" }] }]
+    };
+    if (type.includes("chart")) return { type: "chart", chart_data: table };
+    if (type.includes("sheet")) return { type: "sheet", sheet_data: table };
     return { type: "text", text: "" };
   }
 
@@ -1065,16 +1069,23 @@ export function createCreatorStudio({ api, toast }) {
       const job = payload?.job || payload;
       $("creator-canva-dataset").textContent = JSON.stringify(payload, null, 2);
       const urls = Array.isArray(job?.urls) ? job.urls : [];
-      const first = urls.map((item) => typeof item === "string" ? item : item?.url)
-        .map((url) => safeCanvaLink(url, true)).find(Boolean);
-      if (first) {
-        const link = $("creator-canva-download-link");
-        link.href = first;
-        link.classList.remove("hidden");
-        link.textContent = "Open completed " + $("creator-canva-export-format").value.toUpperCase() + " export";
-      }
+      const downloads = $("creator-canva-downloads");
+      downloads.replaceChildren();
+      const safeUrls = urls.map((item) => typeof item === "string" ? item : item?.url)
+        .map((url) => safeCanvaLink(url, true)).filter(Boolean);
+      safeUrls.forEach((url, index) => {
+        const link = document.createElement("a");
+        link.href = url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.className = "item-action";
+        link.textContent = safeUrls.length > 1
+          ? "Open export page " + (index + 1) + " of " + safeUrls.length
+          : "Open completed " + $("creator-canva-export-format").value.toUpperCase() + " export";
+        downloads.append(link);
+      });
       setCanvaStatus("Canva export job: " + String(job?.status || "unknown") +
-        (first ? " · download link ready (temporary; save the file soon)" : " · poll again when rendering is in progress"));
+        (safeUrls.length ? " · " + safeUrls.length + " temporary download link(s) ready; save the files within 24 hours" : " · poll again when rendering is in progress"));
     } catch (error) {
       setCanvaStatus(error.message || "Canva export job could not be checked.", true);
     } finally {
