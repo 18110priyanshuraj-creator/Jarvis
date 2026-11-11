@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { decryptSecret, encryptSecret, isTokenVaultConfigured } from "./oauth.js";
 
 export const CANVA_MCP_ENDPOINT = "https://api.canva.com/connect/v1/mcp";
@@ -215,14 +214,12 @@ function createOAuthProvider({ config, flow, onTokensSaved, onAuthorizationRedir
 }
 
 function makeClient() {
-  return new Client({ name: "jarvis-canva-editor", version: "1.0.0" });
+  return new Client({ name: "jarvis-canva-editor", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
 }
 
 function makeTransport(provider) {
   return new StreamableHTTPClientTransport(new URL(CANVA_MCP_ENDPOINT), {
-    authProvider: provider,
-    onInsufficientScope: "reauthorize",
-    maxStepUpRetries: 1
+    authProvider: provider
   });
 }
 
