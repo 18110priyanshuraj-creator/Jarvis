@@ -547,3 +547,56 @@
 #creator-campaign-save-revision {
   min-width: 190px;
 }
+
+
+/* Canva Connect automation workspace */
+.creator-canva-resources {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+.creator-canva-resources button {
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.creator-canva-json {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(4, 19, 27, .82);
+  color: #bad5dd;
+  font: .72rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.creator-canva-panel textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 12px;
+  color: var(--text);
+  background: #06121b;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: .78rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: vertical;
+}
+.creator-canva-panel input,
+.creator-canva-panel select {
+  width: 100%;
+  min-width: 0;
+  color: var(--text);
+  background: #06121b;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 10px 12px;
+}
+.creator-canva-panel .creator-form-grid { margin: 12px 0; }
+.creator-canva-panel button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
