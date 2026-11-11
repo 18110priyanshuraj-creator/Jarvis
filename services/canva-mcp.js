@@ -33,6 +33,7 @@ const RESPONSIVE_EDIT_TYPES = new Set([
 ]);
 const ALL_EDIT_TYPES = new Set([
   ...RESPONSIVE_EDIT_TYPES,
+  "replace_text",
   "insert_fill",
   "position_element",
   "resize_element",
