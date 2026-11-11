@@ -41,11 +41,12 @@ Reviewed its image/video editing workflow examples. No code was copied. Its READ
 
 - New `public/media-asset-library.js`: validated IndexedDB storage for image/video/audio assets, MIME-kind normalization, tags, search/filter, last-used sorting, local blob retrieval and deletion.
 - Media Studio UI for saving, searching, attaching and removing reusable assets.
+- Magnetic timeline snapping for clip moves and trims: JARVIS snaps leading/trailing clip edges to nearby clip boundaries or the playhead within a small tolerance. The timeline's existing trim/split/keyframe logic remains the source of truth.
 - Restores a saved asset into its timeline clip when reopening that project in the same browser profile. Assets are not synced to another browser/device. Direct file uploads still remain local to the browser.
 - New Android `CanvaAccessibilityPolicy`: narrowly parsed formatting toggles, font-size field and selected-media replacement commands.
 - New `UIActionExecutor.focusExactEditableField`: focuses one unique visible editable control matching an exact accessible label; typing is a separate bounded action.
 - The Android voice path checks that Canva is the foreground app, uses the pre-existing protected-screen and exact-label policy, and does not automatically choose files or press Enter to commit font size.
-- Automated Node and Android parser tests.
+- Automated Node and Android parser tests, including local asset metadata/filtering and timeline snap tolerance/alignment.
 
 ## Explicit non-goals
 
