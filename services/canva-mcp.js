@@ -28,7 +28,6 @@ const TOKEN_PURPOSE = "canva-mcp-token-bundle";
 const PENDING_PURPOSE = "canva-mcp-pending-oauth";
 const RESPONSIVE_EDIT_TYPES = new Set([
   "update_title",
-  "replace_text",
   "update_fill",
   "delete_element",
   "find_and_replace_text"
@@ -150,7 +149,8 @@ function createOAuthProvider({ config, flow, onTokensSaved, onAuthorizationRedir
       application_type: "web"
     },
     clientInformation(context) {
-      const issuer = clean(context?.issuer, 1000);
+      if (!context?.issuer) return undefined;
+      const issuer = clean(context.issuer, 1000);
       if (!safeCanvaDomain(issuer)) {
         throw new Error("Canva authorization discovery returned an untrusted issuer. No credentials were sent.");
       }
@@ -466,7 +466,11 @@ function validateFormatting(formatting = {}) {
     throw new TypeError("Text formatting must be an object.");
   }
   const result = {};
-  if (formatting.font_size !== undefined) result.font_size = finiteNumber(formatting.font_size, "Font size", 1, 800);
+  if (formatting.font_size !== undefined) {
+    const size = finiteNumber(formatting.font_size, "Font size", 1, 800);
+    if (!Number.isInteger(size)) throw new TypeError("Font size must be a whole number.");
+    result.font_size = size;
+  }
   if (formatting.text_align !== undefined) {
     if (!["start", "center", "end"].includes(formatting.text_align)) throw new TypeError("Choose start, center or end text alignment.");
     result.text_align = formatting.text_align;
@@ -497,7 +501,11 @@ function validateFormatting(formatting = {}) {
     }
     result.link = formatting.link;
   }
-  if (formatting.list_level !== undefined) result.list_level = finiteNumber(formatting.list_level, "List level", 0, 10);
+  if (formatting.list_level !== undefined) {
+    const level = finiteNumber(formatting.list_level, "List level", 0, 10);
+    if (!Number.isInteger(level)) throw new TypeError("List level must be a whole number.");
+    result.list_level = level;
+  }
   if (formatting.list_marker !== undefined) {
     if (!["none", "disc", "circle", "square", "decimal", "lower-alpha", "lower-roman"].includes(formatting.list_marker)) {
       throw new TypeError("List marker style is invalid.");
@@ -599,12 +607,13 @@ export function validateCanvaEditingOperations({ operations, pages, pageIndex })
 export function validateCanvaPageMerge({ type, designId, title, operations, confirmed = false }) {
   if (!confirmed) throw new Error("Confirm the exact Canva page changes before applying them.");
   if (!["create_new_design", "modify_existing_design"].includes(type)) throw new TypeError("Choose whether to create a new design or modify an existing design.");
-  if (!Array.isArray(operations) || operations.length < 1 || operations.length > 100) {
-    throw new TypeError("Choose between 1 and 100 page operations.");
+  if (!Array.isArray(operations) || operations.length !== 1) {
+    throw new TypeError("Canva accepts exactly one page operation per request. Apply multiple page changes one at a time.");
   }
   if (type === "modify_existing_design" && !/^D[A-Za-z0-9_-]{10,}$/.test(clean(designId, 80))) {
     throw new TypeError("A valid Canva design ID is required.");
   }
+  if (type === "create_new_design" && !clean(title, 255)) throw new TypeError("A title is required when creating a new page-combined design.");
   return {
     type,
     ...(type === "modify_existing_design" ? { design_id: designId } : { title: clean(title, 255) }),
