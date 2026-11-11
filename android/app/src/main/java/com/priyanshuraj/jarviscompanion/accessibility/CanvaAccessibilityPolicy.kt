@@ -55,7 +55,6 @@ internal object CanvaAccessibilityPolicy {
 
         for (pattern in formatPatterns) {
             val style = pattern.matchEntire(input)?.groupValues?.getOrNull(1)
-                ?: pattern.matchEntire(input)?.groupValues?.getOrNull(1)
             if (!style.isNullOrBlank()) {
                 val label = formatLabels[style] ?: return null
                 return CanvaEditorCommand(CanvaEditorCommandType.TOGGLE_FORMAT, label)
