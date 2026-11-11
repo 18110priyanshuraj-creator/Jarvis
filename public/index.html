@@ -1020,8 +1020,8 @@
           <p>Connect Canva once, discover your designs and brand templates, inspect a template data set, fill supported fields, update compatible template-based designs and export MP4, PNG, PDF or other supported formats. Every create, update and export action asks for confirmation.</p>
 
           <div class="creator-export-row">
-            <button type="button" class="primary" id="creator-connect-canva">Connect Canva for automation</button>
-            <button type="button" class="item-action" id="creator-disconnect-canva">Disconnect Canva</button>
+            <button type="button" class="primary" id="creator-connect-canva" disabled>Connect Canva for automation</button>
+            <button type="button" class="item-action" id="creator-disconnect-canva" class="item-action hidden">Disconnect Canva</button>
             <a class="primary creator-canva-link" id="creator-open-canva" href="https://www.canva.com/create/videos/" target="_blank" rel="noopener noreferrer">Open Canva Video</a>
           </div>
           <p id="creator-canva-status" class="creator-status" role="status" aria-live="polite">Checking Canva connection and permissions…</p>
@@ -1038,7 +1038,7 @@
             </label>
           </div>
           <div class="creator-export-row">
-            <button type="button" class="item-action" id="creator-canva-load-resources">Find Canva resources</button>
+            <button type="button" class="item-action" id="creator-canva-load-resources" disabled>Find Canva resources</button>
           </div>
           <div id="creator-canva-resources" class="creator-canva-resources" aria-live="polite"></div>
 
@@ -1058,7 +1058,7 @@
             </label>
           </div>
           <div class="creator-export-row">
-            <button type="button" class="item-action" id="creator-canva-inspect-dataset">Inspect editable fields</button>
+            <button type="button" class="item-action" id="creator-canva-inspect-dataset" disabled>Inspect editable fields</button>
           </div>
           <pre id="creator-canva-dataset" class="creator-canva-json" aria-live="polite">Choose a template or design, then inspect its available data fields.</pre>
 
@@ -1069,7 +1069,7 @@
           </label>
           <p class="small muted">Use the exact field names and supported value types shown by the dataset. Image/video fields need Canva asset IDs. JARVIS does not upload or invent assets for these fields.</p>
           <div class="creator-export-row">
-            <button type="button" class="primary" id="creator-canva-run-autofill">Preview and run autofill</button>
+            <button type="button" class="primary" id="creator-canva-run-autofill" disabled>Preview and run autofill</button>
           </div>
           <p class="small muted">Autofill availability depends on your Canva plan and the source design/template. An existing design update is supported only for eligible editable template fields.</p>
 
@@ -1089,8 +1089,8 @@
             </label>
           </div>
           <div class="creator-export-row">
-            <button type="button" class="item-action" id="creator-canva-poll-autofill">Check autofill job</button>
-            <button type="button" class="primary" id="creator-canva-start-export">Export selected design</button>
+            <button type="button" class="item-action" id="creator-canva-poll-autofill" disabled>Check autofill job</button>
+            <button type="button" class="primary" id="creator-canva-start-export" disabled>Export selected design</button>
           </div>
           <div class="creator-form-grid">
             <label for="creator-canva-export-job">Export job ID
@@ -1098,7 +1098,7 @@
             </label>
           </div>
           <div class="creator-export-row">
-            <button type="button" class="item-action" id="creator-canva-poll-export">Check export job</button>
+            <button type="button" class="item-action" id="creator-canva-poll-export" disabled>Check export job</button>
             <a id="creator-canva-download-link" class="primary creator-canva-link hidden" href="#" target="_blank" rel="noopener noreferrer">Open completed Canva export</a>
             <a class="primary creator-canva-link hidden" id="creator-canva-design-link" href="#" target="_blank" rel="noopener noreferrer">Open Canva design</a>
           </div>
