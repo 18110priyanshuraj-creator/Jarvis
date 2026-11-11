@@ -7,7 +7,16 @@ const CALLBACK_PATH = "/api/integrations/canva/oauth/callback";
 export const CANVA_SCOPES = Object.freeze([
   "asset:read",
   "asset:write",
-  "design:content:write"
+  "design:meta:read",
+  "design:content:read",
+  "design:content:write",
+  "brandtemplate:meta:read",
+  "brandtemplate:content:read"
+]);
+const CANVA_KNOWN_SCOPES = new Set(CANVA_SCOPES);
+const CANVA_AUTOMATION_SCOPES = Object.freeze([...CANVA_SCOPES]);
+const CANVA_EXPORT_FORMATS = new Set([
+  "jpg", "png", "gif", "pptx", "mp4", "pdf", "csv", "html_bundle", "html_standalone"
 ]);
 const pendingStates = new Map();
 const accessTokens = new Map();
@@ -65,9 +74,12 @@ export function normalizeCanvaOAuthConnection(input = {}) {
   if (input.provider !== "canva") throw new TypeError("Invalid Canva connection provider.");
   const encryptedRefreshToken = normalizeEncryptedToken(input.encryptedRefreshToken);
   if (!Array.isArray(input.grantedScopes) ||
-      CANVA_SCOPES.some((scope) => !input.grantedScopes.includes(scope)) ||
-      input.grantedScopes.some((scope) => !CANVA_SCOPES.includes(scope))) {
-    throw new TypeError("The Canva connection does not contain the exact supported scopes.");
+      input.grantedScopes.length < 3 ||
+      input.grantedScopes.some((scope) => !CANVA_KNOWN_SCOPES.has(scope)) ||
+      !input.grantedScopes.includes("asset:read") ||
+      !input.grantedScopes.includes("asset:write") ||
+      !input.grantedScopes.includes("design:content:write")) {
+    throw new TypeError("The Canva connection does not contain a valid supported scope set.");
   }
   const connectedAt = clean(input.connectedAt, 40);
   const updatedAt = clean(input.updatedAt, 40);
@@ -101,8 +113,10 @@ export function getCanvaOAuthStatus(connection, env = process.env) {
     connected,
     grantedScopes: connected ? normalized.grantedScopes : [],
     requiredScopes: [...CANVA_SCOPES],
+    automationReady: connected && CANVA_AUTOMATION_SCOPES.every((scope) => normalized.grantedScopes.includes(scope)),
+    reauthorizationRequired: connected && !CANVA_AUTOMATION_SCOPES.every((scope) => normalized.grantedScopes.includes(scope)),
     callbackPath: CALLBACK_PATH,
-    accessBoundary: "Upload user-approved assets and create Canva designs. JARVIS does not receive permission to edit arbitrary existing designs or control the Canva video timeline."
+    accessBoundary: "Canva Connect supports design/template discovery, template-data autofill, supported design updates and export. It does not expose arbitrary freeform timeline editing or unrestricted canvas gestures through this external API."
   };
 }
 
@@ -380,6 +394,133 @@ export async function createCanvaThumbnailDesign(options = {}) {
       : "",
     note: "The thumbnail is inserted as one flat image. Text and graphic layers are not separately editable through this handoff."
   };
+}
+
+
+function canvaId(value, label = "Canva resource ID") {
+  const id = clean(value, 128);
+  if (!/^[A-Za-z0-9_-]{3,128}$/.test(id)) {
+    throw new TypeError(label + " is invalid.");
+  }
+  return encodeURIComponent(id);
+}
+
+function safeQuery(input = {}, allowed = []) {
+  const params = new URLSearchParams();
+  for (const key of allowed) {
+    const value = input[key];
+    if (value === undefined || value === null || value === "") continue;
+    const normalized = clean(String(value), key === "continuation" ? 1000 : 180);
+    if (!normalized) continue;
+    params.set(key, normalized);
+  }
+  return params.size ? "?" + params.toString() : "";
+}
+
+function validateAutofillData(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("Autofill data must be a JSON object keyed by Canva template field names.");
+  }
+  const entries = Object.entries(value);
+  if (!entries.length || entries.length > 60) {
+    throw new TypeError("Provide between 1 and 60 Canva template fields.");
+  }
+  for (const [key, item] of entries) {
+    if (!/^[A-Za-z0-9 _.-]{1,80}$/.test(key) || ["__proto__", "constructor", "prototype"].includes(key)) {
+      throw new TypeError("An autofill field name is invalid.");
+    }
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new TypeError("Each autofill field must be a typed Canva value object.");
+    }
+    if (JSON.stringify(item).length > 16000) {
+      throw new TypeError("A Canva field value is too large.");
+    }
+    const type = clean(item.type, 24);
+    if (!new Set(["text", "image", "video", "chart", "sheet"]).has(type)) {
+      throw new TypeError("A Canva field uses an unsupported typed value.");
+    }
+    if (item.text !== undefined && (typeof item.text !== "string" || item.text.length > 5000)) {
+      throw new TypeError("Text autofill values must be strings no longer than 5,000 characters.");
+    }
+    if (item.asset_id !== undefined && (typeof item.asset_id !== "string" || item.asset_id.length > 160)) {
+      throw new TypeError("Canva asset IDs must be short strings.");
+    }
+  }
+  if (JSON.stringify(value).length > 64000) {
+    throw new TypeError("The complete Canva autofill payload is too large.");
+  }
+  return value;
+}
+
+export async function listCanvaDesigns(options = {}) {
+  const query = safeQuery(options, ["query", "continuation", "ownership", "sort_by", "limit"]);
+  return canvaJson("/designs" + query, options);
+}
+
+export async function listCanvaBrandTemplates(options = {}) {
+  const query = safeQuery(options, ["query", "continuation", "ownership", "sort_by", "limit"]);
+  return canvaJson("/brand-templates" + query, options);
+}
+
+export async function getCanvaDesignDataset(options = {}) {
+  const id = canvaId(options.designId, "Canva design ID");
+  return canvaJson("/designs/" + id + "/dataset", options);
+}
+
+export async function getCanvaBrandTemplateDataset(options = {}) {
+  const id = canvaId(options.templateId, "Canva brand template ID");
+  return canvaJson("/brand-templates/" + id + "/dataset", options);
+}
+
+export async function createCanvaAutofillJob(options = {}) {
+  const source = clean(options.source, 32);
+  const id = canvaId(options.id, source === "brand_template" ? "Canva brand template ID" : "Canva design ID");
+  const data = validateAutofillData(options.data);
+  const payload = { data };
+  if (source === "brand_template") {
+    payload.type = "create_from_brand_template";
+    payload.brand_template_id = options.id;
+    const title = clean(options.title, 100);
+    if (title) payload.title = title;
+  } else if (source === "design") {
+    payload.type = "create_from_design";
+    payload.design_id = options.id;
+    const title = clean(options.title, 100);
+    if (title) payload.title = title;
+  } else if (source === "update_design") {
+    payload.type = "update_design";
+    payload.design_id = options.id;
+  } else {
+    throw new TypeError("Choose brand_template, design or update_design as the Canva autofill source.");
+  }
+  return canvaJson("/autofills", {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function getCanvaAutofillJob(options = {}) {
+  return canvaJson("/autofills/" + canvaId(options.jobId, "Canva autofill job ID"), options);
+}
+
+export async function createCanvaExportJob(options = {}) {
+  const designId = canvaId(options.designId, "Canva design ID");
+  const format = clean(options.format, 24).toLowerCase();
+  if (!CANVA_EXPORT_FORMATS.has(format)) {
+    throw new TypeError("Choose a supported Canva export format.");
+  }
+  return canvaJson("/exports", {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ design_id: options.designId, format })
+  });
+}
+
+export async function getCanvaExportJob(options = {}) {
+  return canvaJson("/exports/" + canvaId(options.jobId, "Canva export job ID"), options);
 }
 
 export async function revokeCanvaOAuthConnection(connectionInput, options = {}) {

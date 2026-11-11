@@ -482,6 +482,35 @@ The current `docs/JARVIS_PHASE_ROADMAP.md` supersedes historical component label
 
 Implementation contract: `docs/JARVIS_PHASE_20_KNOWLEDGE_MANAGER.md`. Physical Galaxy Tab A9 file-picker/download testing remains Phase 31.
 
+
+## Canva Connect design automation (feature branch)
+
+- Canva OAuth now requests design metadata/read, design content read/write, brand-template metadata/content read, and asset read/write scopes. Existing thumbnail-only connections remain recognizable but must be reauthorized to enable the expanded automation.
+- The Creator Studio can list Canva designs and brand templates, inspect design/template data sets, create a design from a brand template or compatible existing design, update compatible template-backed fields on an existing design, and submit/poll export jobs including MP4, PNG, PDF, JPG, GIF and PPTX.
+- Autofill field values are explicit typed JSON supplied and reviewed by the user. Image/video fields require an asset ID that already exists in Canva; JARVIS does not invent an uploaded asset ID.
+- Create, update and export requests require a separate confirmation in Creator Studio. Export download URLs are temporary and should be saved promptly.
+- This is Canva Connect API automation, not unrestricted editing of every element or arbitrary timeline operation. Precise clip trimming, splitting, keyframes, audio track layout and canvas gestures are not exposed through this external API. Android Accessibility remains a separate, conditional UI-control path.
+- Brand-template/autofill availability depends on the connected Canva account and plan, and the Canva developer integration must allow the requested scopes.
+
+## Background voice session (feature branch)
+
+- The user must start microphone control while JARVIS is visible and microphone permission is granted. The ongoing Android microphone foreground service has a persistent notification with Interrupt and Stop actions.
+- The service can continue when the user leaves JARVIS or dismisses its task from Recents. The user can stop it from the notification.
+- This is not an ambient always-on acoustic wake-word engine. The current `Hey JARVIS` gate is evaluated after Android speech recognition returns text. The service does not auto-start after boot and does not silently restart after process death.
+- Offline-only mode refuses network speech-recognition/TTS fallback when local services or language models are missing. Background service and language behavior still require physical-device acceptance.
+
+## Android workspace status
+
+- The Android Companion has native Orb, setup/pairing, voice controls, local encrypted memory and a WebView-hosted JARVIS Workspace.
+- The full dashboard is **not yet a fully native Android workspace**. Converting Chat, Workflows, Research, Knowledge, Creator Studio, Media Studio, integrations and diagnostics into native Android screens with native offline parity remains separate work; this feature branch does not claim that conversion is complete.
+
+## External editor and Canva project harvest
+
+- JARVIS's original Media Studio now has a browser-local IndexedDB library for reusable image/video/audio files, tags, search and reattaching saved assets to clips in the same browser profile.
+- Timeline moves and trims use magnetic snap points from nearby clip boundaries and the playhead.
+- Android hands-free commands can toggle selected Canva text formatting, set a bounded font size, and open the selected-media Replace control when the installed Canva app is foregrounded. File selection and final visual verification remain manual.
+- Repository license and compatibility decisions are recorded in [JARVIS repository feature harvest](docs/JARVIS_REPOSITORY_FEATURE_HARVEST.md).
+
 ## Android release and final acceptance
 
 Main includes the advanced multitrack Media Studio, bounded Canva accessibility drag support, and Creator Campaign Studio. See [JARVIS release and acceptance status](docs/JARVIS_RELEASE_AND_ACCEPTANCE.md) for the exact feature boundaries, the signed-APK workflow, required private GitHub Actions secrets, and the physical Galaxy Tab A9 acceptance checklist.

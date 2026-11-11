@@ -36,7 +36,7 @@
             android:name=".voice.VoiceControlService"
             android:exported="false"
             android:foregroundServiceType="microphone"
-            android:stopWithTask="true" />
+            android:stopWithTask="false" />
         <service
             android:name=".accessibility.JarvisAccessibilityService"
             android:exported="true"

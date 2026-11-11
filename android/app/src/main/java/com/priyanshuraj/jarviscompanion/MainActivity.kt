@@ -151,7 +151,7 @@ class MainActivity : Activity() {
             setOnClickListener { startVoiceRecognition() }
         }
         val handsFreeButton = Button(this).apply {
-            text = "Start hands-free control"
+            text = "Start background voice"
             setOnClickListener { startHandsFreeControl() }
         }
         voiceModeButton = Button(this).apply {
@@ -226,7 +226,7 @@ class MainActivity : Activity() {
                 textSize = 26f
             })
             addView(TextView(this@MainActivity).apply {
-                text = "The central orb is the home screen. This page keeps the original pairing, voice, permissions and activity tools."
+                text = "The central orb is the home screen. Background voice starts only on your request and remains visible in the notification shade until you stop it; it is not auto-started after reboot."
                 textSize = 14f
                 setPadding(0, 8, 0, 16)
             })
@@ -1033,8 +1033,8 @@ class MainActivity : Activity() {
         val speakButton = homeButton("Speak")
         speakButton.contentDescription = "Start one-time voice recognition"
         speakButton.setOnClickListener { startVoiceRecognition() }
-        val handsFreeButton = homeButton("Hands-free")
-        handsFreeButton.contentDescription = "Start user-controlled hands-free voice mode"
+        val handsFreeButton = homeButton("Background voice")
+        handsFreeButton.contentDescription = "Start a visible user-controlled background voice session. Stop it from the ongoing notification."
         handsFreeButton.setOnClickListener { startHandsFreeControl() }
         controls.addView(speakButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply {
             marginEnd = dp(6)
@@ -1044,7 +1044,7 @@ class MainActivity : Activity() {
         })
 
         val footer = TextView(this).apply {
-            text = "Microphone use starts only when you choose Speak or Hands-free. Setup keeps the existing pairing and permission controls."
+            text = "Background voice starts only when you choose it and stays visible in the notification shade. In Canva, select text or media first, then try: Bold selected text, Set font size to 32, or Replace selected image. You choose files and review changes yourself."
             textSize = 11f
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(104, 137, 153))

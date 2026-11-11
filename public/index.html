@@ -645,7 +645,7 @@
 
         <div class="media-workflow-note">
           <strong>Review and export controls</strong>
-          <p>Projects remain in your private JARVIS workspace. Edit scenes, choose visual styles and stick-figure poses, set motion and transitions, add local video/image/audio tracks, then review and approve before export. Long-form projects support up to 20 minutes and 80 scenes. Rendering is real-time in this browser: keep the tab open, use a desktop browser for long exports, and remember that local media files must be re-attached in a new browser session. No media is uploaded or published by exporting.</p>
+          <p>Projects remain in your private JARVIS workspace. Edit scenes, choose visual styles and stick-figure poses, set motion and transitions, add local video/image/audio tracks, then review and approve before export. Long-form projects support up to 20 minutes and 80 scenes. Rendering is real-time in this browser: keep the tab open, use a desktop browser for long exports. Saved library assets persist in this browser's local storage; direct file attachments still need to be re-attached after a new browser session. Nothing is cloud-synced by this library.</p>
         </div>
 
         <div class="list-heading"><h2>Your media projects</h2><span class="muted small">Drafts and approved exports</span></div>
@@ -697,6 +697,7 @@
                 </div>
               </div>
               <div id="media-timeline-tracks" class="media-timeline-tracks"></div>
+              <p class="small muted media-shortcut-help">Keyboard: Space/K play or stop · J/L seek ±5 seconds · ←/→ step 1/30 second · Home/End jump to start/end. Click the preview canvas to focus shortcuts; typing fields and controls are left alone.</p>
               <div class="timeline-playhead">
                 <label for="media-timeline-playhead">Playhead</label>
                 <input id="media-timeline-playhead" type="range" min="0" max="30" step="0.05" value="0">
@@ -705,7 +706,39 @@
               <div id="media-timeline-inspector" class="media-timeline-inspector">
                 <p class="small muted">Select a clip to edit its timing, keyframes, chroma key and speed ramp.</p>
               </div>
-              <p class="media-limits-note">Timeline edit decisions are saved with the project. Imported files are kept locally in this browser session; re-attach them after opening the project on another device or browser.</p>
+              <section class="media-asset-library" aria-label="Reusable local media asset library">
+                <div class="media-library-heading">
+                  <div>
+                    <strong>Reusable asset library</strong>
+                    <p class="small muted">Save frequently used images, videos and audio in this browser. Add tags, search, download an original file, and attach saved assets to the selected timeline clip. To move an asset to another device, download it here and save that file in the other device’s library.</p>
+                  </div>
+                </div>
+                <div class="media-library-import">
+                  <label class="media-field" for="media-asset-library-file"><span>Choose a reusable asset</span>
+                    <input id="media-asset-library-file" class="media-scene-input" type="file" accept="image/*,video/*,audio/*">
+                  </label>
+                  <label class="media-field" for="media-asset-library-tags"><span>Tags (comma separated)</span>
+                    <input id="media-asset-library-tags" class="media-scene-input" maxlength="240" placeholder="intro, logo, background, voiceover">
+                  </label>
+                  <button type="button" class="item-action" id="media-asset-library-save">Save to library</button>
+                </div>
+                <div class="media-library-filters">
+                  <label class="media-field" for="media-asset-library-search"><span>Search assets and tags</span>
+                    <input id="media-asset-library-search" class="media-scene-input" maxlength="120" placeholder="Search by file name or tag">
+                  </label>
+                  <label class="media-field" for="media-asset-library-kind"><span>Asset type</span>
+                    <select id="media-asset-library-kind" class="media-scene-input">
+                      <option value="all">All types</option>
+                      <option value="image">Images</option>
+                      <option value="video">Videos</option>
+                      <option value="audio">Audio</option>
+                    </select>
+                  </label>
+                </div>
+                <p id="media-asset-library-status" class="media-asset-library-status" role="status" aria-live="polite">Assets are stored only in this browser. They are not uploaded, shared or synced to other devices.</p>
+                <div id="media-asset-library-list" class="media-asset-library-list"></div>
+              </section>
+              <p class="media-limits-note">Timeline edit decisions are saved with the project. Assets saved to the local library can be reattached on this browser and device. They are not synced to other browsers or devices.</p>
             </section>
             <div class="media-editor-toolbar">
               <button type="button" class="item-action" id="media-add-scene">Add scene</button>
@@ -714,7 +747,7 @@
             </div>
           </div>
           <aside class="media-editor-side">
-            <div class="media-preview-wrap"><canvas id="media-preview-canvas" aria-label="Storyboard scene preview"></canvas></div>
+            <div class="media-preview-wrap"><canvas id="media-preview-canvas" tabindex="0" aria-label="Storyboard scene preview"></canvas></div>
             <button type="button" class="item-action" id="media-preview-button">Preview storyboard</button>
             <div class="research-hint">
               <strong>Local exports</strong>
@@ -1015,19 +1048,102 @@
         </section>
 
         <section class="creator-panel creator-canva-panel">
-          <p class="eyebrow">CANVA HANDOFF</p>
-          <h2>5 · Finish the edit in Canva</h2>
-          <p>Upload the SVG character, scene images and voiceover. Use a 16:9 video design for regular YouTube, place video on the main track, text/graphics on upper tracks and voice/music on audio tracks. Check captions, timing, sound levels and the exported file on your phone.</p>
-          <div class="creator-handoff-steps">
-            <span>1. Export script + storyboard CSV + SVG poses</span>
-            <span>2. Open Canva Video and upload your assets</span>
-            <span>3. Build the timeline and record/add the voiceover</span>
-            <span>4. Preview every scene and export MP4</span>
-            <span>5. Review the file and metadata before upload</span>
+          <p class="eyebrow">CANVA AUTOMATION WORKSPACE</p>
+          <h2>5 · Automate supported Canva design workflows</h2>
+          <p>Connect Canva once, discover your designs and brand templates, inspect a template data set, fill supported fields, update compatible template-based designs and export MP4, PNG, PDF or other supported formats. Every create, update and export action asks for confirmation.</p>
+
+          <div class="creator-export-row">
+            <button type="button" class="primary" id="creator-connect-canva" disabled>Connect Canva for automation</button>
+            <button type="button" class="item-action" id="creator-disconnect-canva" class="item-action hidden">Disconnect Canva</button>
+            <a class="primary creator-canva-link" id="creator-open-canva" href="https://www.canva.com/create/videos/" target="_blank" rel="noopener noreferrer">Open Canva Video</a>
           </div>
-          <a class="primary creator-canva-link" id="creator-open-canva" href="https://www.canva.com/create/videos/" target="_blank" rel="noopener noreferrer">Open Canva Video</a>
-          <p class="small muted">To open Canva on your paired Android device, start JARVIS Companion hands-free and say: “Jarvis, open Canva.” JARVIS can launch the installed app and use supported visible accessibility labels, scrolling and focused text entry. It can attempt one previewed, named semantic drag only when both the source and destination expose Android accessibility drag actions. If Canva does not expose them, that move stays manual; clip-edge trimming, splitting and timeline timing also remain manual.</p>
-          <p class="small muted">This workflow uses your already signed-in Canva app or website through Android Accessibility. No Canva OAuth client ID or secret is required. JARVIS can open public websites, inspect accessible screen labels, tap unique visible controls, scroll and type ordinary text into a field you focus. Some Canva controls are canvas-based or drag-only and may still need your hands. The limited drag action does not automate precise timing, trimming, splitting, keyframes or the complete video timeline.</p>
+          <p id="creator-canva-status" class="creator-status" role="status" aria-live="polite">Checking Canva connection and permissions…</p>
+
+          <div class="creator-form-grid">
+            <label for="creator-canva-search">Search designs or brand templates
+              <input id="creator-canva-search" maxlength="180" placeholder="e.g. YouTube physics explainer">
+            </label>
+            <label for="creator-canva-resource-kind">Resource type
+              <select id="creator-canva-resource-kind">
+                <option value="templates">Brand templates</option>
+                <option value="designs">My designs</option>
+              </select>
+            </label>
+          </div>
+          <div class="creator-export-row">
+            <button type="button" class="item-action" id="creator-canva-load-resources" disabled>Find Canva resources</button>
+          </div>
+          <div id="creator-canva-resources" class="creator-canva-resources" aria-live="polite"></div>
+
+          <div class="creator-form-grid">
+            <label for="creator-canva-source">Automation action
+              <select id="creator-canva-source">
+                <option value="brand_template">Create from brand template</option>
+                <option value="design">Create from an existing design</option>
+                <option value="update_design">Update an existing compatible design</option>
+              </select>
+            </label>
+            <label for="creator-canva-resource-id">Template or design ID
+              <input id="creator-canva-resource-id" maxlength="128" placeholder="Choose a result or paste its Canva ID">
+            </label>
+            <label for="creator-canva-title">New design title (when creating)
+              <input id="creator-canva-title" maxlength="100" placeholder="JARVIS campaign design">
+            </label>
+          </div>
+          <div class="creator-export-row">
+            <button type="button" class="item-action" id="creator-canva-inspect-dataset" disabled>Inspect editable fields</button>
+          </div>
+          <pre id="creator-canva-dataset" class="creator-canva-json" aria-live="polite">Choose a template or design, then inspect its available data fields.</pre>
+
+          <label for="creator-canva-data-json">Field values as typed JSON
+            <textarea id="creator-canva-data-json" rows="8" spellcheck="false">{
+  "Headline": { "type": "text", "text": "Your reviewed headline" }
+}</textarea>
+          </label>
+          <p class="small muted">Use the exact field names and supported value types shown by the dataset. Image/video fields need Canva asset IDs. JARVIS does not upload or invent assets for these fields.</p>
+          <div class="creator-export-row">
+            <button type="button" class="primary" id="creator-canva-run-autofill" disabled>Preview and run autofill</button>
+          </div>
+          <p class="small muted">Autofill availability depends on your Canva plan and the source design/template. An existing design update is supported only for eligible editable template fields.</p>
+
+          <div class="creator-form-grid">
+            <label for="creator-canva-autofill-job">Autofill job ID
+              <input id="creator-canva-autofill-job" maxlength="128" placeholder="Job ID returned by Canva">
+            </label>
+            <label for="creator-canva-export-format">Export format
+              <select id="creator-canva-export-format">
+                <option value="mp4">MP4 video</option>
+                <option value="png">PNG image</option>
+                <option value="jpg">JPG image</option>
+                <option value="pdf">PDF</option>
+                <option value="gif">GIF</option>
+                <option value="pptx">PowerPoint</option>
+              </select>
+            </label>
+          </div>
+          <div class="creator-export-row">
+            <button type="button" class="item-action" id="creator-canva-poll-autofill" disabled>Check autofill job</button>
+            <button type="button" class="primary" id="creator-canva-start-export" disabled>Export selected design</button>
+          </div>
+          <div class="creator-form-grid">
+            <label for="creator-canva-export-job">Export job ID
+              <input id="creator-canva-export-job" maxlength="128" placeholder="Job ID returned by Canva">
+            </label>
+          </div>
+          <div class="creator-export-row">
+            <button type="button" class="item-action" id="creator-canva-poll-export" disabled>Check export job</button>
+            <div id="creator-canva-downloads" class="creator-canva-downloads" aria-live="polite"></div>
+            <a class="primary creator-canva-link hidden" id="creator-canva-design-link" href="#" target="_blank" rel="noopener noreferrer">Open Canva design</a>
+          </div>
+
+          <div class="creator-tool-card">
+            <h3>Optional flat-thumbnail handoff</h3>
+            <p class="small muted">This uploads the generated 1280 × 720 thumbnail as one flat image. It does not provide editable text layers or control Canva’s video timeline.</p>
+            <button type="button" class="item-action" id="creator-create-canva-thumbnail" disabled>Create flat thumbnail design</button>
+          </div>
+
+          <p class="small muted">Canva’s external Connect API automates supported templates, data fields and exports. It does not expose arbitrary clip trimming, split points, keyframes or freeform Canva timeline editing. Those still require Canva UI controls that are accessible in the installed app, or direct user editing.</p>
+          <p class="small muted">On Android, JARVIS can open Canva, inspect accessible labels and perform a limited semantic drag when Canva exposes that action. This is a separate UI-control path and does not require Canva OAuth for basic app control.</p>
         </section>
 
         <section class="creator-panel">

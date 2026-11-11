@@ -19,6 +19,8 @@ Make speech recognition and spoken replies offline-first, expose an explicit off
 - Make text-to-speech honor the same privacy preference. Offline-only output selects installed non-network voices only and reports when no matching local voice is installed.
 - Add the voice privacy selector to the existing setup screen and include current mode / recognizer capability in the permission checklist.
 - Keep microphone permission, explicit user-initiated sessions, foreground notification, Stop/Interrupt, and existing server command routing intact.
+- The user-started microphone foreground service now declares `stopWithTask=false`, so dismissing the app from Recents does not itself stop the active voice session. Android can still stop the service under system resource pressure, and the service does not silently restart after process death or device reboot.
+- The ongoing foreground notification continues to expose Interrupt / cancel and Stop actions. The user must start the session while JARVIS is visible and microphone permission is granted; there is no boot receiver or hidden background microphone start.
 
 ## Privacy and capability boundary
 
@@ -27,6 +29,7 @@ Make speech recognition and spoken replies offline-first, expose an explicit off
 - Offline-only text-to-speech requires an installed local voice for the reply language. If missing, JARVIS does not silently use a network voice.
 - In Prefer offline mode, Android system speech recognition / TTS providers may use the network when local capabilities are not available.
 - No transcripts or audio recordings are added to the execution ledger or written to the server by the voice policy.
+- Background continuation means an already-running, user-started microphone foreground service may continue after its Activity/task is dismissed. It is not a guaranteed always-on wake-word engine, does not survive every process kill, and is not automatically restarted after reboot. The local `Hey JARVIS` parser is applied to speech-recognition results inside that visible service; it is not a separate low-power acoustic wake-word detector.
 
 ## Automated acceptance
 

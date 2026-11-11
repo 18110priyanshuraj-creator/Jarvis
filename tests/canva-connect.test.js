@@ -6,6 +6,14 @@ import {
   CANVA_SCOPES,
   clearCanvaTokenCache,
   createCanvaThumbnailDesign,
+  createCanvaAutofillJob,
+  createCanvaExportJob,
+  getCanvaAutofillJob,
+  getCanvaExportJob,
+  getCanvaDesignDataset,
+  getCanvaBrandTemplateDataset,
+  listCanvaDesigns,
+  listCanvaBrandTemplates,
   finishCanvaOAuth,
   getCanvaAccessToken,
   getCanvaOAuthStatus,
@@ -13,6 +21,7 @@ import {
   revokeCanvaOAuthConnection
 } from "../services/canva-connect.js";
 import { createRuntimeStore } from "../services/runtime-store.js";
+import { encryptSecret } from "../services/oauth.js";
 
 const env = {
   JARVIS_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 13).toString("base64"),
@@ -227,4 +236,160 @@ test("Canva disconnect revokes the refresh-token lineage before local credential
     env,
     fetchImpl: async () => new Response("", { status: 503 })
   }), /connection was kept/i);
+});
+
+
+test("Canva automation lists designs and brand templates through fixed API endpoints", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse({ items: [] });
+  };
+  await listCanvaDesigns({
+    accessToken: "canva-test-access-token-value",
+    query: "physics",
+    limit: "10",
+    fetchImpl
+  });
+  await listCanvaBrandTemplates({
+    accessToken: "canva-test-access-token-value",
+    ownership: "owned",
+    fetchImpl
+  });
+  assert.equal(calls[0].url, "https://api.canva.com/rest/v1/designs?query=physics&limit=10");
+  assert.equal(calls[1].url, "https://api.canva.com/rest/v1/brand-templates?ownership=owned");
+  assert.equal(calls.every((item) => item.options.redirect === "error"), true);
+});
+
+test("Canva automation reads design and template datasets using encoded resource IDs", async () => {
+  const calls = [];
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    return jsonResponse({ dataset: { fields: [] } });
+  };
+  await getCanvaDesignDataset({
+    accessToken: "canva-test-access-token-value",
+    designId: "DA1_design",
+    fetchImpl
+  });
+  await getCanvaBrandTemplateDataset({
+    accessToken: "canva-test-access-token-value",
+    templateId: "template_123",
+    fetchImpl
+  });
+  assert.deepEqual(calls, [
+    "https://api.canva.com/rest/v1/designs/DA1_design/dataset",
+    "https://api.canva.com/rest/v1/brand-templates/template_123/dataset"
+  ]);
+  await assert.rejects(() => getCanvaDesignDataset({
+    accessToken: "canva-test-access-token-value",
+    designId: "../oauth/token",
+    fetchImpl
+  }), /invalid/i);
+});
+
+test("Canva autofill supports template creation and existing design updates with typed fields", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse({ job: { id: "autofill-job-1", status: "in_progress" } });
+  };
+  const data = {
+    Headline: { type: "text", text: "Circular motion explained" },
+    Character: { type: "image", asset_id: "asset_123" }
+  };
+  await createCanvaAutofillJob({
+    accessToken: "canva-test-access-token-value",
+    source: "brand_template",
+    id: "template_123",
+    title: "JARVIS physics explainer",
+    data,
+    fetchImpl
+  });
+  await createCanvaAutofillJob({
+    accessToken: "canva-test-access-token-value",
+    source: "update_design",
+    id: "design_123",
+    data,
+    fetchImpl
+  });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].url, "https://api.canva.com/rest/v1/autofills");
+  const createBody = JSON.parse(calls[0].options.body);
+  assert.equal(createBody.type, "create_from_brand_template");
+  assert.equal(createBody.brand_template_id, "template_123");
+  assert.equal(createBody.title, "JARVIS physics explainer");
+  assert.deepEqual(createBody.data, data);
+  const updateBody = JSON.parse(calls[1].options.body);
+  assert.equal(updateBody.type, "update_design");
+  assert.equal(updateBody.design_id, "design_123");
+  await assert.rejects(() => createCanvaAutofillJob({
+    accessToken: "canva-test-access-token-value",
+    source: "brand_template",
+    id: "template_123",
+    data: { Title: "not-typed" },
+    fetchImpl
+  }), /typed Canva value/i);
+  await assert.rejects(() => createCanvaAutofillJob({
+    accessToken: "canva-test-access-token-value",
+    source: "brand_template",
+    id: "../bad",
+    data,
+    fetchImpl
+  }), /invalid/i);
+});
+
+test("Canva autofill and export jobs can be polled; exports support MP4 and PDF", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, options });
+    if (url.endsWith("/exports")) return jsonResponse({ job: { id: "export-job-1", status: "in_progress" } });
+    return jsonResponse({ job: { id: "export-job-1", status: "success", urls: ["https://export-download.canva.com/file"] } });
+  };
+  await createCanvaExportJob({
+    accessToken: "canva-test-access-token-value",
+    designId: "design_123",
+    format: "mp4",
+    fetchImpl
+  });
+  await createCanvaExportJob({
+    accessToken: "canva-test-access-token-value",
+    designId: "design_123",
+    format: "pdf",
+    fetchImpl
+  });
+  await getCanvaExportJob({
+    accessToken: "canva-test-access-token-value",
+    jobId: "export-job-1",
+    fetchImpl
+  });
+  await getCanvaAutofillJob({
+    accessToken: "canva-test-access-token-value",
+    jobId: "autofill-job-1",
+    fetchImpl
+  });
+  assert.equal(calls[0].url, "https://api.canva.com/rest/v1/exports");
+  assert.equal(JSON.parse(calls[0].options.body).format, "mp4");
+  assert.equal(JSON.parse(calls[1].options.body).format, "pdf");
+  assert.ok(calls.some((call) => call.url.endsWith("/exports/export-job-1")));
+  assert.ok(calls.some((call) => call.url.endsWith("/autofills/autofill-job-1")));
+  await assert.rejects(() => createCanvaExportJob({
+    accessToken: "canva-test-access-token-value",
+    designId: "design_123",
+    format: "exe",
+    fetchImpl
+  }), /supported Canva export format/i);
+});
+
+
+test("legacy thumbnail-only Canva connections remain connected but require reauthorization for automation", () => {
+  const legacy = normalizeCanvaOAuthConnection({
+    provider: "canva",
+    encryptedRefreshToken: encryptSecret("legacy-refresh-token", { env, purpose: "canva-refresh-token" }),
+    grantedScopes: ["asset:read", "asset:write", "design:content:write"]
+  });
+  const status = getCanvaOAuthStatus(legacy, env);
+  assert.equal(status.connected, true);
+  assert.equal(status.automationReady, false);
+  assert.equal(status.reauthorizationRequired, true);
 });
