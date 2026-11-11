@@ -6,6 +6,7 @@ import { decryptSecret, encryptSecret, isTokenVaultConfigured } from "./oauth.js
 export const CANVA_MCP_ENDPOINT = "https://api.canva.com/connect/v1/mcp";
 export const CANVA_MCP_CALLBACK_PATH = "/api/integrations/canva/oauth/callback";
 export const CANVA_MCP_TOOL_ALLOWLIST = Object.freeze([
+  "__list_tools",
   "search-designs",
   "get-design",
   "get-design-pages",
@@ -416,9 +417,14 @@ export async function callCanvaMcpTool(options = {}) {
   const transport = makeTransport(provider);
   try {
     await client.connect(transport);
-    const result = name === "__list_tools"
-      ? await client.listTools()
-      : await client.callTool({ name, arguments: options.arguments || {} });
+    const discovery = await client.listTools();
+    const liveTools = Array.isArray(discovery?.tools) ? discovery.tools : [];
+    if (name === "__list_tools") return { tools: liveTools };
+    const availableTool = liveTools.find((tool) => tool?.name === name);
+    if (!availableTool) {
+      throw new Error("Canva MCP did not advertise the requested tool: " + name + ". Refresh the editor's tool list and try again.");
+    }
+    const result = await client.callTool({ name, arguments: options.arguments || {} });
     if (refreshedTokens && typeof options.onTokensUpdated === "function") {
       await options.onTokensUpdated(normalizeCanvaMcpConnection({
         ...connection,
