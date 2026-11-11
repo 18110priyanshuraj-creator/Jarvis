@@ -1,3 +1,5 @@
+import { createMediaAssetLibrary, formatMediaAssetSize } from "./media-asset-library.js";
+
 const FORMATS = {
   "vertical-short": { width: 720, height: 1280, maxDurationSeconds: 90 },
   "landscape-explainer": { width: 1280, height: 720, maxDurationSeconds: 180 },
@@ -32,6 +34,8 @@ export function createMediaWorkspace({ api, toast }) {
   let selectedTimelineClipId = null;
   const activeTimelineClipIds = new Set();
   let activeVideoSceneId = null;
+  const assetLibrary = createMediaAssetLibrary();
+  let pendingAssetLibraryFile = null;
 
   const byId = (id) => document.getElementById(id);
 
@@ -348,7 +352,7 @@ export function createMediaWorkspace({ api, toast }) {
     return sourceSeconds;
   }
 
-  async function loadTimelineAsset(clip, file) {
+  async function loadTimelineAsset(clip, file, libraryAssetId = null) {
     const projectId = currentProject?.id;
     if (!projectId || !clip?.id || !file) return;
     if (file.size > 100 * 1024 * 1024) throw new Error("Timeline media must be 100 MiB or smaller for local editing.");
@@ -415,7 +419,7 @@ export function createMediaWorkspace({ api, toast }) {
       return;
     }
     const reattaching = Boolean(currentClip.assetId && currentClip.assetName);
-    currentClip.assetId = clip.id;
+    currentClip.assetId = libraryAssetId || clip.id;
     currentClip.assetName = file.name;
     currentClip.assetType = isAudio ? "audio" : isImage ? "image" : "video";
     currentClip.label = file.name.slice(0, 80);
@@ -432,6 +436,162 @@ export function createMediaWorkspace({ api, toast }) {
     renderTimelineEditor();
     renderPreviewAtTime(currentClip.start * 1000);
     setExportStatus("Added " + file.name + " to the " + track.name + " track. Media remains local to this browser session.");
+  }
+
+
+  function setAssetLibraryStatus(message, isError = false) {
+    const target = byId("media-asset-library-status");
+    if (!target) return;
+    target.textContent = message;
+    target.classList.toggle("error-text", isError);
+  }
+
+  function projectReferencesAsset(assetId) {
+    return projects.some((project) => (project.tracks || []).some((track) =>
+      (track.clips || []).some((clip) => clip.assetId === assetId)
+    ));
+  }
+
+  function renderAssetLibrary(records) {
+    const target = byId("media-asset-library-list");
+    if (!target) return;
+    target.replaceChildren();
+    const selection = selectedTimelineClip();
+    if (!records.length) {
+      target.append(makeElement("p", "small muted", "No saved assets yet. Add an image, video or audio file above to keep a reusable copy in this browser."));
+      return;
+    }
+    for (const record of records) {
+      const card = makeElement("article", "media-library-asset");
+      const header = makeElement("div", "media-library-asset-heading");
+      const name = makeElement("strong", "media-library-asset-name", record.name);
+      const meta = makeElement("span", "small muted", record.kind.toUpperCase() + " · " + formatMediaAssetSize(record.size));
+      header.append(name, meta);
+      card.append(header);
+      if (record.tags?.length) card.append(makeElement("p", "media-library-tags", record.tags.map((tag) => "#" + tag).join("  ")));
+      const actions = makeElement("div", "media-library-actions");
+      const attach = makeElement("button", "item-action", "Attach to selected clip");
+      attach.type = "button";
+      const selectionCanAttach = Boolean(selection && currentProject?.status === "draft" &&
+        (selection.track.kind === "audio" ? record.kind === "audio" : record.kind !== "audio"));
+      attach.disabled = !selectionCanAttach;
+      attach.addEventListener("click", async () => {
+        const selected = selectedTimelineClip();
+        if (!selected || currentProject?.status !== "draft") {
+          setAssetLibraryStatus("Select a clip in a draft project before attaching a library asset.", true);
+          return;
+        }
+        const compatible = selected.track.kind === "audio" ? record.kind === "audio" : record.kind !== "audio";
+        if (!compatible) {
+          setAssetLibraryStatus(selected.track.kind === "audio"
+            ? "Audio tracks accept audio assets only."
+            : "Add audio files to an Audio track.", true);
+          return;
+        }
+        attach.disabled = true;
+        try {
+          const saved = await assetLibrary.get(record.id);
+          if (!saved?.blob) throw new Error("This saved asset is unavailable in this browser. Import the file again.");
+          const file = new File([saved.blob], saved.name, {
+            type: saved.mimeType,
+            lastModified: Date.parse(saved.updatedAt || saved.createdAt) || Date.now()
+          });
+          await loadTimelineAsset(selected.clip, file, saved.id);
+          await assetLibrary.markUsed(saved.id);
+          setAssetLibraryStatus("Attached " + saved.name + " to " + selected.track.name + ". The saved copy remains in this browser's library.");
+          await refreshAssetLibrary();
+        } catch (error) {
+          setAssetLibraryStatus(error.message || "The saved asset could not be attached.", true);
+          attach.disabled = false;
+        }
+      });
+      actions.append(attach);
+      const referenced = projectReferencesAsset(record.id);
+      const remove = makeElement("button", "item-action media-library-delete", referenced ? "In use" : "Remove");
+      remove.type = "button";
+      remove.disabled = referenced;
+      remove.title = referenced ? "Remove this asset from any saved project before deleting it." : "Delete this saved browser-local asset";
+      remove.addEventListener("click", async () => {
+        if (projectReferencesAsset(record.id)) {
+          setAssetLibraryStatus("This asset is referenced by a saved project. Remove or replace those clips before deleting it.", true);
+          return;
+        }
+        if (!window.confirm("Remove " + record.name + " from this browser's asset library? Saved projects using this asset may need the file attached again.")) return;
+        remove.disabled = true;
+        try {
+          await assetLibrary.remove(record.id);
+          setAssetLibraryStatus("Removed " + record.name + " from this browser's asset library.");
+          await refreshAssetLibrary();
+        } catch (error) {
+          setAssetLibraryStatus(error.message || "The asset could not be removed.", true);
+          remove.disabled = false;
+        }
+      });
+      actions.append(remove);
+      card.append(actions);
+      target.append(card);
+    }
+  }
+
+  async function refreshAssetLibrary() {
+    const target = byId("media-asset-library-list");
+    if (!target) return;
+    try {
+      const query = byId("media-asset-library-search")?.value || "";
+      const kind = byId("media-asset-library-kind")?.value || "all";
+      const tag = byId("media-asset-library-tag-filter")?.value || "";
+      const records = await assetLibrary.list({ query, kind, tag });
+      renderAssetLibrary(records);
+      setAssetLibraryStatus(records.length + " saved asset(s) in this browser. Files stay on this device and are not uploaded or synced.");
+    } catch (error) {
+      target.replaceChildren();
+      setAssetLibraryStatus(error.message || "The local asset library is unavailable.", true);
+    }
+  }
+
+  async function restoreLibraryAssets(project) {
+    if (!project?.id || typeof File !== "function") return;
+    const projectId = project.id;
+    const clips = (project.tracks || []).flatMap((track) => track.clips || []);
+    for (const clip of clips) {
+      if (!clip.assetId || !clip.assetName || timelineAssets.has(clip.id)) continue;
+      if (currentProject?.id !== projectId) return;
+      try {
+        const saved = await assetLibrary.get(clip.assetId);
+        if (!saved?.blob) continue;
+        const file = new File([saved.blob], saved.name, {
+          type: saved.mimeType,
+          lastModified: Date.parse(saved.updatedAt || saved.createdAt) || Date.now()
+        });
+        await loadTimelineAsset(clip, file, saved.id);
+        await assetLibrary.markUsed(saved.id);
+      } catch (error) {
+        setAssetLibraryStatus("A saved library asset could not be restored: " + (error.message || "open the clip and re-attach its file"), true);
+      }
+    }
+    await refreshAssetLibrary();
+  }
+
+  async function savePendingAssetToLibrary() {
+    const button = byId("media-asset-library-save");
+    if (!pendingAssetLibraryFile) {
+      setAssetLibraryStatus("Choose a file before saving it to the library.", true);
+      return;
+    }
+    button.disabled = true;
+    try {
+      const tags = byId("media-asset-library-tags")?.value || "";
+      const saved = await assetLibrary.save(pendingAssetLibraryFile, tags);
+      pendingAssetLibraryFile = null;
+      byId("media-asset-library-file").value = "";
+      byId("media-asset-library-tags").value = "";
+      setAssetLibraryStatus("Saved " + saved.name + " in this browser's reusable asset library.");
+      await refreshAssetLibrary();
+    } catch (error) {
+      setAssetLibraryStatus(error.message || "The file could not be saved to the asset library.", true);
+    } finally {
+      button.disabled = false;
+    }
   }
 
   function addTimelineTrack(kind) {
@@ -1496,6 +1656,8 @@ export function createMediaWorkspace({ api, toast }) {
     renderTimelineEditor();
     renderPreview(currentProject, 0);
     setEditorControls();
+    refreshAssetLibrary();
+    restoreLibraryAssets(currentProject);
   }
 
   function wrapCanvasText(ctx, value, maxWidth, maxLines) {
@@ -2607,6 +2769,17 @@ export function createMediaWorkspace({ api, toast }) {
   function initialize() {
     if (initialized) return;
     initialized = true;
+
+    byId("media-asset-library-file")?.addEventListener("change", (event) => {
+      pendingAssetLibraryFile = event.target.files?.[0] || null;
+      if (pendingAssetLibraryFile) {
+        setAssetLibraryStatus("Ready to save " + pendingAssetLibraryFile.name + ". Add optional tags, then press Save to library.");
+      }
+    });
+    byId("media-asset-library-save")?.addEventListener("click", savePendingAssetToLibrary);
+    byId("media-asset-library-search")?.addEventListener("input", refreshAssetLibrary);
+    byId("media-asset-library-kind")?.addEventListener("change", refreshAssetLibrary);
+    byId("media-asset-library-tag-filter")?.addEventListener("input", refreshAssetLibrary);
 
     byId("media-create-form")?.addEventListener("submit", async (event) => {
       event.preventDefault();
