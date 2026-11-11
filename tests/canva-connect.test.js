@@ -21,6 +21,7 @@ import {
   revokeCanvaOAuthConnection
 } from "../services/canva-connect.js";
 import { createRuntimeStore } from "../services/runtime-store.js";
+import { encryptSecret } from "../services/oauth.js";
 
 const env = {
   JARVIS_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 13).toString("base64"),
@@ -378,4 +379,17 @@ test("Canva autofill and export jobs can be polled; exports support MP4 and PDF"
     format: "exe",
     fetchImpl
   }), /supported Canva export format/i);
+});
+
+
+test("legacy thumbnail-only Canva connections remain connected but require reauthorization for automation", () => {
+  const legacy = normalizeCanvaOAuthConnection({
+    provider: "canva",
+    encryptedRefreshToken: encryptSecret("legacy-refresh-token", { env, purpose: "canva-refresh-token" }),
+    grantedScopes: ["asset:read", "asset:write", "design:content:write"]
+  });
+  const status = getCanvaOAuthStatus(legacy, env);
+  assert.equal(status.connected, true);
+  assert.equal(status.automationReady, false);
+  assert.equal(status.reauthorizationRequired, true);
 });
