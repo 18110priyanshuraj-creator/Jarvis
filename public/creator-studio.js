@@ -1195,23 +1195,40 @@ export function createCreatorStudio({ api, toast }) {
       const actions = document.createElement("div");
       actions.className = "creator-export-row";
       if (item.kind === "text") {
+            const pageInfo = canvaMcpEdit?.pages?.find((page) =>
+          Number(page?.page_number ?? page?.page_index ?? page?.index) === item.page
+        );
+        const responsive = pageInfo?.is_responsive === true;
         const replace = document.createElement("button");
         replace.type = "button";
         replace.className = "item-action";
-        replace.textContent = "Replace text";
+        replace.textContent = responsive ? "Find and replace text" : "Replace text";
         replace.addEventListener("click", () => {
           const value = window.prompt("New text for this Canva element:", item.text);
           if (value === null) return;
-          appendCanvaMcpOperation({
-            type: "replace_text",
-            element_id: item.id,
-            text: value
-          });
+          if (responsive) {
+            const findText = window.prompt("Exact existing text to find:", item.text);
+            if (findText === null || !findText.trim()) return;
+            appendCanvaMcpOperation({
+              type: "find_and_replace_text",
+              element_id: item.id,
+              find_text: findText,
+              replace_text: value
+            });
+          } else {
+            appendCanvaMcpOperation({
+              type: "replace_text",
+              element_id: item.id,
+              text: value
+            });
+          }
         });
         const format = document.createElement("button");
         format.type = "button";
         format.className = "item-action";
         format.textContent = "Format text";
+        format.disabled = responsive;
+        format.title = responsive ? "Canva does not expose text formatting controls for responsive pages." : "";
         format.addEventListener("click", () => {
           const size = window.prompt("Font size in pixels (1–800):", "48");
           if (size === null) return;
@@ -1245,6 +1262,8 @@ export function createCreatorStudio({ api, toast }) {
             alt_text: "Replaced Canva media"
           });
         });
+        replace.disabled = item.editable === false;
+        if (replace.disabled) replace.title = "Canva marked this media element as read-only.";
         actions.append(replace);
       }
       card.append(heading, detail, id, actions);
