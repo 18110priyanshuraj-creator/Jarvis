@@ -697,6 +697,7 @@
                 </div>
               </div>
               <div id="media-timeline-tracks" class="media-timeline-tracks"></div>
+              <p class="small muted media-shortcut-help">Keyboard: Space/K play or stop · J/L seek ±5 seconds · ←/→ step 1/30 second · Home/End jump to start/end. Click the preview canvas to focus shortcuts; typing fields and controls are left alone.</p>
               <div class="timeline-playhead">
                 <label for="media-timeline-playhead">Playhead</label>
                 <input id="media-timeline-playhead" type="range" min="0" max="30" step="0.05" value="0">
@@ -709,7 +710,7 @@
                 <div class="media-library-heading">
                   <div>
                     <strong>Reusable asset library</strong>
-                    <p class="small muted">Save frequently used images, videos and audio in this browser. Add tags, search, and attach a saved asset to the selected timeline clip.</p>
+                    <p class="small muted">Save frequently used images, videos and audio in this browser. Add tags, search, download an original file, and attach saved assets to the selected timeline clip. To move an asset to another device, download it here and save that file in the other device’s library.</p>
                   </div>
                 </div>
                 <div class="media-library-import">
@@ -746,7 +747,7 @@
             </div>
           </div>
           <aside class="media-editor-side">
-            <div class="media-preview-wrap"><canvas id="media-preview-canvas" aria-label="Storyboard scene preview"></canvas></div>
+            <div class="media-preview-wrap"><canvas id="media-preview-canvas" tabindex="0" aria-label="Storyboard scene preview"></canvas></div>
             <button type="button" class="item-action" id="media-preview-button">Preview storyboard</button>
             <div class="research-hint">
               <strong>Local exports</strong>
