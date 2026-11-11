@@ -169,6 +169,99 @@ object UIActionExecutor {
         }
     }
 
+    /**
+     * Focuses one unique, visible editable control with an exact accessible label.
+     * No text is entered here; callers must separately request bounded text input.
+     */
+    fun focusExactEditableField(
+        service: JarvisAccessibilityService,
+        requestedLabel: String
+    ): UiActionResult {
+        val label = requestedLabel.trim().trim('"', '\'')
+        if (label.isBlank()) {
+            return failure(UiActionCode.EMPTY_TARGET, "Tell me the exact visible text-field label.")
+        }
+
+        val root = service.rootInActiveWindow
+            ?: return failure(
+                UiActionCode.NO_ACCESSIBLE_WINDOW,
+                "The current app did not expose an accessible screen.",
+                retryable = true
+            )
+        try {
+            val tree = collectVisibleTree(root)
+            val targets = LinkedHashMap<String, AccessibilityNodeInfo>()
+            var protectedTargetFound = false
+            try {
+                if (UiActionPolicy.isProtectedScreen(tree.labels)) {
+                    return failure(
+                        UiActionCode.PROTECTED_SCREEN,
+                        "This screen may contain credentials or verification details. Complete it manually."
+                    )
+                }
+                for (node in tree.nodes) {
+                    if (node.isPassword || !UiActionPolicy.matchesExactLabel(
+                            node.text?.toString(),
+                            node.contentDescription?.toString(),
+                            label
+                        )
+                    ) continue
+                    val editable = nearestEditableCopy(node) ?: continue
+                    val decision = UiActionPolicy.validateTextTarget(
+                        visible = editable.isVisibleToUser,
+                        enabled = editable.isEnabled,
+                        editable = editable.isEditable,
+                        password = editable.isPassword || isPasswordInput(editable.inputType),
+                        screenLabels = tree.labels
+                    )
+                    if (!decision.allowed) {
+                        if (decision.code == UiActionPolicyCode.PROTECTED_CONTROL ||
+                            decision.code == UiActionPolicyCode.PROTECTED_SCREEN ||
+                            decision.code == UiActionPolicyCode.PASSWORD_FIELD
+                        ) protectedTargetFound = true
+                        runCatching { editable.recycle() }
+                        continue
+                    }
+                    val previous = targets.putIfAbsent(targetKey(editable), editable)
+                    if (previous != null) runCatching { editable.recycle() }
+                }
+
+                if (protectedTargetFound) {
+                    return failure(
+                        UiActionCode.PROTECTED_CONTROL,
+                        "The requested text field appears protected or sensitive. Select it and type manually."
+                    )
+                }
+                if (targets.size > 1) {
+                    return failure(
+                        UiActionCode.AMBIGUOUS_TARGET,
+                        "More than one editable field is labelled " + label + ". Choose the field manually."
+                    )
+                }
+                val target = targets.values.firstOrNull()
+                    ?: return failure(
+                        UiActionCode.FIELD_UNAVAILABLE,
+                        "I could not find one visible editable field with the exact label " + label + ".",
+                        retryable = true
+                    )
+                return if (target.performAction(AccessibilityNodeInfo.ACTION_FOCUS)) {
+                    success("Focused the exact editable field labelled " + label + ". No text has been entered.")
+                } else {
+                    failure(
+                        UiActionCode.ACTION_REJECTED,
+                        "Android rejected the focus request. Select the field manually.",
+                        retryable = true
+                    )
+                }
+            } finally {
+                tree.recycleNodes()
+                targets.values.forEach { runCatching { it.recycle() } }
+            }
+        } finally {
+            runCatching { root.recycle() }
+        }
+    }
+
     fun typeIntoFocusedField(service: JarvisAccessibilityService, text: String): UiActionResult {
         val value = text.trim()
         val payload = UiActionPolicy.validateTextPayload(value, MAX_TEXT_LENGTH)
@@ -586,6 +679,21 @@ object UIActionExecutor {
      * Returns an owned copy of the nearest clickable node. Every intermediate parent copy is
      * recycled before walking farther up the accessibility tree.
      */
+    private fun nearestEditableCopy(start: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        var current: AccessibilityNodeInfo? = AccessibilityNodeInfo.obtain(start)
+        var depth = 0
+        while (current != null && depth <= MAX_CONTEXT_DEPTH) {
+            if (current.isEditable) return current
+            val item = current
+            val parent = item.parent
+            runCatching { item.recycle() }
+            current = parent
+            depth++
+        }
+        current?.recycle()
+        return null
+    }
+
     private fun nearestClickableCopy(start: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         var current: AccessibilityNodeInfo? = AccessibilityNodeInfo.obtain(start)
         var depth = 0
