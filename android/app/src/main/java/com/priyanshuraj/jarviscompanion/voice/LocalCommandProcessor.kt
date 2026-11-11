@@ -8,6 +8,8 @@ import android.net.Uri
 import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
+import com.priyanshuraj.jarviscompanion.accessibility.CanvaAccessibilityPolicy
+import com.priyanshuraj.jarviscompanion.accessibility.CanvaEditorCommandType
 import com.priyanshuraj.jarviscompanion.accessibility.JarvisAccessibilityService
 import com.priyanshuraj.jarviscompanion.accessibility.ScreenObserver
 import com.priyanshuraj.jarviscompanion.accessibility.UIActionExecutor
@@ -175,6 +177,40 @@ object LocalCommandProcessor {
 
         val lower = normalize(original)
         val service = JarvisAccessibilityService.activeService
+
+        val canvaCommand = CanvaAccessibilityPolicy.parse(original)
+        if (canvaCommand != null) {
+            val active = service
+                ?: return "Enable the JARVIS screen assistant in Android Accessibility settings first."
+            val foregroundPackage = JarvisAccessibilityService.currentForegroundApplicationId()
+            if (!CanvaAccessibilityPolicy.isCanvaPackage(foregroundPackage)) {
+                return "Open the installed Canva app, select the text or media element yourself, then repeat that command. JARVIS only runs these Canva-specific actions while Canva is foregrounded."
+            }
+            return when (canvaCommand.type) {
+                CanvaEditorCommandType.TOGGLE_FORMAT -> {
+                    val result = UIActionExecutor.clickExactLabel(active, canvaCommand.label)
+                    if (result.ok) {
+                        result.message + " Canva toolbar formatting controls are toggles; check the selected text visually because JARVIS cannot assume the new style state."
+                    } else result.message
+                }
+                CanvaEditorCommandType.SET_FONT_SIZE -> {
+                    val focused = UIActionExecutor.focusExactEditableField(active, canvaCommand.label)
+                    if (!focused.ok) focused.message
+                    else {
+                        val typed = UIActionExecutor.typeIntoFocusedField(active, canvaCommand.value)
+                        if (typed.ok) {
+                            typed.message + " Review the value and press Enter yourself to commit the font size."
+                        } else typed.message
+                    }
+                }
+                CanvaEditorCommandType.OPEN_REPLACE -> {
+                    val result = UIActionExecutor.clickExactLabel(active, canvaCommand.label)
+                    if (result.ok) {
+                        result.message + " Choose the replacement file yourself in Android's file picker and review the result in Canva."
+                    } else result.message
+                }
+            }
+        }
 
         if (isScreenObservationCommand(original)) {
             val active = service
