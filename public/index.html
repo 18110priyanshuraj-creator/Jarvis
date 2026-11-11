@@ -645,7 +645,7 @@
 
         <div class="media-workflow-note">
           <strong>Review and export controls</strong>
-          <p>Projects remain in your private JARVIS workspace. Edit scenes, choose visual styles and stick-figure poses, set motion and transitions, add local video/image/audio tracks, then review and approve before export. Long-form projects support up to 20 minutes and 80 scenes. Rendering is real-time in this browser: keep the tab open, use a desktop browser for long exports, and remember that local media files must be re-attached in a new browser session. No media is uploaded or published by exporting.</p>
+          <p>Projects remain in your private JARVIS workspace. Edit scenes, choose visual styles and stick-figure poses, set motion and transitions, add local video/image/audio tracks, then review and approve before export. Long-form projects support up to 20 minutes and 80 scenes. Rendering is real-time in this browser: keep the tab open, use a desktop browser for long exports. Saved library assets persist in this browser's local storage; direct file attachments still need to be re-attached after a new browser session. Nothing is cloud-synced by this library.</p>
         </div>
 
         <div class="list-heading"><h2>Your media projects</h2><span class="muted small">Drafts and approved exports</span></div>
@@ -705,7 +705,39 @@
               <div id="media-timeline-inspector" class="media-timeline-inspector">
                 <p class="small muted">Select a clip to edit its timing, keyframes, chroma key and speed ramp.</p>
               </div>
-              <p class="media-limits-note">Timeline edit decisions are saved with the project. Imported files are kept locally in this browser session; re-attach them after opening the project on another device or browser.</p>
+              <section class="media-asset-library" aria-label="Reusable local media asset library">
+                <div class="media-library-heading">
+                  <div>
+                    <strong>Reusable asset library</strong>
+                    <p class="small muted">Save frequently used images, videos and audio in this browser. Add tags, search, and attach a saved asset to the selected timeline clip.</p>
+                  </div>
+                </div>
+                <div class="media-library-import">
+                  <label class="media-field" for="media-asset-library-file"><span>Choose a reusable asset</span>
+                    <input id="media-asset-library-file" class="media-scene-input" type="file" accept="image/*,video/*,audio/*">
+                  </label>
+                  <label class="media-field" for="media-asset-library-tags"><span>Tags (comma separated)</span>
+                    <input id="media-asset-library-tags" class="media-scene-input" maxlength="240" placeholder="intro, logo, background, voiceover">
+                  </label>
+                  <button type="button" class="item-action" id="media-asset-library-save">Save to library</button>
+                </div>
+                <div class="media-library-filters">
+                  <label class="media-field" for="media-asset-library-search"><span>Search assets and tags</span>
+                    <input id="media-asset-library-search" class="media-scene-input" maxlength="120" placeholder="Search by file name or tag">
+                  </label>
+                  <label class="media-field" for="media-asset-library-kind"><span>Asset type</span>
+                    <select id="media-asset-library-kind" class="media-scene-input">
+                      <option value="all">All types</option>
+                      <option value="image">Images</option>
+                      <option value="video">Videos</option>
+                      <option value="audio">Audio</option>
+                    </select>
+                  </label>
+                </div>
+                <p id="media-asset-library-status" class="media-asset-library-status" role="status" aria-live="polite">Assets are stored only in this browser. They are not uploaded, shared or synced to other devices.</p>
+                <div id="media-asset-library-list" class="media-asset-library-list"></div>
+              </section>
+              <p class="media-limits-note">Timeline edit decisions are saved with the project. Assets saved to the local library can be reattached on this browser and device. They are not synced to other browsers or devices.</p>
             </section>
             <div class="media-editor-toolbar">
               <button type="button" class="item-action" id="media-add-scene">Add scene</button>
