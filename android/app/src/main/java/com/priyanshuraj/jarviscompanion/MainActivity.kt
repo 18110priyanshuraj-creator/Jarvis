@@ -1044,7 +1044,7 @@ class MainActivity : Activity() {
         })
 
         val footer = TextView(this).apply {
-            text = "Background voice starts only when you choose it. It can continue after you leave this screen; use the ongoing notification to stop it. It does not auto-start after reboot."
+            text = "Background voice starts only when you choose it and stays visible in the notification shade. In Canva, select text or media first, then try: Bold selected text, Set font size to 32, or Replace selected image. You choose files and review changes yourself."
             textSize = 11f
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(104, 137, 153))
