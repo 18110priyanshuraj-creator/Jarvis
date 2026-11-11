@@ -434,11 +434,7 @@ export function createMediaWorkspace({ api, toast }) {
     currentProject.durationSeconds = Math.min(projectDurationLimit(currentProject), Math.max(currentProject.durationSeconds || 0, currentClip.start + currentClip.duration));
     selectedTimelineClipId = clip.id;
     renderTimelineEditor();
-    renderAssetLibrary(await assetLibrary.list({
-      query: byId("media-asset-library-search")?.value || "",
-      kind: byId("media-asset-library-kind")?.value || "all",
-      tag: byId("media-asset-library-tag-filter")?.value || ""
-    }));
+    await refreshAssetLibrary();
     renderPreviewAtTime(currentClip.start * 1000);
     setExportStatus("Added " + file.name + " to the " + track.name + " track. Media remains local to this browser session.");
   }
