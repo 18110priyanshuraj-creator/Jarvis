@@ -54,3 +54,9 @@ Reviewed its image/video editing workflow examples. No code was copied. Its READ
 - No unrestricted Canva freeform timeline automation. Precise clip trimming/splitting in the Canva app remains conditional on what Android Accessibility exposes. JARVIS Media Studio's own timeline remains independently editable and exportable.
 - No cloud media sync, third-party object storage or CDN provisioned by this change.
 - No OpenVideo, Kimu/Remotion or Canva Apps SDK source copied into JARVIS.
+
+
+## Media Studio usability additions
+- Added focused keyboard transport controls: Space/K toggles preview, J/L seeks by five seconds, Left/Right steps by 1/30 second, and Home/End jumps to the start/end.
+- Shortcuts are scoped to the open Media Studio and ignored while typing in inputs, textareas, selects, buttons, links or editable content.
+- Added original-file download for saved local library assets. Moving an asset to another browser/device is a deliberate download-and-reimport flow; JARVIS does not claim that browser IndexedDB is cloud-synced.
