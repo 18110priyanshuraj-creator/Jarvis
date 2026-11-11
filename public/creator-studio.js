@@ -729,18 +729,34 @@ export function createCreatorStudio({ api, toast }) {
       canvaStatus = await api("/api/canva/status");
       const connect = $("creator-connect-canva");
       const disconnect = $("creator-disconnect-canva");
-      const create = $("creator-create-canva-thumbnail");
+      const thumbnail = $("creator-create-canva-thumbnail");
+      const automationButtons = [
+        "creator-canva-load-resources", "creator-canva-inspect-dataset",
+        "creator-canva-run-autofill", "creator-canva-poll-autofill",
+        "creator-canva-start-export", "creator-canva-poll-export"
+      ];
+      const ready = canvaStatus.automationReady === true;
       if (connect) {
-        connect.textContent = canvaStatus.connected ? "Thumbnail export connected" : "Connect thumbnail export (optional)";
-        connect.disabled = !canvaStatus.canConnect || canvaStatus.connected;
+        connect.textContent = ready
+          ? "Canva automation connected"
+          : canvaStatus.connected
+            ? "Reconnect for full automation permissions"
+            : "Connect Canva for automation";
+        connect.disabled = !canvaStatus.canConnect;
       }
       if (disconnect) disconnect.classList.toggle("hidden", !canvaStatus.connected);
-      if (create) create.disabled = !canvaStatus.connected;
-      setCanvaStatus(canvaStatus.connected
-        ? "Optional Canva thumbnail export is connected. It uploads a flat PNG to create a new 16:9 design; it does not edit the video timeline. Opening Canva on Android and using JARVIS Accessibility does not require this connection."
-        : canvaStatus.canConnect
-          ? "Optional thumbnail export is configured. Connect it only to upload a flat thumbnail PNG; it is not needed for Canva app control on Android."
-          : "Optional Canva thumbnail export is not configured. You can still open Canva on Android and use JARVIS screen controls without adding Canva client credentials.");
+      if (thumbnail) thumbnail.disabled = !canvaStatus.connected;
+      automationButtons.forEach((id) => {
+        const button = $(id);
+        if (button) button.disabled = !ready;
+      });
+      setCanvaStatus(ready
+        ? "Canva is connected for design and brand-template discovery, template-field autofill, supported template updates and design exports. Pro/Teams/Enterprise features depend on your Canva plan."
+        : canvaStatus.connected
+          ? "Your older Canva connection is still saved, but it only has thumbnail permissions. Reconnect and approve the expanded design, template and export scopes to enable automation."
+          : canvaStatus.canConnect
+            ? "Canva is ready to connect. Approve the requested design, template and export permissions in Canva. Basic Android app control does not require OAuth."
+            : "Canva Connect is not configured on the JARVIS server. Basic Android accessibility control can still open the installed Canva app without OAuth.");
       return canvaStatus;
     } catch (error) {
       setCanvaStatus(error.message || "Canva connection status is unavailable.", true);
@@ -821,6 +837,242 @@ export function createCreatorStudio({ api, toast }) {
     }
   }
 
+
+  function canvaResultItems(payload, kind) {
+    const job = payload?.job || payload;
+    if (Array.isArray(job?.items)) return job.items;
+    if (Array.isArray(job?.designs)) return job.designs;
+    if (Array.isArray(job?.brand_templates)) return job.brand_templates;
+    if (Array.isArray(payload?.items)) return payload.items;
+    return [];
+  }
+
+  function safeCanvaLink(raw, allowDownload = false) {
+    try {
+      const url = new URL(raw);
+      const host = url.hostname.toLowerCase();
+      if (url.protocol !== "https:") return "";
+      if (allowDownload) {
+        return host === "canva.com" || host.endsWith(".canva.com") ? url.toString() : "";
+      }
+      return host === "www.canva.com" ? url.toString() : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function renderCanvaResources(items, kind) {
+    const target = $("creator-canva-resources");
+    if (!target) return;
+    target.replaceChildren();
+    if (!items.length) {
+      const note = document.createElement("p");
+      note.className = "small muted";
+      note.textContent = "No resources were returned. Try another search, check your Canva permissions or check whether your Canva plan exposes brand templates.";
+      target.append(note);
+      return;
+    }
+    items.forEach((item) => {
+      const id = String(item?.id || item?.design?.id || "").slice(0, 128);
+      if (!id) return;
+      const title = String(item?.title || item?.name || "Untitled Canva resource").slice(0, 160);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "item-action";
+      button.textContent = title + " · " + id;
+      button.addEventListener("click", () => {
+        $("creator-canva-resource-id").value = id;
+        $("creator-canva-source").value = kind === "templates" ? "brand_template" : "design";
+        setCanvaStatus("Selected " + title + ". Inspect its editable data fields before autofilling.");
+      });
+      target.append(button);
+    });
+  }
+
+  async function loadCanvaResources() {
+    const button = $("creator-canva-load-resources");
+    button.disabled = true;
+    try {
+      const kind = $("creator-canva-resource-kind").value;
+      const query = $("creator-canva-search").value.trim();
+      const endpoint = kind === "templates" ? "/api/canva/brand-templates" : "/api/canva/designs";
+      const payload = await api(endpoint + "?query=" + encodeURIComponent(query) + "&limit=20");
+      const items = canvaResultItems(payload, kind);
+      renderCanvaResources(items, kind);
+      const count = items.length;
+      setCanvaStatus("Loaded " + count + " Canva " + (kind === "templates" ? "brand template" : "design") + " result(s). Select one to fill its ID.");
+    } catch (error) {
+      setCanvaStatus(error.message || "Canva resources could not be loaded.", true);
+    } finally {
+      button.disabled = !canvaStatus?.automationReady;
+    }
+  }
+
+  function fieldValueTemplate(field) {
+    const type = String(field?.type || field?.value_type || field?.field_type || "text").toLowerCase();
+    if (type.includes("image")) return { type: "image", asset_id: "REPLACE_WITH_CANVA_ASSET_ID" };
+    if (type.includes("video")) return { type: "video", asset_id: "REPLACE_WITH_CANVA_ASSET_ID" };
+    if (type.includes("chart")) return { type: "chart", chart_data: {} };
+    if (type.includes("sheet")) return { type: "sheet", sheet_data: {} };
+    return { type: "text", text: "" };
+  }
+
+  async function inspectCanvaDataset() {
+    const button = $("creator-canva-inspect-dataset");
+    const source = $("creator-canva-source").value;
+    const id = $("creator-canva-resource-id").value.trim();
+    if (!id) return setCanvaStatus("Select or enter a Canva template/design ID first.", true);
+    button.disabled = true;
+    try {
+      const endpoint = source === "brand_template"
+        ? "/api/canva/brand-templates/" + encodeURIComponent(id) + "/dataset"
+        : "/api/canva/designs/" + encodeURIComponent(id) + "/dataset";
+      const payload = await api(endpoint);
+      $("creator-canva-dataset").textContent = JSON.stringify(payload, null, 2);
+      const fields = payload?.dataset?.fields || payload?.fields || payload?.dataset?.data_fields;
+      if (Array.isArray(fields) && fields.length) {
+        const mapping = {};
+        fields.forEach((field) => {
+          const name = String(field?.name || field?.label || field?.id || "").trim();
+          if (name) mapping[name] = fieldValueTemplate(field);
+        });
+        if (Object.keys(mapping).length) {
+          $("creator-canva-data-json").value = JSON.stringify(mapping, null, 2);
+        }
+      }
+      setCanvaStatus("Dataset loaded. Review the exact field names and replace sample text/asset IDs before running autofill.");
+    } catch (error) {
+      setCanvaStatus(error.message || "Canva dataset could not be inspected.", true);
+    } finally {
+      button.disabled = !canvaStatus?.automationReady;
+    }
+  }
+
+  function findAutofillDesign(job) {
+    const candidates = [
+      job?.result?.design, job?.result?.designs?.[0], job?.design,
+      job?.result?.created_design, job?.result?.updated_design
+    ];
+    return candidates.find((item) => item && (item.id || item.urls?.edit_url)) || null;
+  }
+
+  async function pollCanvaAutofill() {
+    const id = $("creator-canva-autofill-job").value.trim();
+    if (!id) return setCanvaStatus("Enter an autofill job ID to check its status.", true);
+    const button = $("creator-canva-poll-autofill");
+    button.disabled = true;
+    try {
+      const payload = await api("/api/canva/autofills/" + encodeURIComponent(id));
+      const job = payload?.job || payload;
+      $("creator-canva-dataset").textContent = JSON.stringify(payload, null, 2);
+      const design = findAutofillDesign(job);
+      const editUrl = safeCanvaLink(design?.urls?.edit_url || design?.edit_url);
+      if (design?.id) {
+        $("creator-canva-resource-id").value = String(design.id).slice(0, 128);
+        $("creator-canva-source").value = "update_design";
+      }
+      if (editUrl) {
+        const link = $("creator-canva-design-link");
+        link.href = editUrl;
+        link.textContent = "Open Canva design · " + String(design?.title || design.id || "created");
+        link.classList.remove("hidden");
+      }
+      const status = String(job?.status || "unknown");
+      setCanvaStatus("Canva autofill job: " + status + (design?.id ? " · design ID " + design.id : "") +
+        (status === "in_progress" ? " · check again shortly" : ""));
+    } catch (error) {
+      setCanvaStatus(error.message || "Autofill job could not be checked.", true);
+    } finally {
+      button.disabled = !canvaStatus?.automationReady;
+    }
+  }
+
+  async function runCanvaAutofill() {
+    const button = $("creator-canva-run-autofill");
+    const source = $("creator-canva-source").value;
+    const id = $("creator-canva-resource-id").value.trim();
+    if (!id) return setCanvaStatus("Choose a Canva template/design ID first.", true);
+    let data;
+    try {
+      data = JSON.parse($("creator-canva-data-json").value);
+      if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Expected a JSON object.");
+    } catch (error) {
+      return setCanvaStatus("Field values are not valid JSON: " + error.message, true);
+    }
+    const title = $("creator-canva-title").value.trim();
+    const actionName = source === "update_design" ? "update the selected Canva design" : "create a new Canva design";
+    if (!window.confirm("JARVIS will " + actionName + " using the selected Canva fields. This changes your Canva account. Continue only after reviewing the field data.")) return;
+    button.disabled = true;
+    try {
+      const payload = await api("/api/canva/autofills", {
+        method: "POST",
+        body: JSON.stringify({ source, id, title, data })
+      });
+      const job = payload?.job || payload;
+      const jobId = String(job?.id || "").slice(0, 128);
+      if (!jobId) throw new Error("Canva did not return an autofill job ID.");
+      $("creator-canva-autofill-job").value = jobId;
+      $("creator-canva-dataset").textContent = JSON.stringify(payload, null, 2);
+      setCanvaStatus("Autofill job submitted to Canva (" + String(job.status || "queued") + "). Check the job status to retrieve the result.");
+    } catch (error) {
+      setCanvaStatus(error.message || "Canva autofill could not be submitted.", true);
+    } finally {
+      button.disabled = !canvaStatus?.automationReady;
+    }
+  }
+
+  async function startCanvaExport() {
+    const button = $("creator-canva-start-export");
+    const designId = $("creator-canva-resource-id").value.trim();
+    const format = $("creator-canva-export-format").value;
+    if (!designId) return setCanvaStatus("Select a design ID before exporting. A template ID alone is not an exportable design.", true);
+    if (!window.confirm("Export Canva design " + designId + " as " + format.toUpperCase() + "? Canva may take time to render the file. Continue?")) return;
+    button.disabled = true;
+    try {
+      const payload = await api("/api/canva/exports", {
+        method: "POST",
+        body: JSON.stringify({ designId, format })
+      });
+      const job = payload?.job || payload;
+      const jobId = String(job?.id || "").slice(0, 128);
+      if (!jobId) throw new Error("Canva did not return an export job ID.");
+      $("creator-canva-export-job").value = jobId;
+      $("creator-canva-dataset").textContent = JSON.stringify(payload, null, 2);
+      setCanvaStatus("Canva export job submitted (" + String(job.status || "queued") + "). Poll the job to obtain the temporary download URL.");
+    } catch (error) {
+      setCanvaStatus(error.message || "Canva export could not be started.", true);
+    } finally {
+      button.disabled = !canvaStatus?.automationReady;
+    }
+  }
+
+  async function pollCanvaExport() {
+    const id = $("creator-canva-export-job").value.trim();
+    if (!id) return setCanvaStatus("Enter an export job ID to check its status.", true);
+    const button = $("creator-canva-poll-export");
+    button.disabled = true;
+    try {
+      const payload = await api("/api/canva/exports/" + encodeURIComponent(id));
+      const job = payload?.job || payload;
+      $("creator-canva-dataset").textContent = JSON.stringify(payload, null, 2);
+      const urls = Array.isArray(job?.urls) ? job.urls : [];
+      const first = urls.map((item) => typeof item === "string" ? item : item?.url)
+        .map((url) => safeCanvaLink(url, true)).find(Boolean);
+      if (first) {
+        const link = $("creator-canva-download-link");
+        link.href = first;
+        link.classList.remove("hidden");
+        link.textContent = "Open completed " + $("creator-canva-export-format").value.toUpperCase() + " export";
+      }
+      setCanvaStatus("Canva export job: " + String(job?.status || "unknown") +
+        (first ? " · download link ready (temporary; save the file soon)" : " · poll again when rendering is in progress"));
+    } catch (error) {
+      setCanvaStatus(error.message || "Canva export job could not be checked.", true);
+    } finally {
+      button.disabled = !canvaStatus?.automationReady;
+    }
+  }
+
   function setAnalyticsAdvice() {
     const baselineCtr = Number($("creator-baseline-ctr").value);
     const currentCtr = Number($("creator-current-ctr").value);
@@ -862,6 +1114,17 @@ export function createCreatorStudio({ api, toast }) {
     $("creator-export-poses").addEventListener("click", exportPoseSheet);
     $("creator-export-thumbnail").addEventListener("click", exportThumbnail);
     $("creator-export-motion").addEventListener("click", exportMotionSample);
+    $("creator-connect-canva").addEventListener("click", connectCanva);
+    $("creator-disconnect-canva").addEventListener("click", disconnectCanva);
+    $("creator-create-canva-thumbnail").addEventListener("click", createCanvaThumbnailDesign);
+    $("creator-canva-load-resources").addEventListener("click", loadCanvaResources);
+    $("creator-canva-inspect-dataset").addEventListener("click", inspectCanvaDataset);
+    $("creator-canva-run-autofill").addEventListener("click", runCanvaAutofill);
+    $("creator-canva-poll-autofill").addEventListener("click", pollCanvaAutofill);
+    $("creator-canva-start-export").addEventListener("click", startCanvaExport);
+    $("creator-canva-poll-export").addEventListener("click", pollCanvaExport);
+    $("creator-canva-resource-kind").addEventListener("change", () => $("creator-canva-resources").replaceChildren());
+
     ["creator-thumbnail-title", "creator-thumbnail-subtitle"].forEach((id) => {
       $(id).addEventListener("input", () => { renderCreatorCanvases(); persist(); });
     });
@@ -879,6 +1142,7 @@ export function createCreatorStudio({ api, toast }) {
     });
     renderFigure();
     renderCreatorCanvases();
+    loadCanvaStatus();
     status("Creator Studio ready. Drafts stay in this browser until you export them.");
   }
 
