@@ -65,7 +65,7 @@ test("responsive pages reject layout and format controls but allow text and medi
     pages,
     pageIndex: 2,
     operations: [
-      { type: "replace_text", element_id: "responsive_text", text: "Updated text" },
+      { type: "find_and_replace_text", element_id: "responsive_text", find_text: "Old text", replace_text: "Updated text" },
       { type: "update_fill", element_id: "responsive_image", asset_type: "image", asset_id: "asset_22", alt_text: "Updated visual" }
     ]
   });
@@ -107,11 +107,17 @@ test("page restructuring requires confirmation and validates page references", (
     designId: "DA123456789",
     confirmed: true,
     operations: [
+      { type: "move_pages", from_page_numbers: [3, 4], to_after_page_number: 1 }
+    ]
+  });
+  assert.equal(request.operations.length, 1);
+  assert.throws(() => validateCanvaPageMerge({
+    type: "modify_existing_design", designId: "DA123456789", confirmed: true,
+    operations: [
       { type: "move_pages", from_page_numbers: [3, 4], to_after_page_number: 1 },
       { type: "delete_pages", page_numbers: [5] }
     ]
-  });
-  assert.equal(request.operations.length, 2);
+  }), /exactly one page operation/i);
   assert.throws(() => validateCanvaPageMerge({
     type: "modify_existing_design", designId: "DA123456789", confirmed: true,
     operations: [{ type: "delete_pages", page_numbers: [0] }]
