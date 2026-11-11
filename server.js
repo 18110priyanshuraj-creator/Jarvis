@@ -29,7 +29,7 @@ import {
   YOUTUBE_UPLOAD_MIME_TYPES
 } from "./services/youtube-publisher.js";
 import { getTopVideosAnalytics, getVideoRetentionAnalytics } from "./services/youtube-analytics.js";
-import { beginCanvaOAuth, clearCanvaTokenCache, createCanvaThumbnailDesign, finishCanvaOAuth, getCanvaAccessToken, getCanvaOAuthStatus, normalizeCanvaOAuthConnection, revokeCanvaOAuthConnection } from "./services/canva-connect.js";
+import { beginCanvaOAuth, clearCanvaTokenCache, createCanvaThumbnailDesign, createCanvaAutofillJob, createCanvaExportJob, finishCanvaOAuth, getCanvaAccessToken, getCanvaAutofillJob, getCanvaBrandTemplateDataset, getCanvaDesignDataset, getCanvaExportJob, getCanvaOAuthStatus, listCanvaBrandTemplates, listCanvaDesigns, normalizeCanvaOAuthConnection, revokeCanvaOAuthConnection } from "./services/canva-connect.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, mergeDuplicateKnowledge, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { createLearningNote, parseExplicitLearningCommand, previewIndependentLearning } from "./services/learning-engine.js";
 import { buildDocumentKnowledgeContext, createKnowledgeDocument, DOCUMENT_LIMITS, findDuplicateDocument, normalizeKnowledgeDocument, resolveDocumentStoragePath, searchKnowledgeDocuments, toPublicKnowledgeDocument } from "./services/knowledge-documents.js";
@@ -1622,6 +1622,34 @@ async function getCanvaAccessTokenForIntegration() {
       await saveStore();
     }
   });
+}
+
+
+async function getCanvaAutomationAccessToken() {
+  const connection = getCanvaOAuthConnection();
+  const status = getCanvaOAuthStatus(connection, process.env);
+  if (!status.connected) {
+    throw Object.assign(new Error("Connect Canva from Creator Studio before using Canva automation."), { statusCode: 409 });
+  }
+  if (!status.automationReady) {
+    throw Object.assign(new Error("Your Canva connection uses the older thumbnail-only permissions. Reconnect Canva and approve the expanded design, template and export permissions."), { statusCode: 409 });
+  }
+  return getCanvaAccessTokenForIntegration();
+}
+
+async function handleCanvaAutomation(req, res, operation, successStatus = 200) {
+  try {
+    const accessToken = await getCanvaAutomationAccessToken();
+    const result = await operation(accessToken);
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(successStatus).json(result);
+  } catch (error) {
+    const message = error?.message || "Canva automation could not complete the requested action.";
+    const statusCode = error?.statusCode ||
+      (error instanceof TypeError ? 400 :
+        /authorization|permission|scope|Canva denied|reconnect Canva/i.test(message) ? 409 : 502);
+    return res.status(statusCode).json({ error: message });
+  }
 }
 
 function integrationCatalogResponse() {
@@ -3420,6 +3448,77 @@ app.post("/api/canva/thumbnail-design", requireAuth, integrationTestLimiter,
       res.status(code).json({ error: error?.message || "Canva thumbnail design could not be created." });
     }
   }
+);
+
+
+// Canva Connect automation. All endpoints use the server-side encrypted OAuth
+// token; the browser never receives Canva access or refresh credentials.
+app.get("/api/canva/designs", requireAuth, integrationTestLimiter, async (req, res) =>
+  handleCanvaAutomation(req, res, (accessToken) => listCanvaDesigns({
+    accessToken,
+    query: cleanText(req.query?.query, 180),
+    continuation: cleanText(req.query?.continuation, 1000),
+    ownership: cleanText(req.query?.ownership, 24),
+    sort_by: cleanText(req.query?.sort_by, 40),
+    limit: cleanText(req.query?.limit, 3)
+  }))
+);
+
+app.get("/api/canva/brand-templates", requireAuth, integrationTestLimiter, async (req, res) =>
+  handleCanvaAutomation(req, res, (accessToken) => listCanvaBrandTemplates({
+    accessToken,
+    query: cleanText(req.query?.query, 180),
+    continuation: cleanText(req.query?.continuation, 1000),
+    ownership: cleanText(req.query?.ownership, 24),
+    sort_by: cleanText(req.query?.sort_by, 40),
+    limit: cleanText(req.query?.limit, 3)
+  }))
+);
+
+app.get("/api/canva/designs/:designId/dataset", requireAuth, integrationTestLimiter, async (req, res) =>
+  handleCanvaAutomation(req, res, (accessToken) => getCanvaDesignDataset({
+    accessToken,
+    designId: req.params.designId
+  }))
+);
+
+app.get("/api/canva/brand-templates/:templateId/dataset", requireAuth, integrationTestLimiter, async (req, res) =>
+  handleCanvaAutomation(req, res, (accessToken) => getCanvaBrandTemplateDataset({
+    accessToken,
+    templateId: req.params.templateId
+  }))
+);
+
+app.post("/api/canva/autofills", requireAuth, integrationTestLimiter, async (req, res) =>
+  handleCanvaAutomation(req, res, (accessToken) => createCanvaAutofillJob({
+    accessToken,
+    source: req.body?.source,
+    id: req.body?.id,
+    title: req.body?.title,
+    data: req.body?.data
+  }), 202)
+);
+
+app.get("/api/canva/autofills/:jobId", requireAuth, integrationTestLimiter, async (req, res) =>
+  handleCanvaAutomation(req, res, (accessToken) => getCanvaAutofillJob({
+    accessToken,
+    jobId: req.params.jobId
+  }))
+);
+
+app.post("/api/canva/exports", requireAuth, integrationTestLimiter, async (req, res) =>
+  handleCanvaAutomation(req, res, (accessToken) => createCanvaExportJob({
+    accessToken,
+    designId: req.body?.designId,
+    format: req.body?.format
+  }), 202)
+);
+
+app.get("/api/canva/exports/:jobId", requireAuth, integrationTestLimiter, async (req, res) =>
+  handleCanvaAutomation(req, res, (accessToken) => getCanvaExportJob({
+    accessToken,
+    jobId: req.params.jobId
+  }))
 );
 
 app.get("/api/youtube/analytics/status", requireAuth, (_req, res) => {
