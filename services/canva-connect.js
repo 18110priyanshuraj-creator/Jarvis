@@ -410,7 +410,7 @@ function safeQuery(input = {}, allowed = []) {
   for (const key of allowed) {
     const value = input[key];
     if (value === undefined || value === null || value === "") continue;
-    const normalized = clean(String(value), 180);
+    const normalized = clean(String(value), key === "continuation" ? 1000 : 180);
     if (!normalized) continue;
     params.set(key, normalized);
   }
