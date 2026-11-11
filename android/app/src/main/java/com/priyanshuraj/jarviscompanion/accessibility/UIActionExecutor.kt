@@ -200,12 +200,13 @@ object UIActionExecutor {
                     )
                 }
                 for (node in tree.nodes) {
-                    if (node.isPassword || !UiActionPolicy.matchesExactLabel(
-                            node.text?.toString(),
-                            node.contentDescription?.toString(),
-                            label
-                        )
-                    ) continue
+                    val exactLabel = UiActionPolicy.matchesExactLabel(
+                        node.text?.toString(),
+                        node.contentDescription?.toString(),
+                        label
+                    ) || UiActionPolicy.normalizeLabel(node.hintText?.toString().orEmpty()) ==
+                        UiActionPolicy.normalizeLabel(label)
+                    if (node.isPassword || !exactLabel) continue
                     val editable = nearestEditableCopy(node) ?: continue
                     val decision = UiActionPolicy.validateTextTarget(
                         visible = editable.isVisibleToUser,
