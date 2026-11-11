@@ -1119,6 +1119,468 @@ export function createCreatorStudio({ api, toast }) {
     $("creator-analytics-advice").textContent = notes.join("\n\n");
   }
 
+
+  let canvaMcpStatus = null;
+  let canvaMcpDesign = null;
+  let canvaMcpEdit = null;
+
+  function canvaMcpMessage(message, error = false) {
+    const target = $("creator-canva-mcp-status");
+    if (!target) return;
+    target.textContent = message;
+    target.classList.toggle("error-text", error);
+  }
+
+  function canvaMcpImageUrl(raw) {
+    try {
+      const url = new URL(String(raw || ""));
+      if (url.protocol !== "https:" || !(url.hostname === "canva.com" || url.hostname.endsWith(".canva.com")) ||
+          url.username || url.password) return "";
+      return url.toString();
+    } catch {
+      return "";
+    }
+  }
+
+  function canvaMcpDesignList(payload) {
+    if (Array.isArray(payload?.items)) return payload.items;
+    if (Array.isArray(payload?.designs)) return payload.designs;
+    if (Array.isArray(payload?.results)) return payload.results;
+    return [];
+  }
+
+  function canvaMcpElementList(payload) {
+    const richtexts = Array.isArray(payload?.richtexts) ? payload.richtexts : [];
+    const fills = Array.isArray(payload?.fills) ? payload.fills : [];
+    return [
+      ...richtexts.map((item) => ({
+        id: String(item?.element_id || ""),
+        kind: "text",
+        page: Number(item?.page_index || 1),
+        text: Array.isArray(item?.regions)
+          ? item.regions.map((region) => String(region?.text || "")).join("")
+          : ""
+      })),
+      ...fills.map((item) => ({
+        id: String(item?.element_id || ""),
+        kind: String(item?.type || "media"),
+        page: Number(item?.page_index || 1),
+        assetId: String(item?.asset_id || ""),
+        editable: item?.editable !== false
+      }))
+    ].filter((item) => /^[A-Za-z0-9_-]{1,160}$/.test(item.id));
+  }
+
+  function renderCanvaMcpElements(payload) {
+    const target = $("creator-canva-mcp-elements");
+    if (!target) return;
+    target.replaceChildren();
+    const items = canvaMcpElementList(payload);
+    if (!items.length) {
+      target.textContent = "Canva did not return editable text or media elements for this transaction.";
+      return;
+    }
+    for (const item of items) {
+      const card = document.createElement("article");
+      card.className = "creator-canva-mcp-element";
+      const heading = document.createElement("strong");
+      heading.textContent = (item.kind === "text" ? "Text" : "Media") + " · page " + item.page;
+      const detail = document.createElement("p");
+      detail.className = "small muted";
+      detail.textContent = item.kind === "text"
+        ? (item.text || "(empty text element)").slice(0, 260)
+        : "Asset " + (item.assetId || "not returned") + (item.editable ? "" : " · read-only");
+      const id = document.createElement("code");
+      id.textContent = item.id;
+      const actions = document.createElement("div");
+      actions.className = "creator-export-row";
+      if (item.kind === "text") {
+        const replace = document.createElement("button");
+        replace.type = "button";
+        replace.className = "item-action";
+        replace.textContent = "Replace text";
+        replace.addEventListener("click", () => {
+          const value = window.prompt("New text for this Canva element:", item.text);
+          if (value === null) return;
+          appendCanvaMcpOperation({
+            type: "replace_text",
+            element_id: item.id,
+            text: value
+          });
+        });
+        const format = document.createElement("button");
+        format.type = "button";
+        format.className = "item-action";
+        format.textContent = "Format text";
+        format.addEventListener("click", () => {
+          const size = window.prompt("Font size in pixels (1–800):", "48");
+          if (size === null) return;
+          const numeric = Number(size);
+          if (!Number.isInteger(numeric) || numeric < 1 || numeric > 800) {
+            canvaMcpMessage("Font size must be a whole number from 1 to 800.", true);
+            return;
+          }
+          appendCanvaMcpOperation({
+            type: "format_text",
+            element_id: item.id,
+            formatting: { font_size: numeric }
+          });
+        });
+        actions.append(replace, format);
+      } else {
+        const replace = document.createElement("button");
+        replace.type = "button";
+        replace.className = "item-action";
+        replace.textContent = "Replace media";
+        replace.addEventListener("click", () => {
+          const assetId = window.prompt("Paste the Canva image/video asset ID to use:", "");
+          if (assetId === null) return;
+          const kind = window.prompt("Type image or video:", item.kind === "video" ? "video" : "image");
+          if (kind === null) return;
+          appendCanvaMcpOperation({
+            type: "update_fill",
+            element_id: item.id,
+            asset_type: kind.trim().toLowerCase(),
+            asset_id: assetId.trim(),
+            alt_text: "Replaced Canva media"
+          });
+        });
+        actions.append(replace);
+      }
+      card.append(heading, detail, id, actions);
+      target.append(card);
+    }
+  }
+
+  function appendCanvaMcpOperation(operation) {
+    const field = $("creator-canva-mcp-operations");
+    if (!field) return;
+    let operations = [];
+    try {
+      const parsed = JSON.parse(field.value || "[]");
+      if (!Array.isArray(parsed)) throw new Error("Expected an array.");
+      operations = parsed;
+    } catch {
+      canvaMcpMessage("The operation editor must contain valid JSON array syntax before adding another action.", true);
+      return;
+    }
+    operations.push(operation);
+    field.value = JSON.stringify(operations, null, 2);
+    canvaMcpMessage("Added one draft edit. Select Apply draft edits to send it to Canva; it is not saved yet.");
+  }
+
+  async function loadCanvaMcpStatus() {
+    try {
+      canvaMcpStatus = await api("/api/canva/mcp/status");
+      const connect = $("creator-canva-mcp-connect");
+      const search = $("creator-canva-mcp-search-button");
+      const status = $("creator-canva-mcp-status");
+      const ready = canvaMcpStatus?.editingReady === true;
+      if (connect) {
+        connect.disabled = canvaMcpStatus?.canConnect !== true;
+        connect.textContent = ready ? "Reconnect Canva MCP" : "Connect Canva Design Editor";
+      }
+      if (search) search.disabled = !ready;
+      if (status) {
+        canvaMcpMessage(ready
+          ? "Canva MCP is connected. Search your designs, open an editing transaction, preview draft changes, and save only after review."
+          : canvaMcpStatus?.configured
+            ? "Canva MCP is configured but not connected yet. Connect it to enable native design editing."
+            : "Canva MCP needs the existing Canva app credentials and the Canva MCP integration enabled in your Canva Developer Portal. Android app control remains available without OAuth.");
+      }
+      return canvaMcpStatus;
+    } catch (error) {
+      canvaMcpMessage(error.message || "Canva MCP status could not be loaded.", true);
+      return null;
+    }
+  }
+
+  async function connectCanvaMcp() {
+    const button = $("creator-canva-mcp-connect");
+    let popup = null;
+    try {
+      // Open a user-initiated browsing context before awaiting the server request.
+      popup = window.open("about:blank", "_blank");
+      if (button) button.disabled = true;
+      const result = await api("/api/integrations/canva/mcp/oauth/start", {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      if (result.connected) {
+        if (popup) popup.close();
+        await loadCanvaMcpStatus();
+        canvaMcpMessage("Canva MCP is already connected.");
+        return;
+      }
+      const target = safeCanvaLink(result.authorizationUrl);
+      if (!target) throw new Error("Canva did not return a trusted authorization URL.");
+      if (popup) popup.location.href = target;
+      else canvaMcpMessage("Open this Canva authorization link to connect: " + target);
+      canvaMcpMessage("Complete Canva authorization in the opened tab, then return to JARVIS and refresh the connection status.");
+    } catch (error) {
+      if (popup && !popup.closed) popup.close();
+      canvaMcpMessage(error.message || "Canva MCP connection could not start.", true);
+    } finally {
+      if (button) button.disabled = !canvaMcpStatus?.canConnect;
+    }
+  }
+
+  async function loadCanvaMcpDesigns() {
+    const button = $("creator-canva-mcp-search-button");
+    const target = $("creator-canva-mcp-results");
+    try {
+      if (button) button.disabled = true;
+      canvaMcpMessage("Searching your Canva designs…");
+      const query = $("creator-canva-mcp-query")?.value?.trim() || "";
+      const payload = await api("/api/canva/mcp/designs?query=" + encodeURIComponent(query));
+      const items = canvaMcpDesignList(payload);
+      target.replaceChildren();
+      if (!items.length) {
+        target.textContent = "No matching designs were returned. Try a different title or keyword.";
+        canvaMcpMessage("Search completed. No matching designs were found.");
+        return;
+      }
+      for (const item of items) {
+        const id = String(item?.id || item?.design_id || "");
+        if (!/^D[A-Za-z0-9_-]{10,}$/.test(id)) continue;
+        const row = document.createElement("article");
+        row.className = "creator-canva-mcp-element";
+        const title = document.createElement("strong");
+        title.textContent = String(item?.title || item?.name || "Untitled Canva design").slice(0, 180);
+        const meta = document.createElement("p");
+        meta.className = "small muted";
+        meta.textContent = "Design ID: " + id + (item?.page_count ? " · " + item.page_count + " page(s)" : "");
+        const actions = document.createElement("div");
+        actions.className = "creator-export-row";
+        const open = document.createElement("button");
+        open.type = "button";
+        open.className = "primary";
+        open.textContent = "Open for editing";
+        open.addEventListener("click", () => openCanvaMcpDesign(id, title.textContent));
+        const editUrl = safeCanvaLink(item?.urls?.edit_url || item?.edit_url || item?.url);
+        actions.append(open);
+        if (editUrl) {
+          const link = document.createElement("a");
+          link.href = editUrl;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = "Open in Canva";
+          actions.append(link);
+        }
+        row.append(title, meta, actions);
+        target.append(row);
+      }
+      canvaMcpMessage("Found " + items.length + " design(s). Select one to open its editable elements.");
+    } catch (error) {
+      canvaMcpMessage(error.message || "Canva designs could not be searched.", true);
+    } finally {
+      if (button) button.disabled = canvaMcpStatus?.editingReady !== true;
+    }
+  }
+
+  function renderCanvaMcpPages(pages) {
+    const select = $("creator-canva-mcp-page");
+    if (!select) return;
+    select.replaceChildren();
+    (Array.isArray(pages) ? pages : []).forEach((page) => {
+      const pageNumber = Number(page?.page_number ?? page?.page_index ?? page?.index);
+      if (!Number.isInteger(pageNumber) || pageNumber < 1) return;
+      const option = document.createElement("option");
+      option.value = String(pageNumber);
+      option.textContent = "Page " + pageNumber +
+        (page?.is_responsive === true ? " · responsive" : "") +
+        (page?.is_editable === false ? " · read only" : "");
+      select.append(option);
+    });
+    select.disabled = select.options.length === 0;
+  }
+
+  async function openCanvaMcpDesign(designId, title) {
+    try {
+      canvaMcpMessage("Opening " + title + " in a draft editing transaction…");
+      canvaMcpDesign = { id: designId, title };
+      const details = await api("/api/canva/mcp/designs/get", {
+        method: "POST",
+        body: JSON.stringify({ designId })
+      });
+      const design = details?.design || details;
+      canvaMcpDesign = {
+        id: designId,
+        title: String(design?.title || title || "Canva design"),
+        editUrl: safeCanvaLink(design?.urls?.edit_url || design?.edit_url)
+      };
+      const result = await api("/api/canva/mcp/edit/start", {
+        method: "POST",
+        body: JSON.stringify({ designId })
+      });
+      const transactionId = result?.transaction?.transaction_id || result?.transaction_id;
+      if (!transactionId) throw new Error("Canva did not return an editing transaction ID.");
+      const pages = Array.isArray(result.pages) ? result.pages : [];
+      if (!pages.length) throw new Error("Canva did not return editable page metadata for this design.");
+      canvaMcpEdit = { transactionId, pages, latest: result };
+      $("creator-canva-mcp-edit").classList.remove("hidden");
+      $("creator-canva-mcp-design-title").textContent = canvaMcpDesign.title;
+      $("creator-canva-mcp-transaction").textContent = transactionId;
+      $("creator-canva-mcp-operations").value = "[]";
+      $("creator-canva-mcp-preview").replaceChildren();
+      renderCanvaMcpPages(pages);
+      renderCanvaMcpElements(result);
+      const link = $("creator-canva-mcp-open-design");
+      if (link && canvaMcpDesign.editUrl) {
+        link.href = canvaMcpDesign.editUrl;
+        link.classList.remove("hidden");
+      } else if (link) {
+        link.classList.add("hidden");
+      }
+      canvaMcpMessage("Editing transaction opened. Use the exact element IDs below. Changes remain a draft until you approve Save.");
+    } catch (error) {
+      canvaMcpEdit = null;
+      canvaMcpMessage(error.message || "The Canva design could not be opened for editing.", true);
+    }
+  }
+
+  async function applyCanvaMcpOperations() {
+    if (!canvaMcpEdit) return canvaMcpMessage("Open a Canva design first.", true);
+    const button = $("creator-canva-mcp-apply");
+    try {
+      const operations = JSON.parse($("creator-canva-mcp-operations").value || "[]");
+      if (!Array.isArray(operations) || !operations.length) throw new Error("Add at least one editing operation.");
+      if (!window.confirm("Apply " + operations.length + " draft edit(s) to " + canvaMcpDesign.title + "? The original design will not be saved until you approve Commit.")) return;
+      button.disabled = true;
+      const payload = await api("/api/canva/mcp/edit/operations", {
+        method: "POST",
+        body: JSON.stringify({
+          transactionId: canvaMcpEdit.transactionId,
+          pageIndex: Number($("creator-canva-mcp-page").value),
+          operations,
+          pages: canvaMcpEdit.pages
+        })
+      });
+      canvaMcpEdit.pages = Array.isArray(payload?.pages) ? payload.pages : canvaMcpEdit.pages;
+      canvaMcpEdit.latest = payload;
+      renderCanvaMcpElements(payload);
+      const results = Array.isArray(payload?.edit_operation_results) ? payload.edit_operation_results : [];
+      const failed = results.filter((item) => item?.status !== "success");
+      canvaMcpMessage(failed.length
+        ? failed.length + " edit(s) need review. See the operation results; nothing has been committed."
+        : "Draft edits applied in Canva. Preview them before committing; nothing is saved permanently yet.");
+      $("creator-canva-mcp-dataset").textContent = JSON.stringify(payload, null, 2);
+    } catch (error) {
+      canvaMcpMessage(error.message || "Draft edits could not be applied.", true);
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  async function previewCanvaMcpEdit() {
+    if (!canvaMcpEdit) return;
+    try {
+      const pageIndex = Number($("creator-canva-mcp-page").value);
+      const payload = await api("/api/canva/mcp/edit/preview", {
+        method: "POST",
+        body: JSON.stringify({ transactionId: canvaMcpEdit.transactionId, pageIndex })
+      });
+      const target = $("creator-canva-mcp-preview");
+      target.replaceChildren();
+      const thumbs = Array.isArray(payload?.thumbnails) ? payload.thumbnails : [];
+      const url = canvaMcpImageUrl(thumbs[0]?.url || payload?.thumbnail?.url || payload?.thumbnail_url);
+      if (url) {
+        const image = document.createElement("img");
+        image.src = url;
+        image.alt = "Canva draft preview for page " + pageIndex;
+        image.loading = "lazy";
+        target.append(image);
+      } else {
+        target.textContent = "Canva returned the preview data, but no displayable thumbnail URL was included. Review the returned details below.";
+      }
+      $("creator-canva-mcp-dataset").textContent = JSON.stringify(payload, null, 2);
+      canvaMcpMessage("Draft preview loaded. Check it carefully; only then choose Save changes.");
+    } catch (error) {
+      canvaMcpMessage(error.message || "Canva draft preview could not be loaded.", true);
+    }
+  }
+
+  async function commitCanvaMcpEdit() {
+    if (!canvaMcpEdit) return;
+    if (!window.confirm("Save the reviewed Canva changes to the existing design? This commits the editing transaction.")) return;
+    const transactionId = canvaMcpEdit.transactionId;
+    try {
+      const result = await api("/api/canva/mcp/edit/commit", {
+        method: "POST",
+        body: JSON.stringify({ transactionId, confirmed: true })
+      });
+      const committed = result?.transaction?.status === "committed";
+      if (!committed) throw new Error("Canva did not confirm that this transaction was committed. Check the result before assuming it was saved.");
+      canvaMcpEdit = null;
+      $("creator-canva-mcp-edit").classList.add("hidden");
+      canvaMcpMessage("Canva confirmed the changes were saved. Open the design in Canva for any final manual adjustments.");
+      $("creator-canva-mcp-dataset").textContent = JSON.stringify(result, null, 2);
+    } catch (error) {
+      canvaMcpMessage(error.message || "Canva could not commit the editing transaction.", true);
+    }
+  }
+
+  async function cancelCanvaMcpEdit() {
+    if (!canvaMcpEdit) return;
+    if (!window.confirm("Discard every uncommitted edit in this Canva transaction? The original design will remain unchanged.")) return;
+    try {
+      const result = await api("/api/canva/mcp/edit/cancel", {
+        method: "POST",
+        body: JSON.stringify({ transactionId: canvaMcpEdit.transactionId })
+      });
+      const cancelled = result?.transaction?.status === "cancelled";
+      if (!cancelled) throw new Error("Canva did not confirm that the draft was cancelled.");
+      canvaMcpEdit = null;
+      $("creator-canva-mcp-edit").classList.add("hidden");
+      canvaMcpMessage("Uncommitted Canva changes were discarded.");
+    } catch (error) {
+      canvaMcpMessage(error.message || "Canva could not cancel this editing transaction.", true);
+    }
+  }
+
+  async function applyCanvaMcpPageOperations() {
+    if (!canvaMcpDesign?.id) return canvaMcpMessage("Open a Canva design first.", true);
+    try {
+      const operations = JSON.parse($("creator-canva-mcp-page-operations").value || "[]");
+      if (!Array.isArray(operations) || !operations.length) throw new Error("Add one page operation.");
+      if (!window.confirm("Apply these exact page reorder/insert/delete operations? Deleting pages is permanent. Review the JSON carefully.")) return;
+      const result = await api("/api/canva/mcp/pages", {
+        method: "POST",
+        body: JSON.stringify({
+          type: "modify_existing_design",
+          designId: canvaMcpDesign.id,
+          operations,
+          confirmed: true
+        })
+      });
+      $("creator-canva-mcp-dataset").textContent = JSON.stringify(result, null, 2);
+      canvaMcpMessage("Canva returned the page-structure operation result. Confirm its status and review the design.");
+      if (result?.urls?.edit_url || result?.edit_url) {
+        const link = $("creator-canva-mcp-open-design");
+        link.href = safeCanvaLink(result?.urls?.edit_url || result?.edit_url);
+        link.classList.remove("hidden");
+      }
+    } catch (error) {
+      canvaMcpMessage(error.message || "Canva page operations could not be applied.", true);
+    }
+  }
+
+  async function loadCanvaMcpAssets() {
+    try {
+      const raw = $("creator-canva-mcp-asset-ids").value;
+      const ids = raw.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
+      if (!ids.length) throw new Error("Enter at least one Canva asset ID.");
+      const payload = await api("/api/canva/mcp/assets/get", {
+        method: "POST",
+        body: JSON.stringify({ assetIds: ids })
+      });
+      $("creator-canva-mcp-dataset").textContent = JSON.stringify(payload, null, 2);
+      canvaMcpMessage("Canva asset details loaded. Use returned asset IDs in replacement or insert media actions.");
+    } catch (error) {
+      canvaMcpMessage(error.message || "Canva assets could not be loaded.", true);
+    }
+  }
+
   function init() {
     if ($("creator-form")?.dataset.initialized === "true") return;
     if (!$("creator-form")) return;
@@ -1143,6 +1605,14 @@ export function createCreatorStudio({ api, toast }) {
     $("creator-canva-poll-autofill").addEventListener("click", pollCanvaAutofill);
     $("creator-canva-start-export").addEventListener("click", startCanvaExport);
     $("creator-canva-poll-export").addEventListener("click", pollCanvaExport);
+    $("creator-canva-mcp-connect").addEventListener("click", connectCanvaMcp);
+    $("creator-canva-mcp-search-button").addEventListener("click", loadCanvaMcpDesigns);
+    $("creator-canva-mcp-apply").addEventListener("click", applyCanvaMcpOperations);
+    $("creator-canva-mcp-preview-button").addEventListener("click", previewCanvaMcpEdit);
+    $("creator-canva-mcp-commit").addEventListener("click", commitCanvaMcpEdit);
+    $("creator-canva-mcp-cancel").addEventListener("click", cancelCanvaMcpEdit);
+    $("creator-canva-mcp-page-apply").addEventListener("click", applyCanvaMcpPageOperations);
+    $("creator-canva-mcp-load-assets").addEventListener("click", loadCanvaMcpAssets);
     $("creator-canva-resource-kind").addEventListener("change", () => $("creator-canva-resources").replaceChildren());
 
     ["creator-thumbnail-title", "creator-thumbnail-subtitle"].forEach((id) => {
@@ -1163,6 +1633,7 @@ export function createCreatorStudio({ api, toast }) {
     renderFigure();
     renderCreatorCanvases();
     loadCanvaStatus();
+    loadCanvaMcpStatus();
     status("Creator Studio ready. Drafts stay in this browser until you export them.");
   }
 
