@@ -1192,6 +1192,15 @@ export function createCreatorStudio({ api, toast }) {
         : "Asset " + (item.assetId || "not returned") + (item.editable ? "" : " · read-only");
       const id = document.createElement("code");
       id.textContent = item.id;
+      const pageInfo = canvaMcpEdit?.pages?.find((page) =>
+        Number(page?.page_number ?? page?.page_index ?? page?.index) === item.page
+      );
+      const responsive = pageInfo?.is_responsive === true;
+      const pageEditable = pageInfo?.is_editable !== false;
+      const selectPage = () => {
+        const select = $("creator-canva-mcp-page");
+        if (select) select.value = String(item.page);
+      };
       const actions = document.createElement("div");
       actions.className = "creator-export-row";
       if (item.kind === "text") {
@@ -1250,6 +1259,7 @@ export function createCreatorStudio({ api, toast }) {
         replace.className = "item-action";
         replace.textContent = "Replace media";
         replace.addEventListener("click", () => {
+          selectPage();
           const assetId = window.prompt("Paste the Canva image/video asset ID to use:", "");
           if (assetId === null) return;
           const kind = window.prompt("Type image or video:", item.kind === "video" ? "video" : "image");
@@ -1262,10 +1272,59 @@ export function createCreatorStudio({ api, toast }) {
             alt_text: "Replaced Canva media"
           });
         });
-        replace.disabled = item.editable === false;
-        if (replace.disabled) replace.title = "Canva marked this media element as read-only.";
+        replace.disabled = item.editable === false || !pageEditable;
+        if (replace.disabled) replace.title = "Canva marked this media or page as read-only.";
         actions.append(replace);
       }
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "item-action";
+      remove.textContent = "Delete element";
+      remove.disabled = !pageEditable;
+      remove.addEventListener("click", () => {
+        selectPage();
+        if (!window.confirm("Add a delete operation for this exact Canva element?")) return;
+        appendCanvaMcpOperation({ type: "delete_element", element_id: item.id });
+      });
+      actions.append(remove);
+      const move = document.createElement("button");
+      move.type = "button";
+      move.className = "item-action";
+      move.textContent = "Move element";
+      move.disabled = !pageEditable || responsive;
+      move.title = responsive ? "Position editing is not available on responsive pages." : "";
+      move.addEventListener("click", () => {
+        selectPage();
+        const top = window.prompt("New top position in pixels:", "120");
+        if (top === null) return;
+        const left = window.prompt("New left position in pixels:", "80");
+        if (left === null) return;
+        if (!Number.isFinite(Number(top)) || !Number.isFinite(Number(left))) {
+          canvaMcpMessage("Position values must be valid numbers.", true);
+          return;
+        }
+        appendCanvaMcpOperation({ type: "position_element", element_id: item.id, top: Number(top), left: Number(left) });
+      });
+      actions.append(move);
+      const resize = document.createElement("button");
+      resize.type = "button";
+      resize.className = "item-action";
+      resize.textContent = "Resize element";
+      resize.disabled = !pageEditable || responsive;
+      resize.title = responsive ? "Element resizing is not available on responsive pages." : "";
+      resize.addEventListener("click", () => {
+        selectPage();
+        const width = window.prompt("New width in pixels:", "640");
+        if (width === null) return;
+        const height = window.prompt("New height in pixels:", "360");
+        if (height === null) return;
+        if (!Number.isFinite(Number(width)) || !Number.isFinite(Number(height)) || Number(width) <= 0 || Number(height) <= 0) {
+          canvaMcpMessage("Width and height must be positive numbers.", true);
+          return;
+        }
+        appendCanvaMcpOperation({ type: "resize_element", element_id: item.id, width: Number(width), height: Number(height), preserve_aspect_ratio: false });
+      });
+      actions.append(resize);
       card.append(heading, detail, id, actions);
       target.append(card);
     }
@@ -1458,6 +1517,23 @@ export function createCreatorStudio({ api, toast }) {
     }
   }
 
+  function appendCanvaMcpMediaFill() {
+    if (!canvaMcpEdit) return canvaMcpMessage("Open a design before inserting media.", true);
+    const pageIndex = Number($("creator-canva-mcp-page")?.value || 1);
+    const page = canvaMcpEdit.pages.find((item) => Number(item?.page_number ?? item?.page_index ?? item?.index) === pageIndex);
+    if (!page?.page_id) return canvaMcpMessage("Canva did not return an editable page ID for this page.", true);
+    if (page.is_responsive === true || page.is_editable === false) return canvaMcpMessage("This page does not support inserting new media through the current Canva editor.", true);
+    const assetId = window.prompt("Enter an image/video asset ID already available in Canva:", "");
+    if (assetId === null) return;
+    const assetType = window.prompt("Asset type: image or video", "image");
+    if (assetType === null) return;
+    if (!["image", "video"].includes(assetType.trim().toLowerCase())) return canvaMcpMessage("Asset type must be image or video.", true);
+    appendCanvaMcpOperation({
+      type: "insert_fill", page_id: page.page_id,
+      asset_type: assetType.trim().toLowerCase(), asset_id: assetId.trim(),
+      alt_text: "Added from JARVIS Canva editor", top: 80, left: 80, width: 640, height: 360, opacity: 1
+    });
+  }
   async function applyCanvaMcpOperations() {
     if (!canvaMcpEdit) return canvaMcpMessage("Open a Canva design first.", true);
     const button = $("creator-canva-mcp-apply");
@@ -1626,6 +1702,7 @@ export function createCreatorStudio({ api, toast }) {
     $("creator-canva-poll-export").addEventListener("click", pollCanvaExport);
     $("creator-canva-mcp-connect").addEventListener("click", connectCanvaMcp);
     $("creator-canva-mcp-search-button").addEventListener("click", loadCanvaMcpDesigns);
+    $("creator-canva-mcp-insert-media").addEventListener("click", appendCanvaMcpMediaFill);
     $("creator-canva-mcp-apply").addEventListener("click", applyCanvaMcpOperations);
     $("creator-canva-mcp-preview-button").addEventListener("click", previewCanvaMcpEdit);
     $("creator-canva-mcp-commit").addEventListener("click", commitCanvaMcpEdit);
