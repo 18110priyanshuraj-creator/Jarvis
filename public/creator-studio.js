@@ -759,6 +759,15 @@ export function createCreatorStudio({ api, toast }) {
             : "Canva Connect is not configured on the JARVIS server. Basic Android accessibility control can still open the installed Canva app without OAuth.");
       return canvaStatus;
     } catch (error) {
+      $("creator-connect-canva").disabled = true;
+      [
+        "creator-canva-load-resources", "creator-canva-inspect-dataset",
+        "creator-canva-run-autofill", "creator-canva-poll-autofill",
+        "creator-canva-start-export", "creator-canva-poll-export"
+      ].forEach((id) => {
+        const button = $(id);
+        if (button) button.disabled = true;
+      });
       setCanvaStatus(error.message || "Canva connection status is unavailable.", true);
       return null;
     }
