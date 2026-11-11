@@ -600,3 +600,15 @@
   opacity: .5;
   cursor: not-allowed;
 }
+
+.creator-canva-downloads {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+}
+.creator-canva-downloads a {
+  width: 100%;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
