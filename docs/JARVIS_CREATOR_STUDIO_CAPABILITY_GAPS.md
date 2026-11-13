@@ -1,49 +1,51 @@
-# Creator Studio capability boundary and next steps
+# JARVIS Creator Studio and Media Studio — capability boundary
 
-## Implemented in this branch
+## Creator Studio capabilities
 
-- Creator Studio dashboard view with a 4–20 minute, eight-chapter timed outline builder.
-- Full narration drafting through the existing JARVIS chat API when the server's AI provider is configured.
-- Title and hook ideas, visual direction per chapter, Markdown script export, storyboard CSV export and YouTube description draft export.
-- Stick-figure SVG pose generator (idle, walk, point, think, surprised and explaining) and an all-pose SVG sheet.
-- A read-only YouTube Analytics panel for top-video performance and selected-video audience retention (views, watch time, average duration, average percentage viewed, likes, comments and subscribers gained). CTR is not included in this report and remains a manual YouTube Studio comparison field.
-- A button to create and test an optional Creator Coach skill draft; skill activation remains a separate explicit approval step.
-- Optional Canva Connect OAuth flow with encrypted refresh-token storage, explicit disconnect/revocation, thumbnail PNG asset upload, and creation of a new 1280 × 720 Canva design from that flat PNG. The user can open the design in Canva and refine it there.
-- Optional read-only YouTube Analytics OAuth and reports for top videos and selected-video audience retention; thumbnail impression CTR remains a manual input.
-- Creator Studio drafts are saved in local browser storage on the current device and can be exported to move them.
+The current repository includes:
+- A 4–20 minute, eight-chapter outline builder and narration drafting through the configured JARVIS AI provider.
+- Title/hook suggestions, per-chapter visual direction, Markdown script, storyboard CSV and YouTube description exports.
+- Stick-figure SVG poses and pose sheets, thumbnail layouts and campaign asset bundles.
+- Creator Campaign Pack outputs for short-video scenes, carousels, SEO page drafts, idea backlogs, trend research checklists and manual lead-magnet/reply copy.
+- Read-only YouTube Analytics code for top-video and audience-retention reports. A live account connection and actual report eligibility still require owner-side OAuth acceptance; thumbnail impression CTR is not included in the report.
+- An explicitly previewed and confirmed YouTube publishing flow. It is not background auto-posting.
 
-## Existing Media Studio capabilities verified in source
+## Media Studio capabilities verified in current source
 
-- Media Studio can create a 2–12-scene storyboard, script, captions and visual directions.
-- Export options include JSON, script, captions, PNG frames and silent WebM output. Creator Studio also exports 1280 × 720 thumbnail PNGs, single-pose and pose-sheet SVGs, a short silent WebM stick-figure motion sample, long-form chapter CSV, Markdown script draft and YouTube description template.
-- Formats are vertical short (up to 90 seconds), landscape explainer (up to 180 seconds) and square carousel (up to 60 seconds).
-- YouTube Publisher has a saved preview and explicit confirmation step; it is not an automatic posting tool. Its upload permission is separate from the read-only YouTube Analytics permission.
-- Android Companion can launch installed apps and perform bounded accessibility-label actions, scrolling, Back/Home, and focused-field text entry. On Android 12L/API 32+, it also has a narrow semantic drag action for two exact accessible labels; it never uses raw screen coordinates.
+- Formats: vertical short (up to 90 seconds), landscape explainer (up to 180 seconds), square carousel (up to 60 seconds), and long-form (up to 20 minutes).
+- Up to 80 scenes, 8 timeline tracks and 160 timeline clips, with server-side normalization and bounded project fields.
+- Video, overlay and audio timeline tracks; clip source in/out points, trim/split, transitions, keyframes, speed ramps, chroma key, masks, camera movement and colour grading.
+- Local image/video/audio assets and a browser-local IndexedDB asset library. It is not cloud-synced.
+- Browser preview and local export with optional imported voiceover, background music and timeline audio mixing.
+- Script, captions, project JSON, PNG frames and browser-rendered video export. The browser may select MP4 when supported; WebM is the fallback.
+- Projects begin as drafts; exports require approval. The browser tab must remain open during real-time rendering. Longer renders are more practical on a desktop browser.
 
-## Capabilities not present / not claimed
+## Important limitations — not implemented or not yet accepted
 
-- The existing optional Canva Connect feature is only for uploading a PNG and creating a flat thumbnail design. It still uses a separately registered Canva developer app and private OAuth settings, but those credentials are not required to open the installed Canva app or use Android's on-device accessibility controls. This branch adds no new Canva client-secret dependency.
-- The first Canva handoff creates a new custom 16:9 design containing a single flat thumbnail PNG. It does not create separately editable headline/shape layers or a video timeline.
-- General-purpose Canva drag-and-drop, precise timeline editing, trimming, splitting, keyframes or arbitrary touch-coordinate control. JARVIS can attempt only an Android semantic drag when the exact source and destination labels expose ACTION_DRAG_START/ACTION_DRAG_DROP; Canva's actual mobile UI has not yet been tested for those actions.
-- Full multi-track timeline editing, precise clip timing, keyframe/rig animation or automated audio mastering.
-- Native voiceover recording/generation in Media Studio.
-- A full long-form video renderer beyond the current 180-second landscape Media Studio renderer limit. Creator Studio makes a 4–20 minute plan and narration draft, not a finished video file.
-- YouTube Analytics read-only OAuth/report code is implemented, but a live channel account has not yet granted the separate permission in this workspace. Thumbnail impression CTR still remains manual in the worksheet.
-- Guaranteed YouTube impressions, reach, views, retention or subscriber growth.
+- No native automatic speech transcription / word-level transcript editor is integrated into Media Studio.
+- No automatic silence/retake detection or transcript-driven cut suggestions.
+- No dedicated FFmpeg worker, resumable server-side render queue or cloud render farm.
+- No verified Final Cut Pro, DaVinci Resolve or Premiere Pro interchange export.
+- No automatic audio mastering chain or guaranteed loudness compliance. Imported tracks are mixed in the browser with bounded gain controls.
+- No guarantee that an export is playable on every device/browser. Export metadata verification is being added, but visual/audio review remains necessary.
+- No guaranteed YouTube impressions, reach, views, retention or subscriber growth.
+- Canva's optional Connect integration and Android Accessibility UI path remain separate. Canva OAuth credentials are not needed merely to open the installed Canva app and use the bounded on-device controls. Arbitrary Canva timeline editing is not claimed.
+- Physical Android/Canva acceptance remains dependent on testing the actual target device and installed app version.
 
-## Remaining roadmap
+## Recommended next steps
 
-1. **Canva Connect validation:** configure the owner's developer app credentials and exact redirect callback in private server settings, then test OAuth, asset upload, design creation and explicit revocation with the real account. Do not claim full timeline editing unless Canva exposes and the integration has tested it.
-2. **Editable video handoff:** add a documented asset bundle with script, scene images, captions and audio notes; preserve a manual import/edit step in Canva.
-3. **Long-form render pipeline:** design a separate renderer with voiceover/audio support and explicit processing/storage limits; do not extend the current 180-second Media Studio renderer without tests.
-4. **YouTube analytics validation:** connect an account using the separate read-only permission, verify report eligibility, and compare top-video metrics / retention with the manual CTR worksheet. Keep API data separate from manually entered values.
-5. **Android validation:** test Canva on the target tablet. Confirm whether the selected clip and destination expose semantic accessibility drag actions; keep every unsupported drag, trim, split and timeline operation manual.
-6. **Skill activation:** Creator Coach drafts must be validated and explicitly approved by the workspace owner.
+1. Add optional local transcription and word-timed subtitle ingestion.
+2. Generate silence/retake cut suggestions with a dry-run preview and explicit approval before applying cuts.
+3. Add a separately installed or hosted FFmpeg media worker with typed commands, bounded resource budgets, progress events, cancellation and durable job records.
+4. Add export verification plus a frame/contact-sheet preview; retain a manual audiovisual review step.
+5. Add validated interchange export only after checking real project compatibility in each target desktop editor.
+6. Add an isolated document/media extraction worker for PDF, image, audio and video knowledge ingestion, with review-gated indexing.
+7. Finish physical Android/Canva acceptance and signed release checks before claiming those workflows are production-ready.
 
-## Acceptance criteria for future device-control work
+## Acceptance principles
 
-- JARVIS must distinguish a requested app launch from a completed edit.
-- Every visible tap requires a unique accessible label; every drag requires different unique source/destination labels and a verified Canva foreground.
-- Unsupported semantic drag actions must fail honestly and ask the user to perform the step manually; never fall back to coordinate gestures.
-- No auto-publish, file deletion, permission grant or credential entry.
-- Test on the physical Android device before claiming Canva workflow support.
+- Distinguish "requested", "started", "completed" and "verified" states.
+- A successful browser recording API call is not proof of a valid final media file.
+- Unsupported operations must fail honestly rather than falling back to arbitrary shell commands or coordinate-based UI actions.
+- Keep uploads local unless the user has explicitly chosen an authenticated storage destination.
+- Preserve draft/approval gates for edits and publishing.
