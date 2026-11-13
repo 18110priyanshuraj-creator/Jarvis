@@ -555,12 +555,6 @@ export function createMediaWorkspace({ api, toast }) {
         ...(limitations.length ? ["", "LIMITS", ...limitations.map((item) => "• " + item)] : [])
       ];
       if (output) output.textContent = lines.join("\n");
-      renderCopilotMediaMarkers(localAudioScan.silenceSegments.map((segment) => ({
-        timeSeconds: localAudioScan.timelineStart + Math.max(0, segment.startSeconds - localAudioScan.sourceIn) / localAudioScan.speed,
-        severity: "info",
-        title: "Low-volume candidate · " + segment.durationSeconds.toFixed(2) + "s",
-        detail: "This is a signal-level pause candidate, not proof of missing speech. Listen before trimming."
-      })), "No sustained low-volume intervals were found above the configured threshold.");
       renderCopilotMediaMarkers(findings.map((finding) => ({
         timeSeconds: finding.timeSeconds,
         severity: finding.severity,
@@ -678,6 +672,12 @@ export function createMediaWorkspace({ api, toast }) {
         "These are signal-level candidates, not proof of a bad take or missing speech. Review before trimming. Nothing was changed."
       ];
       if (output) output.textContent = lines.join("\n");
+      renderCopilotMediaMarkers(localAudioScan.silenceSegments.map((segment) => ({
+        timeSeconds: localAudioScan.timelineStart + Math.max(0, segment.startSeconds - localAudioScan.sourceIn) / localAudioScan.speed,
+        severity: "info",
+        title: "Low-volume candidate · " + segment.durationSeconds.toFixed(2) + "s",
+        detail: "This is a signal-level pause candidate, not proof of missing speech. Listen before trimming."
+      })), "No sustained low-volume intervals were found above the configured threshold.");
     } catch (error) {
       localAudioScan = null;
       if (output) output.textContent = error.message + " Use a browser-supported MP3, WAV, M4A or AAC audio file.";
