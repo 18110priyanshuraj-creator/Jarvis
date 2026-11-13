@@ -39,8 +39,6 @@ services:
         sync: false
       - key: JARVIS_GEMINI_API_KEY_7
         sync: false
-      - key: JARVIS_SEARCH_ENABLED
-        value: "false"
       - key: JARVIS_GOOGLE_OAUTH_CLIENT_ID
         sync: false
       - key: JARVIS_GOOGLE_OAUTH_CLIENT_SECRET
