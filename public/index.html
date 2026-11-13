@@ -1059,6 +1059,75 @@
           </div>
           <p id="creator-canva-status" class="creator-status" role="status" aria-live="polite">Checking Canva connection and permissions…</p>
 
+          <div class="creator-canva-mcp-editor" aria-labelledby="creator-canva-mcp-heading">
+            <div class="creator-canva-mcp-heading">
+              <div>
+                <p class="eyebrow">NATIVE CANVA EDITING</p>
+                <h3 id="creator-canva-mcp-heading">Canva Live Design Editor</h3>
+              </div>
+              <button type="button" class="primary" id="creator-canva-mcp-connect">Connect Canva Design Editor</button>
+            </div>
+            <p class="small muted">This uses Canva’s official remote MCP editing transactions, separate from the REST autofill/export tools below. JARVIS opens an editable draft, lets you change the real text/media elements, previews the draft, and saves only after you approve it.</p>
+            <p id="creator-canva-mcp-status" class="creator-status" role="status" aria-live="polite">Checking Canva MCP connection…</p>
+            <div class="creator-form-grid">
+              <label for="creator-canva-mcp-query">Search your Canva designs
+                <input id="creator-canva-mcp-query" maxlength="180" placeholder="e.g. science video, YouTube intro">
+              </label>
+            </div>
+            <div class="creator-export-row">
+              <button type="button" class="item-action" id="creator-canva-mcp-search-button" disabled>Search designs</button>
+            </div>
+            <div id="creator-canva-mcp-results" class="creator-canva-resources" aria-live="polite"></div>
+
+            <div id="creator-canva-mcp-edit" class="creator-canva-mcp-edit hidden">
+              <div class="creator-canva-mcp-title">
+                <div>
+                  <strong id="creator-canva-mcp-design-title">Selected Canva design</strong>
+                  <p class="small muted">Draft transaction: <code id="creator-canva-mcp-transaction"></code></p>
+                </div>
+                <a class="creator-canva-link hidden" id="creator-canva-mcp-open-design" href="#" target="_blank" rel="noopener noreferrer">Open design in Canva</a>
+              </div>
+              <label for="creator-canva-mcp-page">Page to edit
+                <select id="creator-canva-mcp-page" disabled></select>
+              </label>
+              <div class="creator-export-row">
+                <button type="button" class="item-action" id="creator-canva-mcp-insert-media">Insert image/video asset</button>
+              </div>
+              <h4>Editable elements returned by Canva</h4>
+              <div id="creator-canva-mcp-elements" class="creator-canva-mcp-elements" aria-live="polite"></div>
+              <label for="creator-canva-mcp-operations">Editing operations (JSON)
+                <textarea id="creator-canva-mcp-operations" rows="9" spellcheck="false">[]</textarea>
+              </label>
+              <p class="small muted">Element IDs come from the active editing transaction. Quick actions include replace text/media, format text, move, resize and delete. Use the JSON editor for text colour/alignment, links, line height, aspect-ratio-preserving resize and other supported options. New media needs a Canva asset ID already in your account. Responsive pages only support find_and_replace_text for text.</p>
+              <div class="creator-export-row">
+                <button type="button" class="primary" id="creator-canva-mcp-apply">Apply draft edits</button>
+                <button type="button" class="item-action" id="creator-canva-mcp-preview-button">Preview draft page</button>
+              </div>
+              <div id="creator-canva-mcp-preview" class="creator-canva-mcp-preview" aria-live="polite"></div>
+              <div class="creator-export-row">
+                <button type="button" class="primary" id="creator-canva-mcp-commit">Save changes</button>
+                <button type="button" class="item-action" id="creator-canva-mcp-cancel">Discard draft</button>
+              </div>
+              <div class="creator-canva-mcp-subpanel">
+                <h4>Page order and structure</h4>
+                <p class="small muted">Move, insert, or permanently delete whole pages. Canva accepts one page operation per request; deleting pages is permanent and each operation requires confirmation.</p>
+                <label for="creator-canva-mcp-page-operations">Page operations (JSON)
+                  <textarea id="creator-canva-mcp-page-operations" rows="5" spellcheck="false">[]</textarea>
+                </label>
+                <button type="button" class="item-action" id="creator-canva-mcp-page-apply">Apply confirmed page changes</button>
+              </div>
+            </div>
+            <div class="creator-canva-mcp-subpanel">
+              <h4>Canva media asset lookup</h4>
+              <label for="creator-canva-mcp-asset-ids">Asset IDs (comma or line separated)
+                <textarea id="creator-canva-mcp-asset-ids" rows="2" placeholder="Paste Canva asset IDs"></textarea>
+              </label>
+              <button type="button" class="item-action" id="creator-canva-mcp-load-assets">Inspect assets</button>
+            </div>
+            <pre id="creator-canva-mcp-dataset" class="creator-canva-json" aria-live="polite">Canva editing and preview details will appear here.</pre>
+            <p class="small muted">This editor can change supported text, image/video fills, position, size, formatting, title, and page structure. Canva plan permissions and responsive-page restrictions apply. It does not promise access to every Canva video timeline control such as arbitrary clip trims, split points, keyframes, or proprietary animation controls.</p>
+          </div>
+
           <div class="creator-form-grid">
             <label for="creator-canva-search">Search designs or brand templates
               <input id="creator-canva-search" maxlength="180" placeholder="e.g. YouTube physics explainer">

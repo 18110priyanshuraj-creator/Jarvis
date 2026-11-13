@@ -30,6 +30,7 @@ import {
 } from "./services/youtube-publisher.js";
 import { getTopVideosAnalytics, getVideoRetentionAnalytics } from "./services/youtube-analytics.js";
 import { beginCanvaOAuth, clearCanvaTokenCache, createCanvaThumbnailDesign, createCanvaAutofillJob, createCanvaExportJob, finishCanvaOAuth, getCanvaAccessToken, getCanvaAutofillJob, getCanvaBrandTemplateDataset, getCanvaDesignDataset, getCanvaExportJob, getCanvaOAuthStatus, listCanvaBrandTemplates, listCanvaDesigns, normalizeCanvaOAuthConnection, revokeCanvaOAuthConnection } from "./services/canva-connect.js";
+import { beginCanvaMcpOAuth, callCanvaMcpTool, finishCanvaMcpOAuth, getCanvaMcpOAuthStatus, normalizeCanvaMcpConnection, validateCanvaEditingOperations, validateCanvaPageMerge } from "./services/canva-mcp.js";
 import { buildKnowledgeContext, isDuplicateKnowledge, KNOWLEDGE_LIMITS, mergeDuplicateKnowledge, normalizeKnowledgeItem, searchKnowledgeItems } from "./services/knowledge.js";
 import { createLearningNote, parseExplicitLearningCommand, previewIndependentLearning } from "./services/learning-engine.js";
 import { buildDocumentKnowledgeContext, createKnowledgeDocument, DOCUMENT_LIMITS, findDuplicateDocument, normalizeKnowledgeDocument, resolveDocumentStoragePath, searchKnowledgeDocuments, toPublicKnowledgeDocument } from "./services/knowledge-documents.js";
@@ -374,9 +375,11 @@ function normalizeStore(parsed = {}) {
       ? [...new Set(parsed.disabledIntegrations.filter((item) => INTEGRATION_PROVIDER_IDS.includes(item)))]
       : [],
     oauthConnections: Array.isArray(parsed.oauthConnections)
-      ? parsed.oauthConnections.slice(0, 4).flatMap((item) => {
+      ? parsed.oauthConnections.slice(0, 6).flatMap((item) => {
           try {
-            return [item?.provider === "canva" ? normalizeCanvaOAuthConnection(item) : normalizeGoogleOAuthConnection(item)];
+            if (item?.provider === "canva") return [normalizeCanvaOAuthConnection(item)];
+            if (item?.provider === "canva_mcp") return [normalizeCanvaMcpConnection(item)];
+            return [normalizeGoogleOAuthConnection(item)];
           } catch { return []; }
         })
       : [],
@@ -1611,6 +1614,10 @@ function getCanvaOAuthConnection() {
   return store.oauthConnections.find((item) => item.provider === "canva") || null;
 }
 
+function getCanvaMcpOAuthConnection() {
+  return store.oauthConnections.find((item) => item.provider === "canva_mcp") || null;
+}
+
 async function getCanvaAccessTokenForIntegration() {
   const connection = getCanvaOAuthConnection();
   if (!connection) return "";
@@ -1648,6 +1655,35 @@ async function handleCanvaAutomation(req, res, operation, successStatus = 200) {
     const statusCode = error?.statusCode ||
       (error instanceof TypeError ? 400 :
         /authorization|permission|scope|Canva denied|reconnect Canva/i.test(message) ? 409 : 502);
+    return res.status(statusCode).json({ error: message });
+  }
+}
+
+async function handleCanvaMcpTool(req, res, name, args, successStatus = 200) {
+  const connection = getCanvaMcpOAuthConnection();
+  if (!connection) {
+    return res.status(409).json({
+      error: "Connect Canva MCP from Creator Studio before editing existing designs. The basic Android Canva app controls remain available without this connection."
+    });
+  }
+  try {
+    const result = await callCanvaMcpTool({
+      connection,
+      name,
+      arguments: args,
+      onTokensUpdated: async (updatedConnection) => {
+        store.oauthConnections = store.oauthConnections.map((item) =>
+          item.provider === "canva_mcp" ? updatedConnection : item
+        );
+        await saveStore();
+      }
+    });
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(successStatus).json(result);
+  } catch (error) {
+    const message = error?.message || "Canva could not complete the requested editing action.";
+    const statusCode = error instanceof TypeError ? 400 :
+      /authorization|permission|scope|reconnect Canva|expired/i.test(message) ? 409 : 502;
     return res.status(statusCode).json({ error: message });
   }
 }
@@ -3390,6 +3426,24 @@ app.get("/api/integrations/canva/oauth/callback", oauthCallbackLimiter, async (r
   const code = cleanText(req.query?.code, 4000);
   const oauthError = cleanText(req.query?.error, 100);
   try {
+    if (state.startsWith("jarvismcp_")) {
+      const callbackParams = new URL(req.originalUrl, "https://jarvis.invalid").searchParams;
+      const connection = await finishCanvaMcpOAuth({
+        state,
+        params: callbackParams,
+        oauthError,
+        browserBinding,
+        runtimeStore,
+        isSessionValid: (sessionHash) => runtimeStore.refreshSessionByHash(sessionHash, SESSION_TTL_MS)
+      });
+      store.oauthConnections = store.oauthConnections.filter((item) => item.provider !== "canva_mcp");
+      store.oauthConnections.push(connection);
+      await saveStore();
+      clearCanvaOAuthCookie(res);
+      res.setHeader("Cache-Control", "no-store");
+      return res.redirect(303, "/?integration=canva_mcp_connected");
+    }
+
     const connection = await finishCanvaOAuth({
       state,
       code,
@@ -3409,7 +3463,9 @@ app.get("/api/integrations/canva/oauth/callback", oauthCallbackLimiter, async (r
     clearCanvaOAuthCookie(res);
     console.warn("Canva OAuth callback was not completed:", error?.message || "OAuth error");
     res.setHeader("Cache-Control", "no-store");
-    return res.redirect(303, "/?integration=canva_error");
+    return res.redirect(303, state.startsWith("jarvismcp_")
+      ? "/?integration=canva_mcp_error"
+      : "/?integration=canva_error");
   }
 });
 
@@ -3520,6 +3576,161 @@ app.get("/api/canva/exports/:jobId", requireAuth, integrationTestLimiter, async 
     jobId: req.params.jobId
   }))
 );
+
+// Official Canva MCP editing surface. OAuth is separate from the existing
+// Connect REST token and remains optional; Android Accessibility app control
+// does not depend on this integration.
+app.get("/api/canva/mcp/status", requireAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json(getCanvaMcpOAuthStatus(getCanvaMcpOAuthConnection(), process.env));
+});
+
+app.post("/api/integrations/canva/mcp/oauth/start", requireAuth, oauthStartLimiter, async (req, res) => {
+  try {
+    const result = await beginCanvaMcpOAuth({
+      sessionToken: req.sessionToken,
+      runtimeStore
+    });
+    if (result.authorizationUrl) setCanvaOAuthCookie(res, result.browserBinding);
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    return res.json({
+      connected: result.connected === true,
+      authorizationUrl: result.authorizationUrl || ""
+    });
+  } catch (error) {
+    return res.status(503).json({ error: error?.message || "Canva MCP authorization could not start." });
+  }
+});
+
+app.get("/api/canva/mcp/designs", requireAuth, integrationTestLimiter, async (req, res) =>
+  handleCanvaMcpTool(req, res, "search-designs", {
+    query: cleanText(req.query?.query, 180),
+    ownership: cleanText(req.query?.ownership, 24) || "any",
+    sort_by: "modified_descending"
+  })
+);
+
+app.post("/api/canva/mcp/designs/get", requireAuth, integrationTestLimiter, async (req, res) => {
+  const designId = cleanText(req.body?.designId, 120);
+  if (!/^D[A-Za-z0-9_-]{10,}$/.test(designId)) return res.status(400).json({ error: "A valid Canva design ID is required." });
+  return handleCanvaMcpTool(req, res, "get-design", { design_id: designId });
+});
+
+app.post("/api/canva/mcp/edit/start", requireAuth, integrationTestLimiter, async (req, res) => {
+  const designId = cleanText(req.body?.designId, 120);
+  if (!/^D[A-Za-z0-9_-]{10,}$/.test(designId)) return res.status(400).json({ error: "A valid Canva design ID is required." });
+  return handleCanvaMcpTool(req, res, "start-editing-transaction", {
+    design_id: designId,
+    user_intent: "Open this Canva design for a user-reviewed editing transaction in JARVIS."
+  });
+});
+
+app.post("/api/canva/mcp/edit/operations", requireAuth, integrationTestLimiter, async (req, res) => {
+  const transactionId = cleanText(req.body?.transactionId, 80);
+  if (!/^[A-Za-z0-9_-]{1,50}$/.test(transactionId)) return res.status(400).json({ error: "A valid Canva transaction ID is required." });
+  try {
+    const operations = validateCanvaEditingOperations({
+      operations: req.body?.operations,
+      pages: req.body?.pages,
+      pageIndex: req.body?.pageIndex
+    });
+    return handleCanvaMcpTool(req, res, "perform-editing-operations", {
+      transaction_id: transactionId,
+      page_index: Number(req.body.pageIndex),
+      operations,
+      pages: req.body.pages,
+      user_intent: "Apply user-requested, reviewable edits to this Canva design draft."
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error?.message || "The Canva editing operations are invalid." });
+  }
+});
+
+app.post("/api/canva/mcp/edit/preview", requireAuth, integrationTestLimiter, async (req, res) => {
+  const transactionId = cleanText(req.body?.transactionId, 80);
+  const pageIndex = Number(req.body?.pageIndex);
+  if (!/^[A-Za-z0-9_-]{1,50}$/.test(transactionId) || !Number.isInteger(pageIndex) || pageIndex < 1 || pageIndex > 500) {
+    return res.status(400).json({ error: "A valid editing transaction and page number are required." });
+  }
+  return handleCanvaMcpTool(req, res, "get-design-thumbnail", {
+    transaction_id: transactionId,
+    page_index: pageIndex,
+    user_intent: "Preview the pending Canva design edits before the user decides whether to save."
+  });
+});
+
+app.post("/api/canva/mcp/edit/commit", requireAuth, integrationTestLimiter, async (req, res) => {
+  const transactionId = cleanText(req.body?.transactionId, 80);
+  if (!/^[A-Za-z0-9_-]{1,50}$/.test(transactionId)) return res.status(400).json({ error: "A valid Canva transaction ID is required." });
+  if (req.body?.confirmed !== true) return res.status(409).json({ error: "Review the Canva preview and confirm Save changes before committing this transaction." });
+  return handleCanvaMcpTool(req, res, "commit-editing-transaction", {
+    transaction_id: transactionId,
+    user_intent: "The user reviewed the pending preview and explicitly approved saving the Canva design changes."
+  });
+});
+
+app.post("/api/canva/mcp/edit/cancel", requireAuth, integrationTestLimiter, async (req, res) => {
+  const transactionId = cleanText(req.body?.transactionId, 80);
+  if (!/^[A-Za-z0-9_-]{1,50}$/.test(transactionId)) return res.status(400).json({ error: "A valid Canva transaction ID is required." });
+  return handleCanvaMcpTool(req, res, "cancel-editing-transaction", {
+    transaction_id: transactionId,
+    user_intent: "Discard the uncommitted Canva editing transaction at the user's request."
+  });
+});
+
+app.post("/api/canva/mcp/pages", requireAuth, integrationTestLimiter, async (req, res) => {
+  try {
+    const request = validateCanvaPageMerge({
+      type: req.body?.type,
+      designId: cleanText(req.body?.designId, 120),
+      title: cleanText(req.body?.title, 255),
+      operations: req.body?.operations,
+      confirmed: req.body?.confirmed === true
+    });
+    return handleCanvaMcpTool(req, res, "merge-designs", {
+      ...request,
+      user_intent: "Apply the exact page insertion, reordering or deletion operations the user reviewed and confirmed."
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error?.message || "The Canva page changes are invalid." });
+  }
+});
+
+app.post("/api/canva/mcp/resize", requireAuth, integrationTestLimiter, async (req, res) => {
+  const designId = cleanText(req.body?.designId, 120);
+  const target = req.body?.designType;
+  if (!/^D[A-Za-z0-9_-]{10,}$/.test(designId)) return res.status(400).json({ error: "A valid Canva design ID is required." });
+  if (req.body?.confirmed !== true) return res.status(409).json({ error: "Confirm creation of the resized Canva design first." });
+  let designType;
+  if (target?.type === "custom") {
+    const width = Number(target.width), height = Number(target.height);
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 10000 || height > 10000) {
+      return res.status(400).json({ error: "Custom canvas width and height must be integers from 1 to 10,000 pixels." });
+    }
+    designType = { type: "custom", width, height };
+  } else if (target?.type === "preset" && ["presentation", "whiteboard"].includes(target.name)) {
+    designType = { type: "preset", name: target.name };
+  } else {
+    return res.status(400).json({ error: "Choose a supported preset or custom canvas dimensions." });
+  }
+  return handleCanvaMcpTool(req, res, "resize-design", {
+    design_id: designId,
+    design_type: designType,
+    user_intent: "Create a new resized Canva design while preserving the original."
+  });
+});
+
+app.post("/api/canva/mcp/assets/get", requireAuth, integrationTestLimiter, async (req, res) => {
+  const ids = Array.isArray(req.body?.assetIds) ? req.body.assetIds : [];
+  if (!ids.length || ids.length > 50 || ids.some((id) => !/^[A-Za-z0-9_-]{1,50}$/.test(String(id)))) {
+    return res.status(400).json({ error: "Provide between 1 and 50 valid Canva asset IDs." });
+  }
+  return handleCanvaMcpTool(req, res, "get-assets", {
+    asset_ids: ids.map((id) => String(id))
+  });
+});
+
 
 app.get("/api/youtube/analytics/status", requireAuth, (_req, res) => {
   const oauth = getGoogleOAuthStatus(getGoogleDriveOAuthConnection(), process.env);

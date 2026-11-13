@@ -11,14 +11,34 @@ services:
         value: production
       - key: JARVIS_PASSWORD
         sync: false
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: GEMINI_MODEL
+      - key: JARVIS_AI_BASE_URL
+        value: https://generativelanguage.googleapis.com/v1beta/openai
+      - key: JARVIS_AI_MODEL
         value: gemini-3.8-flash
-      - key: GEMINI_CHAT_ENABLED
+      - key: JARVIS_AI_RUNTIME
+        value: external
+      - key: JARVIS_AI_ENABLED
+        value: "true"
+      - key: JARVIS_AI_CHAT_ENABLED
+        value: "true"
+      - key: JARVIS_AI_PLANNER_ENABLED
+        value: "true"
+      - key: JARVIS_AI_RETRY_ATTEMPTS
+        value: "2"
+      - key: JARVIS_GEMINI_API_KEY_1
         sync: false
-      - key: GEMINI_WEB_RESEARCH_ENABLED
-        value: "false"
+      - key: JARVIS_GEMINI_API_KEY_2
+        sync: false
+      - key: JARVIS_GEMINI_API_KEY_3
+        sync: false
+      - key: JARVIS_GEMINI_API_KEY_4
+        sync: false
+      - key: JARVIS_GEMINI_API_KEY_5
+        sync: false
+      - key: JARVIS_GEMINI_API_KEY_6
+        sync: false
+      - key: JARVIS_GEMINI_API_KEY_7
+        sync: false
       - key: JARVIS_GOOGLE_OAUTH_CLIENT_ID
         sync: false
       - key: JARVIS_GOOGLE_OAUTH_CLIENT_SECRET
@@ -26,6 +46,12 @@ services:
       - key: JARVIS_GOOGLE_OAUTH_REDIRECT_URI
         sync: false
       - key: JARVIS_TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: JARVIS_CANVA_OAUTH_CLIENT_ID
+        sync: false
+      - key: JARVIS_CANVA_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: JARVIS_CANVA_OAUTH_REDIRECT_URI
         sync: false
       - key: JARVIS_GITHUB_TOKEN
         sync: false

@@ -10,13 +10,41 @@ function boundedInteger(value, fallback, min, max) {
   return Math.min(max, Math.max(min, Number(raw)));
 }
 
+function isGeminiEndpoint(rawBaseUrl) {
+  try {
+    return new URL(rawBaseUrl).hostname.toLowerCase() === "generativelanguage.googleapis.com";
+  } catch {
+    return false;
+  }
+}
+
+function readGeminiApiKeys() {
+  const numbered = [];
+  for (let index = 1; index <= 7; index++) {
+    const value = String(
+      process.env[`JARVIS_GEMINI_API_KEY_${index}`] ||
+      process.env[`GEMINI_API_KEY_${index}`] ||
+      ""
+    ).trim();
+    if (value && !numbered.includes(value)) numbered.push(value);
+  }
+  if (numbered.length) return numbered;
+  return [
+    process.env.JARVIS_GEMINI_API_KEY,
+    process.env.GEMINI_API_KEY,
+    process.env.JARVIS_AI_API_KEY
+  ].map(value => String(value || "").trim()).filter((value, index, all) =>
+    value && all.indexOf(value) === index
+  );
+}
+
 function readConfiguration() {
   const rawBaseUrl = String(process.env.JARVIS_AI_BASE_URL || "").trim();
-  const apiKey = String(process.env.JARVIS_AI_API_KEY || "").trim();
   const model = String(process.env.JARVIS_AI_MODEL || "").trim();
   const runtime = String(process.env.JARVIS_AI_RUNTIME || "external").trim().toLowerCase() === "self-hosted"
     ? "self-hosted" : "external";
   const nodeEnv = String(process.env.NODE_ENV || "development").trim();
+  const geminiProvider = isGeminiEndpoint(rawBaseUrl);
   let baseUrl = null;
   let baseUrlValid = false;
   let loopback = false;
@@ -37,13 +65,17 @@ function readConfiguration() {
     }
   }
   const modelValid = MODEL_PATTERN.test(model);
-  const keyRequirementMet = loopback && nodeEnv !== "production" ? true : Boolean(apiKey);
+  const apiKeys = geminiProvider
+    ? readGeminiApiKeys()
+    : [String(process.env.JARVIS_AI_API_KEY || "").trim()].filter(Boolean);
+  const keyRequirementMet = loopback && nodeEnv !== "production" ? true : apiKeys.length > 0;
   const configured = baseUrlValid && modelValid && keyRequirementMet;
   const enabled = process.env.JARVIS_AI_ENABLED === "true";
   const requestTimeoutMs = boundedInteger(process.env.JARVIS_AI_REQUEST_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, 5000, 60000);
   const retryAttempts = boundedInteger(process.env.JARVIS_AI_RETRY_ATTEMPTS, DEFAULT_RETRY_ATTEMPTS, 1, 3);
   return {
-    baseUrl, apiKey, model, runtime, modelValid, baseUrlValid, configured, enabled, requestTimeoutMs, retryAttempts,
+    baseUrl, apiKeys, model, runtime, geminiProvider, modelValid, baseUrlValid, configured, enabled,
+    requestTimeoutMs, retryAttempts,
     conversationEnabled: configured && enabled && process.env.JARVIS_AI_CHAT_ENABLED === "true",
     plannerEnabled: configured && enabled && process.env.JARVIS_AI_PLANNER_ENABLED === "true"
   };
@@ -52,15 +84,19 @@ function readConfiguration() {
 export function getAIProviderStatus() {
   const config = readConfiguration();
   return {
-    provider: config.runtime === "self-hosted" ? "jarvis-self-hosted" : "openai-compatible",
+    provider: config.geminiProvider
+      ? "google-gemini"
+      : (config.runtime === "self-hosted" ? "jarvis-self-hosted" : "openai-compatible"),
     runtime: config.runtime,
     configured: config.configured,
     baseUrlConfigured: config.baseUrlValid,
     modelValid: config.modelValid,
-    model: config.configured ? "configured-model" : "not-configured",
+    model: config.configured ? config.model : "not-configured",
     enabled: config.enabled,
     conversationEnabled: config.conversationEnabled,
     plannerEnabled: config.plannerEnabled,
+    keyCount: config.apiKeys.length,
+    failoverEnabled: config.apiKeys.length > 1,
     requestTimeoutMs: config.requestTimeoutMs,
     retryAttempts: config.retryAttempts
   };
@@ -100,7 +136,8 @@ function sleep(ms) {
 
 /**
  * Calls a server-configured OpenAI-compatible chat-completions endpoint.
- * Callers cannot choose its URL, credentials, model, headers, or tool definitions.
+ * Gemini deployments may provide up to seven independent API keys. Credentials,
+ * provider URL, model, headers and tool definitions are never caller-controlled.
  */
 export async function createChatCompletion(messages, options = {}, fetchImpl = globalThis.fetch) {
   const config = readConfiguration();
@@ -121,19 +158,27 @@ export async function createChatCompletion(messages, options = {}, fetchImpl = g
   };
   if (options.responseFormat?.type === "json_object") requestBody.response_format = { type: "json_object" };
 
+  const keys = config.apiKeys.length ? config.apiKeys : [""];
+  const rotateKeys = config.geminiProvider && keys.length > 1;
+  const maxAttempts = rotateKeys ? keys.length : config.retryAttempts;
   let lastError;
-  for (let attempt = 1; attempt <= config.retryAttempts; attempt++) {
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const apiKey = rotateKeys ? keys[attempt] : (keys[0] || "");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), config.requestTimeoutMs);
     let response;
+    let networkFailure = false;
     try {
       const headers = { "Content-Type": "application/json", "Accept": "application/json" };
-      if (config.apiKey) headers.Authorization = "Bearer " + config.apiKey;
+      if (apiKey) headers.Authorization = "Bearer " + apiKey;
+      if (config.geminiProvider) headers["x-goog-api-client"] = "jarvis-personal-assistant/1.0.0";
       response = await fetchImpl(endpoint, {
         method: "POST", headers, body: JSON.stringify(requestBody),
         cache: "no-store", redirect: "error", signal: controller.signal
       });
     } catch (error) {
+      networkFailure = true;
       lastError = error?.name === "AbortError"
         ? providerError("The AI provider request timed out.", "AI_PROVIDER_TIMEOUT")
         : providerError("The AI provider could not be reached.", "AI_PROVIDER_NETWORK_ERROR");
@@ -143,9 +188,12 @@ export async function createChatCompletion(messages, options = {}, fetchImpl = g
 
     if (response) {
       if (!response.ok) {
-        const retryable = [408, 429, 500, 502, 503, 504].includes(response.status);
+        const statusAllowsRotation = rotateKeys && [401, 403].includes(response.status);
+        const retryable = statusAllowsRotation || [408, 429, 500, 502, 503, 504].includes(response.status);
         lastError = providerError(
-          retryable ? "The AI provider is temporarily unavailable." : "The AI provider rejected the request. Check its server configuration.",
+          retryable
+            ? "The AI provider key is unavailable or the service is temporarily busy."
+            : "The AI provider rejected the request. Check its server configuration.",
           retryable ? "AI_PROVIDER_TEMPORARY_ERROR" : "AI_PROVIDER_REQUEST_ERROR",
           response.status
         );
@@ -158,12 +206,16 @@ export async function createChatCompletion(messages, options = {}, fetchImpl = g
         if (!content) throw providerError("The AI provider returned an empty or unsupported response.", "AI_PROVIDER_EMPTY_RESPONSE");
         return {
           content: content.slice(0, 12000),
-          provider: config.runtime === "self-hosted" ? "jarvis-self-hosted" : "openai-compatible",
+          provider: config.geminiProvider
+            ? "google-gemini"
+            : (config.runtime === "self-hosted" ? "jarvis-self-hosted" : "openai-compatible"),
           model: config.model
         };
       }
     }
-    if (attempt < config.retryAttempts) await sleep(200 * attempt);
+
+    if (attempt + 1 < maxAttempts && !rotateKeys) await sleep(200 * (attempt + 1));
+    if (networkFailure && rotateKeys && attempt + 1 >= maxAttempts) break;
   }
   throw lastError || providerError("The AI provider request failed.", "AI_PROVIDER_ERROR");
 }
