@@ -222,3 +222,35 @@ test("Gemini stops on invalid request instead of wasting the remaining keys", as
     assert.equal(calls, 1);
   });
 });
+
+
+test("AI provider forwards only bounded inline image frames with user consent", async () => {
+  await withEnv({ ...localConfig }, async () => {
+    const frame = "data:image/jpeg;base64," + "A".repeat(300);
+    let captured;
+    await createChatCompletion([
+      { role: "system", content: "Review the provided frames." },
+      { role: "user", content: [
+        { type: "text", text: "Review this video sample." },
+        { type: "image_url", image_url: { url: frame, detail: "low" } }
+      ] }
+    ], {}, async (_url, options) => {
+      captured = JSON.parse(options.body);
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "Reviewed." } }] }) };
+    });
+    assert.equal(captured.messages[1].content[1].image_url.url, frame);
+    assert.equal(captured.messages[1].content[1].image_url.detail, "low");
+  });
+});
+
+test("AI provider rejects remote image URLs and oversized frame payloads", async () => {
+  await withEnv({ ...localConfig }, async () => {
+    const remote = [{ role: "user", content: [{ type: "image_url", image_url: { url: "https://example.com/frame.jpg" } }] }];
+    await assert.rejects(createChatCompletion(remote, {}, async () => ({})), /base64 JPEG/i);
+    const oversized = "data:image/jpeg;base64," + "A".repeat(180001);
+    await assert.rejects(
+      createChatCompletion([{ role: "user", content: [{ type: "image_url", image_url: { url: oversized } }] }], {}, async () => ({})),
+      /base64 JPEG/i
+    );
+  });
+});
