@@ -253,13 +253,8 @@ export function createMediaWorkspace({ api, toast }) {
       return;
     }
     if (tool === "captions") {
-      const button = byId("media-export-captions");
-      if (!button || button.disabled) {
-        scrollTo(byId("media-export-status"));
-        toast("Review and approve this storyboard before exporting SRT captions.", true);
-        return;
-      }
-      button.click();
+      scrollTo(document.querySelector(".media-caption-workbench"));
+      byId("media-caption-file")?.focus({ preventScroll: true });
       return;
     }
     if (tool === "motion") {
@@ -2234,6 +2229,14 @@ export function createMediaWorkspace({ api, toast }) {
       const element = byId(id);
       if (element) element.disabled = !editable;
     }
+    for (const id of ["media-caption-file", "media-caption-enabled", "media-caption-preset", "media-caption-position", "media-caption-size", "media-caption-add", "media-caption-clear"]) {
+      const element = byId(id);
+      if (element) element.disabled = !editable || exporting;
+    }
+    const captionList = byId("media-caption-list");
+    if (captionList) captionList.querySelectorAll("input, textarea, button").forEach((control) => {
+      control.disabled = !editable || exporting;
+    });
     for (const id of ["media-save-button", "media-approve-button", "media-add-scene"]) {
       const element = byId(id);
       if (element) element.disabled = !editable;
@@ -2511,6 +2514,8 @@ export function createMediaWorkspace({ api, toast }) {
     byId("media-generation-note").textContent = currentProject.generationNote || "";
     renderSceneEditors();
     renderTimelineEditor();
+    captionPage = 0;
+    renderCaptionWorkbench();
     renderPreview(currentProject, 0);
     setEditorControls();
     refreshAssetLibrary();
@@ -2909,6 +2914,64 @@ export function createMediaWorkspace({ api, toast }) {
       drawScene(ctx, width, height, project, index, progress);
     }
     drawTimelineOverlays(ctx, width, height, project, elapsedMs);
+    drawActiveCaption(ctx, width, height, project, elapsedMs);
+  }
+
+  function drawActiveCaption(ctx, width, height, project, elapsedMs) {
+    if (project?.captionsEnabled !== true || !Array.isArray(project.captionCues) || !project.captionCues.length) return;
+    const seconds = Math.max(0, elapsedMs / 1000);
+    let active = null;
+    for (const cue of project.captionCues) {
+      if (cue.startSeconds > seconds) break;
+      if (cue.startSeconds <= seconds && cue.endSeconds > seconds) active = cue;
+    }
+    if (!active?.text) return;
+    const style = normalizeCaptionStyle(project.captionStyle);
+    const fontScale = style.size === "small" ? 0.032 : style.size === "large" ? 0.049 : 0.04;
+    const fontSize = Math.max(16, Math.round(height * fontScale));
+    const maxTextWidth = width * 0.88;
+    const lineHeight = fontSize * 1.22;
+    const paddingX = fontSize * 0.62;
+    const paddingY = fontSize * 0.32;
+    ctx.save();
+    ctx.font = "800 " + fontSize + "px system-ui, -apple-system, Segoe UI, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const lines = wrapCanvasText(ctx, active.text, maxTextWidth - paddingX * 2, 3);
+    const boxWidth = Math.min(maxTextWidth, Math.max(...lines.map((line) => ctx.measureText(line).width)) + paddingX * 2);
+    const boxHeight = lines.length * lineHeight + paddingY * 2;
+    const centerY = style.position === "top"
+      ? Math.max(boxHeight / 2 + height * 0.06, height * 0.13)
+      : style.position === "middle" ? height * 0.52 : Math.min(height - boxHeight / 2 - height * 0.06, height * 0.86);
+    const left = (width - boxWidth) / 2;
+    const top = centerY - boxHeight / 2;
+    if (style.preset !== "minimal-shadow") {
+      ctx.fillStyle = style.preset === "classic" ? "rgba(0,0,0,0.62)" : "rgba(4,8,15,0.82)";
+      if (typeof ctx.roundRect === "function") {
+        ctx.beginPath();
+        ctx.roundRect(left, top, boxWidth, boxHeight, fontSize * 0.28);
+        ctx.fill();
+      } else {
+        ctx.fillRect(left, top, boxWidth, boxHeight);
+      }
+    } else {
+      ctx.shadowColor = "rgba(0,0,0,0.92)";
+      ctx.shadowBlur = fontSize * 0.42;
+      ctx.shadowOffsetY = fontSize * 0.08;
+    }
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "rgba(0,0,0,0.8)";
+    ctx.lineWidth = Math.max(1, fontSize * 0.055);
+    const firstBaseline = centerY - ((lines.length - 1) * lineHeight) / 2;
+    lines.forEach((line, index) => {
+      const y = firstBaseline + index * lineHeight;
+      if (style.preset === "minimal-shadow") ctx.fillText(line, width / 2, y);
+      else {
+        ctx.strokeText(line, width / 2, y, maxTextWidth - paddingX * 2);
+        ctx.fillText(line, width / 2, y, maxTextWidth - paddingX * 2);
+      }
+    });
+    ctx.restore();
   }
 
   function renderPreviewAtTime(elapsedMs) {
@@ -3182,7 +3245,10 @@ export function createMediaWorkspace({ api, toast }) {
       tone: byId("media-editor-tone").value,
       visualStyle: byId("media-editor-visual-style").value,
       scenes: readSceneEditors(),
-      tracks: currentProject.tracks
+      tracks: currentProject.tracks,
+      captionCues: normalizeCaptionCues(currentProject.captionCues, currentProject.durationSeconds),
+      captionStyle: normalizeCaptionStyle(currentProject.captionStyle),
+      captionsEnabled: currentProject.captionsEnabled === true
     };
     syncSceneTimeline(currentProject);
     currentProject.tracks = structuredClone(currentProject.tracks);
@@ -3228,6 +3294,9 @@ export function createMediaWorkspace({ api, toast }) {
   }
 
   function buildSrt(project) {
+    if (Array.isArray(project.captionCues) && project.captionCues.length) {
+      return formatCaptionSrt(project.captionCues, project.durationSeconds);
+    }
     let cursor = 0;
     const time = (seconds) => {
       const total = Math.round(seconds * 1000);
