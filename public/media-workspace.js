@@ -3,6 +3,7 @@ import { createMediaAssetLibrary, formatMediaAssetSize } from "./media-asset-lib
 import { clampMediaEditorTime, resolveMediaEditorShortcut } from "./media-editor-shortcuts.js";
 import { assessMediaExport } from "./media-export-quality.js";
 import { analyzeMediaProject, buildMediaCopilotPrompt, parseMediaSceneRewrite } from "./media-copilot.js";
+import { formatCaptionSrt, normalizeCaptionCues, normalizeCaptionStyle, parseTimedCaptionFile } from "./media-captions.js";
 
 const FORMATS = {
   "vertical-short": { width: 720, height: 1280, maxDurationSeconds: 90 },
@@ -45,6 +46,7 @@ export function createMediaWorkspace({ api, toast }) {
   let copilotBusy = false;
   let mediaAnalysisBusy = false;
   let localAudioScan = null;
+  let captionPage = 0;
 
   const byId = (id) => document.getElementById(id);
 
