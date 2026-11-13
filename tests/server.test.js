@@ -1636,3 +1636,38 @@ test("scheduler endpoints persist approvals, task priority and schedule state", 
   assert.equal(logout.status, 200);
   cookie = "";
 });
+
+
+test("media visual analysis requires a private session and an enabled AI provider", async () => {
+  cookie = "";
+  const payload = {
+    project: { title: "Visual review", durationSeconds: 20 },
+    frames: [
+      { timestampSeconds: 1, dataUrl: "data:image/jpeg;base64," + "A".repeat(200) },
+      { timestampSeconds: 10, dataUrl: "data:image/jpeg;base64," + "A".repeat(200) }
+    ]
+  };
+  const blocked = await request("/api/media/analyze", {
+    method: "POST",
+    headers: {},
+    body: JSON.stringify(payload)
+  });
+  assert.equal(blocked.status, 401);
+
+  const login = await request("/api/login", {
+    method: "POST",
+    body: JSON.stringify({ password: "test-only-password-2026" })
+  });
+  assert.equal(login.status, 200);
+  cookie = (login.headers.get("set-cookie") || "").split(";")[0];
+
+  const unavailable = await request("/api/media/analyze", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+  assert.equal(unavailable.status, 503);
+  assert.match((await unavailable.json()).error, /AI chat provider/i);
+
+  await request("/api/logout", { method: "POST", body: JSON.stringify({}) });
+  cookie = "";
+});
