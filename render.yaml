@@ -47,6 +47,12 @@ services:
         sync: false
       - key: JARVIS_TOKEN_ENCRYPTION_KEY
         sync: false
+      - key: JARVIS_CANVA_OAUTH_CLIENT_ID
+        sync: false
+      - key: JARVIS_CANVA_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: JARVIS_CANVA_OAUTH_REDIRECT_URI
+        sync: false
       - key: JARVIS_GITHUB_TOKEN
         sync: false
       - key: JARVIS_GOOGLE_DRIVE_ACCESS_TOKEN
