@@ -607,6 +607,9 @@ export function createMediaWorkspace({ api, toast }) {
       let energyWindows = 0;
       let peak = 0;
       for (let start = 0; start < sampleCount; start += step) {
+        if (start > 0 && Math.floor(start / step) % 40 === 0) {
+          await new Promise((resolve) => window.setTimeout(resolve, 0));
+        }
         const end = Math.min(sampleCount, start + step);
         let sumSquares = 0;
         let count = 0;
@@ -663,11 +666,16 @@ export function createMediaWorkspace({ api, toast }) {
         "Duration: " + buffer.duration.toFixed(1) + "s · " + localAudioScan.silenceSegments.length + " low-volume candidate interval(s).",
         "Average level: " + localAudioScan.averageDb.toFixed(1) + " dBFS · Peak: " + localAudioScan.peakDb.toFixed(1) + " dBFS.",
         "",
-        ...localAudioScan.silenceSegments.map((segment) =>
-          (localAudioScan.timelineStart + segment.startSeconds).toFixed(2) + "s – " +
-          (localAudioScan.timelineStart + segment.endSeconds).toFixed(2) + "s · " +
-          segment.durationSeconds.toFixed(2) + "s low-volume candidate"
-        ),
+        ...localAudioScan.silenceSegments.map((segment) => {
+          const sourceStart = Math.max(segment.startSeconds, localAudioScan.sourceIn);
+          const sourceEnd = Math.min(segment.endSeconds, localAudioScan.sourceOut);
+          const timelineStart = localAudioScan.timelineStart + Math.max(0, sourceStart - localAudioScan.sourceIn) / localAudioScan.speed;
+          const timelineEnd = localAudioScan.timelineStart + Math.max(0, sourceEnd - localAudioScan.sourceIn) / localAudioScan.speed;
+          return timelineEnd > timelineStart
+            ? timelineStart.toFixed(2) + "s – " + timelineEnd.toFixed(2) + "s · " +
+                ((timelineEnd - timelineStart)).toFixed(2) + "s low-volume candidate"
+            : null;
+        }).filter(Boolean),
         "",
         "These are signal-level candidates, not proof of a bad take or missing speech. Review before trimming. Nothing was changed."
       ];
