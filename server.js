@@ -18,6 +18,7 @@ import { createWebResearch, getWebResearchStatus, isRestrictedResearchQuery, isW
 import { createPageReadToken, createWebPageRead, getWebPageReadStatus, verifyPageReadToken } from "./services/web-page-reader.js";
 import { createSourceBasedAnswer, SOURCE_ANSWER_LIMITS } from "./services/source-answer.js";
 import { createChatCompletion, getAIProviderStatus } from "./services/ai-provider.js";
+import { buildMediaVisualAnalysisMessages, normalizeMediaVisualAnalysisInput, normalizeMediaVisualAnalysisResponse } from "./services/media-visual-analysis.js";
 import { approveMediaProject, createMediaDraft, MEDIA_FORMATS, MEDIA_LIMITS, normalizeMediaProject, updateMediaProject } from "./services/media-engine.js";
 import { createCreatorCampaignPack, CREATOR_CAMPAIGN_LIMITS, normalizeCreatorCampaign, updateCreatorCampaign } from "./services/creator-campaign.js";
 import {
@@ -3358,6 +3359,35 @@ app.post("/api/media/drafts", requireAuth, mediaGenerationLimiter, async (req, r
   } catch (error) {
     const message = error?.message || "The media brief could not be converted into a storyboard.";
     res.status(400).json({ error: message });
+  }
+});
+
+app.post("/api/media/analyze", requireAuth, mediaGenerationLimiter, async (req, res) => {
+  const provider = getAIProviderStatus();
+  if (!provider.conversationEnabled) {
+    return res.status(503).json({ error: "Enable the JARVIS AI chat provider on the server before analysing video frames." });
+  }
+  try {
+    const input = normalizeMediaVisualAnalysisInput(req.body || {});
+    const result = await createChatCompletion(
+      buildMediaVisualAnalysisMessages(input),
+      { temperature: 0.2, maxTokens: 1800, responseFormat: { type: "json_object" } }
+    );
+    const analysis = normalizeMediaVisualAnalysisResponse(result.content);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      analysis,
+      provider: result.provider,
+      model: result.model,
+      mediaPolicy: "Only the four sampled preview frames and text metadata were sent. The original video and audio files were not uploaded or stored."
+    });
+  } catch (error) {
+    const knownInputError = error instanceof TypeError && !String(error.code || "").startsWith("AI_");
+    res.status(knownInputError ? 400 : 503).json({
+      error: knownInputError
+        ? error.message
+        : "JARVIS could not complete the visual review. Check the AI provider and try again."
+    });
   }
 });
 
