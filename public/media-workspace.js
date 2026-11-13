@@ -1,6 +1,7 @@
 import { collectTimelineSnapPoints, snapTimelineEdge, snapTimelineMoveStart } from "./media-timeline-snapping.js";
 import { createMediaAssetLibrary, formatMediaAssetSize } from "./media-asset-library.js";
 import { clampMediaEditorTime, resolveMediaEditorShortcut } from "./media-editor-shortcuts.js";
+import { assessMediaExport } from "./media-export-quality.js";
 
 const FORMATS = {
   "vertical-short": { width: 720, height: 1280, maxDurationSeconds: 90 },
@@ -2513,6 +2514,57 @@ export function createMediaWorkspace({ api, toast }) {
     setEditorControls();
   }
 
+  async function inspectExportBlob(blob, expected) {
+    if (typeof document === "undefined" || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") {
+      return { available: false, verified: false, issues: ["This browser cannot inspect the exported file metadata."] };
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+    try {
+      await new Promise((resolve, reject) => {
+        const timer = window.setTimeout(() => reject(new Error("Video metadata inspection timed out.")), 12000);
+        const finish = (handler, value) => {
+          window.clearTimeout(timer);
+          video.removeEventListener("loadedmetadata", onLoaded);
+          video.removeEventListener("error", onError);
+          handler(value);
+        };
+        const onLoaded = () => finish(resolve);
+        const onError = () => finish(reject, new Error("The browser could not read the exported video's metadata."));
+        video.addEventListener("loadedmetadata", onLoaded, { once: true });
+        video.addEventListener("error", onError, { once: true });
+        video.src = objectUrl;
+        video.load();
+      });
+      return {
+        available: true,
+        ...assessMediaExport({
+          blobSizeBytes: blob.size,
+          mimeType: blob.type,
+          actualWidth: video.videoWidth,
+          actualHeight: video.videoHeight,
+          actualDurationSeconds: video.duration,
+          expectedWidth: expected.width,
+          expectedHeight: expected.height,
+          expectedDurationSeconds: expected.durationSeconds
+        })
+      };
+    } catch (error) {
+      return {
+        available: false,
+        verified: false,
+        issues: [error instanceof Error ? error.message : "Video metadata inspection was unavailable."]
+      };
+    } finally {
+      video.removeAttribute("src");
+      video.load();
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
   async function exportWebm() {
     const project = approvedProject();
     if (typeof MediaRecorder === "undefined" || typeof HTMLCanvasElement.prototype.captureStream !== "function") {
@@ -2675,11 +2727,26 @@ export function createMediaWorkspace({ api, toast }) {
         throw new Error("Video export cancelled. No file was downloaded.");
       }
       const blob = await finished;
+      if (!blob || blob.size < 1024) {
+        throw new Error("The browser produced an empty or incomplete video file. It was not downloaded.");
+      }
+      const verification = await inspectExportBlob(blob, {
+        width: canvas.width,
+        height: canvas.height,
+        durationSeconds: project.durationSeconds
+      });
       const suffix = hasAudio ? "-mixed-audio" + extension : extension;
       downloadBlob(cleanFileName(project.title) + suffix, blob);
-      setExportStatus("Video export finished as " + extension.slice(1).toUpperCase() +
-        (hasAudio ? " with the selected local audio mix." : " without audio.") +
-        " Preview the downloaded file before using it.");
+      if (verification.verified) {
+        setExportStatus("Export verified: " + verification.actualWidth + "×" + verification.actualHeight +
+          ", " + formatDurationLabel(verification.actualDurationSeconds) + ", " +
+          (hasAudio ? "audio mix included." : "silent video.") +
+          " Review the final picture and sound before publishing.");
+      } else {
+        const details = verification.issues?.length ? " " + verification.issues.join(" ") : "";
+        setExportStatus("Video downloaded, but automatic verification was not completed." +
+          details + " Preview the file and check its picture, duration and sound before publishing.", true);
+      }
     } finally {
       if (animation) cancelAnimationFrame(animation);
       if (recorder && recorder.state !== "inactive") recorder.stop();
