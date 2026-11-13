@@ -21,7 +21,8 @@ The cards are shortcuts to existing modules, not claims that each provider integ
 3. Attach a video to a Video track using **Add media**.
 4. Open the JARVIS **side panel** toggle in the editor header.
 5. Select the video clip in the timeline. The copilot context updates to the selected clip and scene.
-6. Use **Smart edit check**, **Improve selected scene**, or ask a question.
+6. Use the quick tools: **Creator mode** jumps to project creation/details, **Templates** focuses the visual-style selector, **Captions SRT** exports captions after approval, **AI motion graphics** focuses the selected scene's animation control, and **Timeline** jumps back to the tracks.
+7. Use **Smart edit check**, **Improve selected scene**, or ask a question.
 
 On smaller screens the side panel becomes a bottom drawer. The editor remains the main workspace; hide the drawer to get the full width back.
 
