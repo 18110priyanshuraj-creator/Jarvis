@@ -327,7 +327,7 @@ export function createMediaWorkspace({ api, toast }) {
   }
 
   async function runCopilotRequest(question, mode = "ask") {
-    if (!currentProject || copilotBusy) return;
+    if (!currentProject || copilotBusy || mediaAnalysisBusy) return;
     const scene = getCopilotScene();
     if (mode === "rewrite" && (!scene || currentProject.status !== "draft")) {
       toast("Select a draft scene before requesting an editable rewrite.", true);
@@ -469,12 +469,22 @@ export function createMediaWorkspace({ api, toast }) {
 
   function currentAudioAnalysisForProject() {
     if (!localAudioScan || localAudioScan.projectId !== currentProject?.id) return null;
-    const silenceSegments = localAudioScan.silenceSegments.map((segment) => ({
-      startSeconds: localAudioScan.timelineStart + segment.startSeconds,
-      endSeconds: localAudioScan.timelineStart + segment.endSeconds,
-      durationSeconds: segment.durationSeconds
-    })).filter((segment) =>
-      segment.endSeconds <= currentProject.durationSeconds + 0.1 && segment.durationSeconds >= 0.4
+    const sourceIn = localAudioScan.sourceIn || 0;
+    const sourceOut = localAudioScan.sourceOut ?? localAudioScan.durationSeconds;
+    const speed = Math.max(0.25, Number(localAudioScan.speed) || 1);
+    const silenceSegments = localAudioScan.silenceSegments.map((segment) => {
+      const clipSourceStart = Math.max(segment.startSeconds, sourceIn);
+      const clipSourceEnd = Math.min(segment.endSeconds, sourceOut);
+      const durationSeconds = Math.max(0, (clipSourceEnd - clipSourceStart) / speed);
+      return {
+        startSeconds: localAudioScan.timelineStart + Math.max(0, clipSourceStart - sourceIn) / speed,
+        endSeconds: localAudioScan.timelineStart + Math.max(0, clipSourceEnd - sourceIn) / speed,
+        durationSeconds
+      };
+    }).filter((segment) =>
+      segment.endSeconds <= currentProject.durationSeconds + 0.1 &&
+      segment.durationSeconds >= 0.4 &&
+      segment.endSeconds > segment.startSeconds
     );
     return silenceSegments.length ? {
       durationSeconds: currentProject.durationSeconds,
@@ -611,6 +621,10 @@ export function createMediaWorkspace({ api, toast }) {
         projectId: currentProject.id,
         clipId: selection.clip.id,
         timelineStart: Number(selection.clip.start || 0),
+        sourceIn: Math.max(0, Number(selection.clip.sourceIn) || 0),
+        sourceOut: selection.clip.sourceOut === null || selection.clip.sourceOut === undefined
+          ? buffer.duration : Math.min(buffer.duration, Number(selection.clip.sourceOut)),
+        speed: Math.max(0.25, Number(selection.clip.speed) || 1),
         durationSeconds: buffer.duration,
         silenceSegments: silenceSegments.slice(0, 24),
         averageDb: 20 * Math.log10(Math.max(0.000001, averageRms)),
