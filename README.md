@@ -523,6 +523,15 @@ There are two separate Canva control paths:
 - Scene rewrites require preview, explicit apply and a separate Save changes action.
 - This is not full-motion video understanding, word-level transcription, diarized take detection or automatic repeated-speech removal. See [JARVIS Creator Copilot guide](docs/JARVIS_CREATOR_COPILOT_2026.md) for usage, privacy and limits.
 
+## Subtitle Studio and burn-in captions (feature branch)
+
+- Import timed `.srt` and `.vtt` files into a Media Studio draft; the subtitle file itself remains local to the browser.
+- Edit cue text and start/end times, search cues, add a manual cue at the playhead, and jump to cues from the list.
+- Choose Bold box, Classic or Minimal shadow caption styles, with top/center/bottom placement and text size controls.
+- Enabled cues render in the editor preview and are burned into the local MP4/WebM export. The source video is unchanged.
+- Parsed cue text and timing persist with the project after the user presses Save changes. SRT export prefers imported cues when present.
+- This is timed subtitle import and editing, not speech-to-text. Word-level transcription and speaker detection still require a separate transcription integration.
+
 ## Android release and final acceptance
 
 Main includes the advanced multitrack Media Studio, bounded Canva accessibility drag support, and Creator Campaign Studio. See [JARVIS release and acceptance status](docs/JARVIS_RELEASE_AND_ACCEPTANCE.md) for the exact feature boundaries, the signed-APK workflow, required private GitHub Actions secrets, and the physical Galaxy Tab A9 acceptance checklist.
