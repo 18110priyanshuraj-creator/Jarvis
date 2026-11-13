@@ -47,12 +47,17 @@ export function normalizeCaptionCues(value, durationSeconds = MAX_CAPTION_DURATI
     let id = rawId || "caption-" + (index + 1);
     while (usedIds.has(id)) id = (id.slice(0, 64) || "caption") + "-" + (index + 1);
     usedIds.add(id);
-    const startSeconds = boundedNumber(cue?.startSeconds, -1, 0, duration);
-    const endSeconds = boundedNumber(cue?.endSeconds, -1, 0, duration);
+    const rawStart = cue?.startSeconds;
+    const rawEnd = cue?.endSeconds;
+    const parsedStart = rawStart === null || rawStart === undefined || rawStart === "" ? NaN : Number(rawStart);
+    const parsedEnd = rawEnd === null || rawEnd === undefined || rawEnd === "" ? NaN : Number(rawEnd);
+    const startSeconds = Number.isFinite(parsedStart) ? Math.min(duration, Math.max(0, parsedStart)) : null;
+    const endSeconds = Number.isFinite(parsedEnd) ? Math.min(duration, Math.max(0, parsedEnd)) : null;
     const text = cleanCaptionText(cue?.text);
     return { id, startSeconds, endSeconds, text };
   }).filter((cue) =>
-    cue.startSeconds >= 0 &&
+    Number.isFinite(cue.startSeconds) &&
+    Number.isFinite(cue.endSeconds) &&
     cue.endSeconds > cue.startSeconds &&
     cue.text.length > 0
   );
