@@ -740,6 +740,66 @@
               </section>
               <p class="media-limits-note">Timeline edit decisions are saved with the project. Assets saved to the local library can be reattached on this browser and device. They are not synced to other browsers or devices.</p>
             </section>
+            <section class="media-caption-workbench" aria-label="Subtitle studio">
+              <div class="media-caption-heading">
+                <div>
+                  <p class="eyebrow">CAPTION & SUBTITLE WORKSPACE</p>
+                  <h3>Subtitle Studio</h3>
+                  <p>Import timed SRT/VTT captions, edit cue timing and style, then burn them into the preview and exported video.</p>
+                </div>
+                <span class="media-caption-local-badge">LOCAL PREVIEW</span>
+              </div>
+              <div class="media-caption-import-row">
+                <label class="media-field" for="media-caption-file">
+                  <span>Import SRT / WebVTT</span>
+                  <input id="media-caption-file" class="media-scene-input" type="file" accept=".srt,.vtt,application/x-subrip,text/vtt">
+                </label>
+                <label class="media-caption-enable" for="media-caption-enabled">
+                  <input id="media-caption-enabled" type="checkbox">
+                  <span>Show captions in preview and export</span>
+                </label>
+                <button type="button" class="item-action" id="media-caption-add">＋ Add cue at playhead</button>
+                <button type="button" class="item-action" id="media-caption-clear">Clear captions</button>
+              </div>
+              <div class="media-caption-style-row">
+                <label class="media-field" for="media-caption-preset">
+                  <span>Caption style</span>
+                  <select id="media-caption-preset" class="media-scene-input">
+                    <option value="bold-box">Bold box</option>
+                    <option value="classic">Classic subtitle</option>
+                    <option value="minimal-shadow">Minimal shadow</option>
+                  </select>
+                </label>
+                <label class="media-field" for="media-caption-position">
+                  <span>Position</span>
+                  <select id="media-caption-position" class="media-scene-input">
+                    <option value="bottom">Bottom safe area</option>
+                    <option value="middle">Center</option>
+                    <option value="top">Top safe area</option>
+                  </select>
+                </label>
+                <label class="media-field" for="media-caption-size">
+                  <span>Text size</span>
+                  <select id="media-caption-size" class="media-scene-input">
+                    <option value="small">Small</option>
+                    <option value="medium">Medium</option>
+                    <option value="large">Large</option>
+                  </select>
+                </label>
+                <label class="media-field" for="media-caption-search">
+                  <span>Find a caption</span>
+                  <input id="media-caption-search" class="media-scene-input" maxlength="100" placeholder="Search caption text">
+                </label>
+              </div>
+              <p id="media-caption-status" class="media-caption-status" role="status" aria-live="polite">Import an SRT or WebVTT file, or add a cue manually. Timed captions are not automatically transcribed from speech.</p>
+              <div id="media-caption-list" class="media-caption-list"></div>
+              <div class="media-caption-pagination">
+                <button type="button" class="item-action" id="media-caption-page-prev" disabled>Previous</button>
+                <span id="media-caption-page-label">No captions</span>
+                <button type="button" class="item-action" id="media-caption-page-next" disabled>Next</button>
+              </div>
+              <p class="media-limits-note">The imported subtitle file itself stays in this browser. Caption text and timing are saved with the project only when you press Save changes. Burn-in affects the local exported video; it does not modify the source file.</p>
+            </section>
             <div class="media-editor-toolbar">
               <button type="button" class="item-action" id="media-add-scene">Add scene</button>
               <button type="button" class="primary" id="media-save-button">Save changes</button>

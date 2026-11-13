@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { formatCaptionSrt, normalizeCaptionCues, normalizeCaptionStyle } from "../public/media-captions.js";
 
 const MAX_BRIEF = 1800;
 const MAX_TITLE = 90;
@@ -462,6 +463,15 @@ export function normalizeMediaProject(input = {}) {
   ));
   const durationSeconds = Math.min(format.maxDurationSeconds,
     Array.isArray(input.tracks) && input.tracks.length ? timelineDuration : Math.max(sceneDurationSeconds, timelineDuration));
+  const captionCues = normalizeCaptionCues(input.captionCues, durationSeconds);
+  const captionText = captionCues.map((cue) => cue.text).join("\n");
+  if (SECRET_PATTERN.test(captionText) || TOKEN_PATTERN.test(captionText)) {
+    throw new TypeError("JARVIS will not store subtitle captions that appear to contain a credential or secret.");
+  }
+  if (RESTRICTED_MEDIA_PATTERN.test(captionText)) {
+    throw new TypeError("These subtitle captions are outside the supported safe-content scope.");
+  }
+  const captionStyle = normalizeCaptionStyle(input.captionStyle);
   const state = PROJECT_STATES.has(input.status) ? input.status : "draft";
   const createdAt = validDate(input.createdAt, now);
   const updatedAt = validDate(input.updatedAt, createdAt);
@@ -480,6 +490,9 @@ export function normalizeMediaProject(input = {}) {
     visualStyle,
     scenes,
     tracks,
+    captionCues,
+    captionStyle,
+    captionsEnabled: input.captionsEnabled !== false && captionCues.length > 0,
     durationSeconds,
     status: state,
     generationSource: input.generationSource === "ai-assisted" ? "ai-assisted" : "local-template",
@@ -602,6 +615,9 @@ export function updateMediaProject(existing, updates = {}) {
     visualStyle: updates.visualStyle ?? existing.visualStyle,
     scenes: updates.scenes ?? existing.scenes,
     tracks: updates.tracks ?? existing.tracks,
+    captionCues: updates.captionCues ?? existing.captionCues,
+    captionStyle: updates.captionStyle ?? existing.captionStyle,
+    captionsEnabled: updates.captionsEnabled ?? existing.captionsEnabled,
     updatedAt: new Date().toISOString(),
     status: "draft",
     approvedAt: null
@@ -626,6 +642,9 @@ function formatSrtTime(totalSeconds) {
 
 export function buildMediaCaptions(project) {
   const normalized = normalizeMediaProject(project);
+  if (normalized.captionCues.length) {
+    return formatCaptionSrt(normalized.captionCues, normalized.durationSeconds);
+  }
   const scenesById = new Map(normalized.scenes.map((scene) => [scene.id, scene]));
   const mainTrack = normalized.tracks.find((track) => track.id === "track-main-video");
   const timelineCues = mainTrack && mainTrack.visible !== false

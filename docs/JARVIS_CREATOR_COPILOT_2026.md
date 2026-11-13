@@ -45,6 +45,16 @@ The original video is not uploaded or stored by this endpoint. The visual review
 
 Limits: local scan is capped at 25 MiB and ten minutes, depending on browser codec support. It reports signal-level low-volume candidates, not confirmed silence, missed speech or bad takes. It does not cut the audio or move video clips automatically. Review the markers before trimming with the timeline controls. Audio bytes are not sent to the server.
 
+## Subtitle Studio: import, edit and burn in timed captions
+
+1. Open a Media Studio draft and find **Subtitle Studio** below the multi-track timeline.
+2. Import an `.srt` or `.vtt` file (maximum 250 KB and 500 cues).
+3. JARVIS parses the timestamps locally. Edit cue text, start/end seconds, search cues, jump to a cue, or add a manual cue at the current playhead.
+4. Choose Bold box, Classic subtitle or Minimal shadow; set top/center/bottom safe-area placement and text size.
+5. Keep **Show captions in preview and export** enabled to burn captions into the local video render.
+6. Press **Save changes**, then approve the draft before exporting. The separate **Captions SRT** export uses imported timed cues when present; otherwise it falls back to the storyboard narration cues.
+
+The original subtitle file stays in the browser and is not uploaded. Parsed cue text and timing are saved with the project only after Save changes; the JARVIS server stores those project fields. Caption burn-in draws onto the render canvas and does not alter the original source video. Imported timing remains user-supplied: JARVIS does not claim to transcribe speech or verify that the text matches the audio. Use a transcription tool to create the SRT/VTT first, then review and correct every cue.
 ## AI scene rewrite
 
 The copilot can prepare a selected-scene rewrite. It appears in an editable proposal with heading, voiceover, on-screen text and visual direction. Nothing changes until **Apply to draft** is pressed. Then use **Save changes** to persist the edit. Approval and export are separate actions; the copilot never publishes a video.

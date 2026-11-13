@@ -545,3 +545,54 @@ test("builds ordered SRT captions and a human-readable production script", async
   assert.match(script, /VISUAL DIRECTION:/);
   assert.match(script, /Review note:/);
 });
+
+
+test("persists user-imported captions and exports their original timing", async () => {
+  const project = await makeDraft({
+    captionCues: [
+      { id: "cue-1", startSeconds: 1.25, endSeconds: 2.75, text: "First subtitle" },
+      { id: "cue-2", startSeconds: 4, endSeconds: 5.5, text: "Second subtitle" }
+    ],
+    captionStyle: { preset: "minimal-shadow", position: "top", size: "large" },
+    captionsEnabled: true
+  });
+  assert.equal(project.captionCues.length, 2);
+  assert.deepEqual(project.captionStyle, {
+    preset: "minimal-shadow", position: "top", size: "large"
+  });
+  assert.equal(project.captionsEnabled, true);
+  const srt = buildMediaCaptions(project);
+  assert.match(srt, /00:00:01,250 --> 00:00:02,750/);
+  assert.match(srt, /First subtitle/);
+
+  const updated = updateMediaProject(project, {
+    captionsEnabled: false,
+    captionCues: [{ id: "cue-3", startSeconds: 2, endSeconds: 3, text: "Edited subtitle" }]
+  });
+  assert.equal(updated.captionsEnabled, false);
+  assert.equal(updated.captionCues[0].text, "Edited subtitle");
+});
+
+test("caption cues are clipped to the project timeline and invalid cue records are dropped", async () => {
+  const project = await makeDraft({
+    captionCues: [
+      { id: "inside", startSeconds: 1, endSeconds: 2, text: "Inside" },
+      { id: "outside", startSeconds: 1000, endSeconds: 1002, text: "Outside" },
+      { id: "invalid", startSeconds: 4, endSeconds: 3, text: "Invalid" }
+    ]
+  });
+  assert.ok(project.captionCues.length <= 1);
+  assert.ok(project.captionCues.every(cue => cue.endSeconds <= project.durationSeconds));
+});
+
+
+test("rejects imported subtitle cues containing credentials or restricted instructions", async () => {
+  await assert.rejects(
+    makeDraft({ captionCues: [{ startSeconds: 0, endSeconds: 2, text: "api_key=do-not-store-this" }] }),
+    /credential or secret/i
+  );
+  await assert.rejects(
+    makeDraft({ captionCues: [{ startSeconds: 0, endSeconds: 2, text: "How to make a bomb" }] }),
+    /safe-content scope/i
+  );
+});

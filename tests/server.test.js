@@ -1671,3 +1671,58 @@ test("media visual analysis requires a private session and an enabled AI provide
   await request("/api/logout", { method: "POST", body: JSON.stringify({}) });
   cookie = "";
 });
+
+
+test("media project API persists imported subtitle cues and caption style", async () => {
+  cookie = "";
+  const login = await request("/api/login", {
+    method: "POST",
+    body: JSON.stringify({ password: "test-only-password-2026" })
+  });
+  assert.equal(login.status, 200);
+  cookie = (login.headers.get("set-cookie") || "").split(";")[0];
+
+  const create = await request("/api/media/drafts", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "Subtitle API test",
+      brief: "Explain how a rainbow forms.",
+      format: "vertical-short",
+      platform: "youtube-shorts",
+      language: "en-IN",
+      tone: "clear"
+    })
+  });
+  assert.equal(create.status, 201);
+  const project = (await create.json()).project;
+
+  const update = await request("/api/media/projects/" + project.id, {
+    method: "PATCH",
+    body: JSON.stringify({
+      captionCues: [
+        { id: "cue-api-1", startSeconds: 1.25, endSeconds: 2.75, text: "Light bends in water droplets." },
+        { id: "cue-api-2", startSeconds: 3.0, endSeconds: 4.5, text: "Different colours spread out." }
+      ],
+      captionStyle: { preset: "classic", position: "top", size: "large" },
+      captionsEnabled: true
+    })
+  });
+  assert.equal(update.status, 200);
+  const saved = (await update.json()).project;
+  assert.equal(saved.captionCues.length, 2);
+  assert.equal(saved.captionCues[0].text, "Light bends in water droplets.");
+  assert.deepEqual(saved.captionStyle, { preset: "classic", position: "top", size: "large" });
+  assert.equal(saved.captionsEnabled, true);
+
+  const approve = await request("/api/media/projects/" + project.id + "/approve", {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+  assert.equal(approve.status, 200);
+  const approved = (await approve.json()).project;
+  assert.equal(approved.captionCues.length, 2);
+  assert.equal(approved.captionStyle.position, "top");
+
+  await request("/api/logout", { method: "POST", body: JSON.stringify({}) });
+  cookie = "";
+});

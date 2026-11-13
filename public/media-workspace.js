@@ -3,6 +3,7 @@ import { createMediaAssetLibrary, formatMediaAssetSize } from "./media-asset-lib
 import { clampMediaEditorTime, resolveMediaEditorShortcut } from "./media-editor-shortcuts.js";
 import { assessMediaExport } from "./media-export-quality.js";
 import { analyzeMediaProject, buildMediaCopilotPrompt, parseMediaSceneRewrite } from "./media-copilot.js";
+import { formatCaptionSrt, normalizeCaptionCues, normalizeCaptionStyle, parseTimedCaptionFile } from "./media-captions.js";
 
 const FORMATS = {
   "vertical-short": { width: 720, height: 1280, maxDurationSeconds: 90 },
@@ -45,6 +46,7 @@ export function createMediaWorkspace({ api, toast }) {
   let copilotBusy = false;
   let mediaAnalysisBusy = false;
   let localAudioScan = null;
+  let captionPage = 0;
 
   const byId = (id) => document.getElementById(id);
 
@@ -203,7 +205,7 @@ export function createMediaWorkspace({ api, toast }) {
     const panel = makeElement("aside", "media-ai-sidecar hidden");
     panel.id = "media-ai-sidecar";
     panel.setAttribute("aria-label", "JARVIS editing copilot");
-    panel.innerHTML = '<div class="media-ai-sidecar-head"><div><p class="eyebrow">LIVE EDITING COMPANION</p><h3>JARVIS Copilot</h3><span class="media-ai-context-badge">PROJECT AWARE</span></div><button type="button" class="item-action" id="media-copilot-close" aria-label="Hide side panel">Hide</button></div><p id="media-copilot-context" class="media-ai-context">Open a project to load its editing context.</p><section class="media-copilot-quick-tools" aria-label="Quick editing tools"><strong>Quick tools</strong><div><button type="button" data-copilot-tool="creator">Creator mode</button><button type="button" data-copilot-tool="templates">Templates</button><button type="button" data-copilot-tool="captions">Captions SRT</button><button type="button" data-copilot-tool="motion">AI motion graphics</button><button type="button" data-copilot-tool="timeline">Timeline</button></div></section><section class="media-copilot-audit"><div class="media-copilot-section-head"><strong>Smart edit check</strong><button type="button" class="item-action" id="media-copilot-audit-button">Scan</button></div><div class="media-copilot-score"><strong id="media-copilot-score">—</strong><span id="media-copilot-score-label">Waiting for project</span></div><ul id="media-copilot-findings" class="media-copilot-findings"><li>Open a storyboard to inspect pacing, narration and timeline structure.</li></ul></section><div class="media-copilot-media-actions"><div><strong>Analyze real media</strong><span>Choose a video clip or audio track in the timeline first.</span></div><button type="button" class="primary" id="media-copilot-analyze-video">Analyze selected video frames</button><button type="button" class="item-action" id="media-copilot-scan-audio">Scan selected audio for long pauses</button><p>Video review sends up to four small still frames only after you press Analyze. Audio pause scanning runs locally in your browser.</p></div><div class="media-copilot-actions"><button type="button" class="primary" id="media-copilot-improve">Improve selected scene</button><button type="button" class="item-action" data-copilot-prompt="Review this edit and give me the three most important improvements, in priority order.">Review this edit</button><button type="button" class="item-action" data-copilot-prompt="Suggest a stronger opening hook and a clear first 3-second visual.">Improve the hook</button><button type="button" class="item-action" data-copilot-prompt="Review the scene pacing and suggest where to tighten the storyboard without losing meaning.">Tighten pacing</button><button type="button" class="item-action" data-copilot-prompt="Suggest concise on-screen captions and a title that accurately matches this video.">Titles & captions</button></div><form id="media-copilot-form" class="media-copilot-form"><label for="media-copilot-question">Ask about this edit</label><textarea id="media-copilot-question" rows="3" maxlength="800" placeholder="Example: Is this intro engaging? What should I change?"></textarea><button type="submit" class="primary" id="media-copilot-send">Ask JARVIS</button></form><div id="media-copilot-answer" class="media-copilot-answer" role="status" aria-live="polite">JARVIS can review the project text and selected scene. Media files themselves stay in this browser.</div><div id="media-copilot-media-markers" class="media-copilot-media-markers" aria-live="polite"></div><section id="media-copilot-preview" class="media-copilot-preview hidden"><div><strong>Proposed scene rewrite</strong><p>Review and edit every field before applying it to your draft.</p></div><label>Scene heading<input id="media-copilot-preview-heading" maxlength="120"></label><label>Voiceover<textarea id="media-copilot-preview-voiceover" rows="4" maxlength="1800"></textarea></label><label>On-screen text<textarea id="media-copilot-preview-onscreen" rows="2" maxlength="600"></textarea></label><label>Visual direction<textarea id="media-copilot-preview-visual" rows="3" maxlength="600"></textarea></label><div class="media-copilot-preview-actions"><button type="button" class="primary" id="media-copilot-apply">Apply to draft</button><button type="button" class="item-action" id="media-copilot-discard">Discard</button></div></section><p class="media-copilot-privacy">Text questions send project text only. Video analysis sends up to four downscaled still frames and project metadata after your explicit click; the original video is never uploaded or stored. Audio pause scans stay local. Visual analysis cannot judge speech performance or produce word-level transcripts. Applying scene rewrites changes the draft only; Save changes remains a separate step.</p>';
+    panel.innerHTML = '<div class="media-ai-sidecar-head"><div><p class="eyebrow">LIVE EDITING COMPANION</p><h3>JARVIS Copilot</h3><span class="media-ai-context-badge">PROJECT AWARE</span></div><button type="button" class="item-action" id="media-copilot-close" aria-label="Hide side panel">Hide</button></div><p id="media-copilot-context" class="media-ai-context">Open a project to load its editing context.</p><section class="media-copilot-quick-tools" aria-label="Quick editing tools"><strong>Quick tools</strong><div><button type="button" data-copilot-tool="creator">Creator mode</button><button type="button" data-copilot-tool="templates">Templates</button><button type="button" data-copilot-tool="captions">Subtitle Studio</button><button type="button" data-copilot-tool="motion">AI motion graphics</button><button type="button" data-copilot-tool="timeline">Timeline</button></div></section><section class="media-copilot-audit"><div class="media-copilot-section-head"><strong>Smart edit check</strong><button type="button" class="item-action" id="media-copilot-audit-button">Scan</button></div><div class="media-copilot-score"><strong id="media-copilot-score">—</strong><span id="media-copilot-score-label">Waiting for project</span></div><ul id="media-copilot-findings" class="media-copilot-findings"><li>Open a storyboard to inspect pacing, narration and timeline structure.</li></ul></section><div class="media-copilot-media-actions"><div><strong>Analyze real media</strong><span>Choose a video clip or audio track in the timeline first.</span></div><button type="button" class="primary" id="media-copilot-analyze-video">Analyze selected video frames</button><button type="button" class="item-action" id="media-copilot-scan-audio">Scan selected audio for long pauses</button><p>Video review sends up to four small still frames only after you press Analyze. Audio pause scanning runs locally in your browser.</p></div><div class="media-copilot-actions"><button type="button" class="primary" id="media-copilot-improve">Improve selected scene</button><button type="button" class="item-action" data-copilot-prompt="Review this edit and give me the three most important improvements, in priority order.">Review this edit</button><button type="button" class="item-action" data-copilot-prompt="Suggest a stronger opening hook and a clear first 3-second visual.">Improve the hook</button><button type="button" class="item-action" data-copilot-prompt="Review the scene pacing and suggest where to tighten the storyboard without losing meaning.">Tighten pacing</button><button type="button" class="item-action" data-copilot-prompt="Suggest concise on-screen captions and a title that accurately matches this video.">Titles & captions</button></div><form id="media-copilot-form" class="media-copilot-form"><label for="media-copilot-question">Ask about this edit</label><textarea id="media-copilot-question" rows="3" maxlength="800" placeholder="Example: Is this intro engaging? What should I change?"></textarea><button type="submit" class="primary" id="media-copilot-send">Ask JARVIS</button></form><div id="media-copilot-answer" class="media-copilot-answer" role="status" aria-live="polite">JARVIS can review the project text and selected scene. Media files themselves stay in this browser.</div><div id="media-copilot-media-markers" class="media-copilot-media-markers" aria-live="polite"></div><section id="media-copilot-preview" class="media-copilot-preview hidden"><div><strong>Proposed scene rewrite</strong><p>Review and edit every field before applying it to your draft.</p></div><label>Scene heading<input id="media-copilot-preview-heading" maxlength="120"></label><label>Voiceover<textarea id="media-copilot-preview-voiceover" rows="4" maxlength="1800"></textarea></label><label>On-screen text<textarea id="media-copilot-preview-onscreen" rows="2" maxlength="600"></textarea></label><label>Visual direction<textarea id="media-copilot-preview-visual" rows="3" maxlength="600"></textarea></label><div class="media-copilot-preview-actions"><button type="button" class="primary" id="media-copilot-apply">Apply to draft</button><button type="button" class="item-action" id="media-copilot-discard">Discard</button></div></section><p class="media-copilot-privacy">Text questions send project text only. Video analysis sends up to four downscaled still frames and project metadata after your explicit click; the original video is never uploaded or stored. Audio pause scans stay local. Visual analysis cannot judge speech performance or produce word-level transcripts. Applying scene rewrites changes the draft only; Save changes remains a separate step.</p>';
     const side = editor.querySelector(".media-editor-side");
     if (side) side.after(panel);
     else editor.append(panel);
@@ -251,13 +253,8 @@ export function createMediaWorkspace({ api, toast }) {
       return;
     }
     if (tool === "captions") {
-      const button = byId("media-export-captions");
-      if (!button || button.disabled) {
-        scrollTo(byId("media-export-status"));
-        toast("Review and approve this storyboard before exporting SRT captions.", true);
-        return;
-      }
-      button.click();
+      scrollTo(document.querySelector(".media-caption-workbench"));
+      byId("media-caption-file")?.focus({ preventScroll: true });
       return;
     }
     if (tool === "motion") {
@@ -2232,6 +2229,19 @@ export function createMediaWorkspace({ api, toast }) {
       const element = byId(id);
       if (element) element.disabled = !editable;
     }
+    for (const id of ["media-caption-file", "media-caption-enabled", "media-caption-preset", "media-caption-position", "media-caption-size", "media-caption-add", "media-caption-clear"]) {
+      const element = byId(id);
+      if (element) element.disabled = !editable || exporting;
+    }
+    const captionList = byId("media-caption-list");
+    if (captionList) {
+      captionList.querySelectorAll("input, textarea").forEach((control) => {
+        control.disabled = !editable || exporting;
+      });
+      captionList.querySelectorAll('[data-caption-action="remove"]').forEach((control) => {
+        control.disabled = !editable || exporting;
+      });
+    }
     for (const id of ["media-save-button", "media-approve-button", "media-add-scene"]) {
       const element = byId(id);
       if (element) element.disabled = !editable;
@@ -2270,6 +2280,221 @@ export function createMediaWorkspace({ api, toast }) {
       : "Approve the storyboard before exporting. Approval does not publish or upload anything.";
   }
 
+  function setCaptionStatus(message, isError = false) {
+    const target = byId("media-caption-status");
+    if (!target) return;
+    target.textContent = message;
+    target.classList.toggle("error-text", isError);
+  }
+
+  function captionClock(seconds) {
+    const value = Math.max(0, Number(seconds) || 0);
+    const minutes = Math.floor(value / 60);
+    const remainder = value - minutes * 60;
+    return String(minutes).padStart(2, "0") + ":" + remainder.toFixed(2).padStart(5, "0");
+  }
+
+  function renderCaptionWorkbench() {
+    if (!currentProject) return;
+    const cues = Array.isArray(currentProject.captionCues) ? currentProject.captionCues : [];
+    const style = normalizeCaptionStyle(currentProject.captionStyle);
+    currentProject.captionStyle = style;
+    const enabled = byId("media-caption-enabled");
+    const preset = byId("media-caption-preset");
+    const position = byId("media-caption-position");
+    const size = byId("media-caption-size");
+    if (enabled) enabled.checked = currentProject.captionsEnabled === true && cues.length > 0;
+    if (preset) preset.value = style.preset;
+    if (position) position.value = style.position;
+    if (size) size.value = style.size;
+
+    const search = String(byId("media-caption-search")?.value || "").trim().toLocaleLowerCase();
+    const filtered = search
+      ? cues.filter((cue) => cue.text.toLocaleLowerCase().includes(search))
+      : cues;
+    const pageSize = 20;
+    const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+    captionPage = Math.max(0, Math.min(captionPage, pageCount - 1));
+    const pageStart = captionPage * pageSize;
+    const pageCues = filtered.slice(pageStart, pageStart + pageSize);
+    const list = byId("media-caption-list");
+    if (list) {
+      list.replaceChildren();
+      if (!pageCues.length) {
+        list.append(makeElement("p", "media-caption-empty",
+          cues.length ? "No captions match this search." : "No timed captions yet. Import an SRT/WebVTT file or add a cue at the playhead."));
+      }
+      pageCues.forEach((cue, pageIndex) => {
+        const card = makeElement("article", "media-caption-row");
+        card.dataset.captionId = cue.id;
+        const heading = makeElement("div", "media-caption-row-heading");
+        const globalIndex = pageStart + pageIndex + 1;
+        heading.append(
+          makeElement("strong", "", "Cue " + globalIndex),
+          makeElement("span", "media-caption-time-label", captionClock(cue.startSeconds) + " → " + captionClock(cue.endSeconds))
+        );
+        const timing = makeElement("div", "media-caption-timing");
+        const startLabel = makeElement("label", "media-field");
+        startLabel.append(makeElement("span", "", "Start (seconds)"));
+        const startInput = makeElement("input", "media-scene-input");
+        startInput.type = "number";
+        startInput.min = "0";
+        startInput.max = String(currentProject.durationSeconds || 1200);
+        startInput.step = "0.05";
+        startInput.value = String(cue.startSeconds);
+        startInput.dataset.captionId = cue.id;
+        startInput.dataset.captionField = "startSeconds";
+        startLabel.append(startInput);
+        const endLabel = makeElement("label", "media-field");
+        endLabel.append(makeElement("span", "", "End (seconds)"));
+        const endInput = makeElement("input", "media-scene-input");
+        endInput.type = "number";
+        endInput.min = "0";
+        endInput.max = String(currentProject.durationSeconds || 1200);
+        endInput.step = "0.05";
+        endInput.value = String(cue.endSeconds);
+        endInput.dataset.captionId = cue.id;
+        endInput.dataset.captionField = "endSeconds";
+        endLabel.append(endInput);
+        timing.append(startLabel, endLabel);
+        const textLabel = makeElement("label", "media-caption-text-field");
+        textLabel.append(makeElement("span", "", "Caption text"));
+        const textInput = makeElement("textarea", "media-scene-input");
+        textInput.rows = 2;
+        textInput.maxLength = 500;
+        textInput.value = cue.text;
+        textInput.dataset.captionId = cue.id;
+        textInput.dataset.captionField = "text";
+        textLabel.append(textInput);
+        const actions = makeElement("div", "media-caption-actions");
+        const jump = makeElement("button", "item-action", "Jump to cue");
+        jump.type = "button";
+        jump.dataset.captionAction = "jump";
+        jump.dataset.captionId = cue.id;
+        const remove = makeElement("button", "item-action media-caption-remove", "Remove");
+        remove.type = "button";
+        remove.dataset.captionAction = "remove";
+        remove.dataset.captionId = cue.id;
+        actions.append(jump, remove);
+        card.append(heading, timing, textLabel, actions);
+        list.append(card);
+      });
+    }
+    const pageLabel = byId("media-caption-page-label");
+    if (pageLabel) pageLabel.textContent = filtered.length
+      ? "Showing " + (pageStart + 1) + "–" + Math.min(filtered.length, pageStart + pageSize) + " of " + filtered.length
+      : "No captions";
+    const previous = byId("media-caption-page-prev");
+    const next = byId("media-caption-page-next");
+    if (previous) previous.disabled = captionPage <= 0;
+    if (next) next.disabled = captionPage >= pageCount - 1;
+    const status = byId("media-caption-status");
+    if (status && !status.dataset.customMessage) {
+      status.textContent = cues.length
+        ? cues.length + " timed cue(s) · " + (currentProject.captionsEnabled ? "Burn-in enabled" : "Captions hidden from preview/export") +
+          " · Save changes to persist edits."
+        : "Import an SRT or WebVTT file, or add a cue manually. Timed captions are not automatically transcribed from speech.";
+    }
+  }
+
+  function updateCaptionSetting() {
+    if (!currentProject || currentProject.status !== "draft") return;
+    const cues = currentProject.captionCues || [];
+    currentProject.captionStyle = normalizeCaptionStyle({
+      preset: byId("media-caption-preset")?.value,
+      position: byId("media-caption-position")?.value,
+      size: byId("media-caption-size")?.value
+    });
+    currentProject.captionsEnabled = byId("media-caption-enabled")?.checked === true && cues.length > 0;
+    renderPreviewAtTime(previewTimeMs);
+    renderCaptionWorkbench();
+  }
+
+  async function importCaptionFile(file) {
+    if (!currentProject || currentProject.status !== "draft" || !file) return;
+    if (file.size > 250_000) throw new Error("Subtitle files must be 250 KB or smaller.");
+    const cues = parseTimedCaptionFile(await file.text(), currentProject.durationSeconds);
+    currentProject.captionCues = normalizeCaptionCues(cues, currentProject.durationSeconds);
+    currentProject.captionsEnabled = currentProject.captionCues.length > 0;
+    captionPage = 0;
+    if (byId("media-caption-search")) byId("media-caption-search").value = "";
+    renderCaptionWorkbench();
+    renderPreviewAtTime(previewTimeMs);
+    setCaptionStatus("Imported " + currentProject.captionCues.length + " timed captions from " + file.name +
+      ". The subtitle file itself stays local; press Save changes to save cue text and timing with this project.");
+    toast("Imported " + currentProject.captionCues.length + " subtitle cues.");
+  }
+
+  function addCaptionCue() {
+    if (!currentProject || currentProject.status !== "draft") return;
+    const duration = Math.max(0, Number(currentProject.durationSeconds) || 0);
+    if (duration < 0.25) {
+      toast("Add a timeline clip before creating a caption cue.", true);
+      return;
+    }
+    const startSeconds = Math.min(Math.max(0, previewTimeMs / 1000), Math.max(0, duration - 0.25));
+    const endSeconds = Math.min(duration, startSeconds + Math.min(2.5, duration - startSeconds));
+    const id = "caption-" + (window.crypto?.randomUUID?.() || Date.now() + "-" + Math.floor(Math.random() * 100000));
+    currentProject.captionCues = normalizeCaptionCues([
+      ...(currentProject.captionCues || []),
+      { id, startSeconds, endSeconds, text: "Edit this caption" }
+    ], duration);
+    currentProject.captionsEnabled = true;
+    const index = currentProject.captionCues.findIndex((cue) => cue.id === id);
+    captionPage = Math.max(0, Math.floor(Math.max(0, index) / 20));
+    renderCaptionWorkbench();
+    renderPreviewAtTime(previewTimeMs);
+    const input = byId("media-caption-list")?.querySelector('[data-caption-id="' + id + '"][data-caption-field="text"]');
+    input?.focus();
+    input?.select();
+  }
+
+  function handleCaptionListInput(event) {
+    const cueId = event.target?.dataset?.captionId;
+    const field = event.target?.dataset?.captionField;
+    if (!cueId || !field || !currentProject || currentProject.status !== "draft") return;
+    const cue = currentProject.captionCues?.find((item) => item.id === cueId);
+    if (!cue) return;
+    if (field === "text") cue.text = String(event.target.value || "").slice(0, 500);
+    else cue[field] = Number(event.target.value);
+    renderPreviewAtTime(previewTimeMs);
+  }
+
+  function handleCaptionListChange(event) {
+    if (!currentProject || currentProject.status !== "draft") return;
+    const cueId = event.target?.dataset?.captionId;
+    if (!cueId || !event.target?.dataset?.captionField) return;
+    currentProject.captionCues = normalizeCaptionCues(currentProject.captionCues, currentProject.durationSeconds);
+    renderCaptionWorkbench();
+    renderPreviewAtTime(previewTimeMs);
+  }
+
+  function handleCaptionListClick(event) {
+    const button = event.target?.closest?.("[data-caption-action]");
+    if (!button || !currentProject || currentProject.status !== "draft") return;
+    const cue = currentProject.captionCues?.find((item) => item.id === button.dataset.captionId);
+    if (!cue) return;
+    if (button.dataset.captionAction === "jump") {
+      renderPreviewAtTime(cue.startSeconds * 1000);
+      updateCopilotContext();
+    } else if (button.dataset.captionAction === "remove") {
+      currentProject.captionCues = currentProject.captionCues.filter((item) => item.id !== cue.id);
+      if (!currentProject.captionCues.length) currentProject.captionsEnabled = false;
+      renderCaptionWorkbench();
+      renderPreviewAtTime(previewTimeMs);
+    }
+  }
+
+  function clearCaptions() {
+    if (!currentProject || currentProject.status !== "draft" || !currentProject.captionCues?.length) return;
+    if (!window.confirm("Clear all imported and manually added subtitle cues from this draft?")) return;
+    currentProject.captionCues = [];
+    currentProject.captionsEnabled = false;
+    captionPage = 0;
+    renderCaptionWorkbench();
+    renderPreviewAtTime(previewTimeMs);
+  }
+
   function selectProject(id) {
     const selected = projects.find((item) => item.id === id);
     if (!selected) return;
@@ -2294,6 +2519,8 @@ export function createMediaWorkspace({ api, toast }) {
     byId("media-generation-note").textContent = currentProject.generationNote || "";
     renderSceneEditors();
     renderTimelineEditor();
+    captionPage = 0;
+    renderCaptionWorkbench();
     renderPreview(currentProject, 0);
     setEditorControls();
     refreshAssetLibrary();
@@ -2692,6 +2919,64 @@ export function createMediaWorkspace({ api, toast }) {
       drawScene(ctx, width, height, project, index, progress);
     }
     drawTimelineOverlays(ctx, width, height, project, elapsedMs);
+    drawActiveCaption(ctx, width, height, project, elapsedMs);
+  }
+
+  function drawActiveCaption(ctx, width, height, project, elapsedMs) {
+    if (project?.captionsEnabled !== true || !Array.isArray(project.captionCues) || !project.captionCues.length) return;
+    const seconds = Math.max(0, elapsedMs / 1000);
+    let active = null;
+    for (const cue of project.captionCues) {
+      if (cue.startSeconds > seconds) break;
+      if (cue.startSeconds <= seconds && cue.endSeconds > seconds) active = cue;
+    }
+    if (!active?.text) return;
+    const style = normalizeCaptionStyle(project.captionStyle);
+    const fontScale = style.size === "small" ? 0.032 : style.size === "large" ? 0.049 : 0.04;
+    const fontSize = Math.max(16, Math.round(height * fontScale));
+    const maxTextWidth = width * 0.88;
+    const lineHeight = fontSize * 1.22;
+    const paddingX = fontSize * 0.62;
+    const paddingY = fontSize * 0.32;
+    ctx.save();
+    ctx.font = "800 " + fontSize + "px system-ui, -apple-system, Segoe UI, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const lines = wrapCanvasText(ctx, active.text, maxTextWidth - paddingX * 2, 3);
+    const boxWidth = Math.min(maxTextWidth, Math.max(...lines.map((line) => ctx.measureText(line).width)) + paddingX * 2);
+    const boxHeight = lines.length * lineHeight + paddingY * 2;
+    const centerY = style.position === "top"
+      ? Math.max(boxHeight / 2 + height * 0.06, height * 0.13)
+      : style.position === "middle" ? height * 0.52 : Math.min(height - boxHeight / 2 - height * 0.06, height * 0.86);
+    const left = (width - boxWidth) / 2;
+    const top = centerY - boxHeight / 2;
+    if (style.preset !== "minimal-shadow") {
+      ctx.fillStyle = style.preset === "classic" ? "rgba(0,0,0,0.62)" : "rgba(4,8,15,0.82)";
+      if (typeof ctx.roundRect === "function") {
+        ctx.beginPath();
+        ctx.roundRect(left, top, boxWidth, boxHeight, fontSize * 0.28);
+        ctx.fill();
+      } else {
+        ctx.fillRect(left, top, boxWidth, boxHeight);
+      }
+    } else {
+      ctx.shadowColor = "rgba(0,0,0,0.92)";
+      ctx.shadowBlur = fontSize * 0.42;
+      ctx.shadowOffsetY = fontSize * 0.08;
+    }
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "rgba(0,0,0,0.8)";
+    ctx.lineWidth = Math.max(1, fontSize * 0.055);
+    const firstBaseline = centerY - ((lines.length - 1) * lineHeight) / 2;
+    lines.forEach((line, index) => {
+      const y = firstBaseline + index * lineHeight;
+      if (style.preset === "minimal-shadow") ctx.fillText(line, width / 2, y);
+      else {
+        ctx.strokeText(line, width / 2, y, maxTextWidth - paddingX * 2);
+        ctx.fillText(line, width / 2, y, maxTextWidth - paddingX * 2);
+      }
+    });
+    ctx.restore();
   }
 
   function renderPreviewAtTime(elapsedMs) {
@@ -2965,7 +3250,10 @@ export function createMediaWorkspace({ api, toast }) {
       tone: byId("media-editor-tone").value,
       visualStyle: byId("media-editor-visual-style").value,
       scenes: readSceneEditors(),
-      tracks: currentProject.tracks
+      tracks: currentProject.tracks,
+      captionCues: normalizeCaptionCues(currentProject.captionCues, currentProject.durationSeconds),
+      captionStyle: normalizeCaptionStyle(currentProject.captionStyle),
+      captionsEnabled: currentProject.captionsEnabled === true
     };
     syncSceneTimeline(currentProject);
     currentProject.tracks = structuredClone(currentProject.tracks);
@@ -3011,6 +3299,9 @@ export function createMediaWorkspace({ api, toast }) {
   }
 
   function buildSrt(project) {
+    if (Array.isArray(project.captionCues) && project.captionCues.length) {
+      return formatCaptionSrt(project.captionCues, project.durationSeconds);
+    }
     let cursor = 0;
     const time = (seconds) => {
       const total = Math.round(seconds * 1000);
@@ -3591,6 +3882,33 @@ export function createMediaWorkspace({ api, toast }) {
     byId("media-timeline-playhead")?.addEventListener("input", (event) => {
       if (previewing) stopPreview();
       renderPreviewAtTime(Number(event.target.value) * 1000);
+    });
+    byId("media-caption-file")?.addEventListener("change", async (event) => {
+      const file = event.target.files?.[0];
+      try { await importCaptionFile(file); }
+      catch (error) { setCaptionStatus(error.message, true); toast(error.message, true); }
+      finally { event.target.value = ""; }
+    });
+    byId("media-caption-enabled")?.addEventListener("change", updateCaptionSetting);
+    byId("media-caption-preset")?.addEventListener("change", updateCaptionSetting);
+    byId("media-caption-position")?.addEventListener("change", updateCaptionSetting);
+    byId("media-caption-size")?.addEventListener("change", updateCaptionSetting);
+    byId("media-caption-add")?.addEventListener("click", addCaptionCue);
+    byId("media-caption-clear")?.addEventListener("click", clearCaptions);
+    byId("media-caption-search")?.addEventListener("change", () => {
+      captionPage = 0;
+      renderCaptionWorkbench();
+    });
+    byId("media-caption-list")?.addEventListener("input", handleCaptionListInput);
+    byId("media-caption-list")?.addEventListener("change", handleCaptionListChange);
+    byId("media-caption-list")?.addEventListener("click", handleCaptionListClick);
+    byId("media-caption-page-prev")?.addEventListener("click", () => {
+      captionPage = Math.max(0, captionPage - 1);
+      renderCaptionWorkbench();
+    });
+    byId("media-caption-page-next")?.addEventListener("click", () => {
+      captionPage++;
+      renderCaptionWorkbench();
     });
     byId("media-timeline-inspector")?.addEventListener("input", updateTimelineField);
     byId("media-timeline-inspector")?.addEventListener("change", (event) => {
