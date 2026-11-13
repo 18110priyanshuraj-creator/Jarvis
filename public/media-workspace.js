@@ -203,7 +203,7 @@ export function createMediaWorkspace({ api, toast }) {
     const panel = makeElement("aside", "media-ai-sidecar hidden");
     panel.id = "media-ai-sidecar";
     panel.setAttribute("aria-label", "JARVIS editing copilot");
-    panel.innerHTML = '<div class="media-ai-sidecar-head"><div><p class="eyebrow">LIVE EDITING COMPANION</p><h3>JARVIS Copilot</h3><span class="media-ai-context-badge">PROJECT AWARE</span></div><button type="button" class="item-action" id="media-copilot-close" aria-label="Hide side panel">Hide</button></div><p id="media-copilot-context" class="media-ai-context">Open a project to load its editing context.</p><section class="media-copilot-audit"><div class="media-copilot-section-head"><strong>Smart edit check</strong><button type="button" class="item-action" id="media-copilot-audit-button">Scan</button></div><div class="media-copilot-score"><strong id="media-copilot-score">—</strong><span id="media-copilot-score-label">Waiting for project</span></div><ul id="media-copilot-findings" class="media-copilot-findings"><li>Open a storyboard to inspect pacing, narration and timeline structure.</li></ul></section><div class="media-copilot-media-actions"><div><strong>Analyze real media</strong><span>Choose a video clip or audio track in the timeline first.</span></div><button type="button" class="primary" id="media-copilot-analyze-video">Analyze selected video frames</button><button type="button" class="item-action" id="media-copilot-scan-audio">Scan selected audio for long pauses</button><p>Video review sends up to four small still frames only after you press Analyze. Audio pause scanning runs locally in your browser.</p></div><div class="media-copilot-actions"><button type="button" class="primary" id="media-copilot-improve">Improve selected scene</button><button type="button" class="item-action" data-copilot-prompt="Review this edit and give me the three most important improvements, in priority order.">Review this edit</button><button type="button" class="item-action" data-copilot-prompt="Suggest a stronger opening hook and a clear first 3-second visual.">Improve the hook</button><button type="button" class="item-action" data-copilot-prompt="Review the scene pacing and suggest where to tighten the storyboard without losing meaning.">Tighten pacing</button><button type="button" class="item-action" data-copilot-prompt="Suggest concise on-screen captions and a title that accurately matches this video.">Titles & captions</button></div><form id="media-copilot-form" class="media-copilot-form"><label for="media-copilot-question">Ask about this edit</label><textarea id="media-copilot-question" rows="3" maxlength="800" placeholder="Example: Is this intro engaging? What should I change?"></textarea><button type="submit" class="primary" id="media-copilot-send">Ask JARVIS</button></form><div id="media-copilot-answer" class="media-copilot-answer" role="status" aria-live="polite">JARVIS can review the project text and selected scene. Media files themselves stay in this browser.</div><section id="media-copilot-preview" class="media-copilot-preview hidden"><div><strong>Proposed scene rewrite</strong><p>Review and edit every field before applying it to your draft.</p></div><label>Scene heading<input id="media-copilot-preview-heading" maxlength="120"></label><label>Voiceover<textarea id="media-copilot-preview-voiceover" rows="4" maxlength="1800"></textarea></label><label>On-screen text<textarea id="media-copilot-preview-onscreen" rows="2" maxlength="600"></textarea></label><label>Visual direction<textarea id="media-copilot-preview-visual" rows="3" maxlength="600"></textarea></label><div class="media-copilot-preview-actions"><button type="button" class="primary" id="media-copilot-apply">Apply to draft</button><button type="button" class="item-action" id="media-copilot-discard">Discard</button></div></section><p class="media-copilot-privacy">Text questions send project text only. Video analysis sends up to four downscaled still frames and project metadata after your explicit click; the original video is never uploaded or stored. Audio pause scans stay local. Visual analysis cannot judge speech performance or produce word-level transcripts. Applying scene rewrites changes the draft only; Save changes remains a separate step.</p>';
+    panel.innerHTML = '<div class="media-ai-sidecar-head"><div><p class="eyebrow">LIVE EDITING COMPANION</p><h3>JARVIS Copilot</h3><span class="media-ai-context-badge">PROJECT AWARE</span></div><button type="button" class="item-action" id="media-copilot-close" aria-label="Hide side panel">Hide</button></div><p id="media-copilot-context" class="media-ai-context">Open a project to load its editing context.</p><section class="media-copilot-audit"><div class="media-copilot-section-head"><strong>Smart edit check</strong><button type="button" class="item-action" id="media-copilot-audit-button">Scan</button></div><div class="media-copilot-score"><strong id="media-copilot-score">—</strong><span id="media-copilot-score-label">Waiting for project</span></div><ul id="media-copilot-findings" class="media-copilot-findings"><li>Open a storyboard to inspect pacing, narration and timeline structure.</li></ul></section><div class="media-copilot-media-actions"><div><strong>Analyze real media</strong><span>Choose a video clip or audio track in the timeline first.</span></div><button type="button" class="primary" id="media-copilot-analyze-video">Analyze selected video frames</button><button type="button" class="item-action" id="media-copilot-scan-audio">Scan selected audio for long pauses</button><p>Video review sends up to four small still frames only after you press Analyze. Audio pause scanning runs locally in your browser.</p></div><div class="media-copilot-actions"><button type="button" class="primary" id="media-copilot-improve">Improve selected scene</button><button type="button" class="item-action" data-copilot-prompt="Review this edit and give me the three most important improvements, in priority order.">Review this edit</button><button type="button" class="item-action" data-copilot-prompt="Suggest a stronger opening hook and a clear first 3-second visual.">Improve the hook</button><button type="button" class="item-action" data-copilot-prompt="Review the scene pacing and suggest where to tighten the storyboard without losing meaning.">Tighten pacing</button><button type="button" class="item-action" data-copilot-prompt="Suggest concise on-screen captions and a title that accurately matches this video.">Titles & captions</button></div><form id="media-copilot-form" class="media-copilot-form"><label for="media-copilot-question">Ask about this edit</label><textarea id="media-copilot-question" rows="3" maxlength="800" placeholder="Example: Is this intro engaging? What should I change?"></textarea><button type="submit" class="primary" id="media-copilot-send">Ask JARVIS</button></form><div id="media-copilot-answer" class="media-copilot-answer" role="status" aria-live="polite">JARVIS can review the project text and selected scene. Media files themselves stay in this browser.</div><div id="media-copilot-media-markers" class="media-copilot-media-markers" aria-live="polite"></div><section id="media-copilot-preview" class="media-copilot-preview hidden"><div><strong>Proposed scene rewrite</strong><p>Review and edit every field before applying it to your draft.</p></div><label>Scene heading<input id="media-copilot-preview-heading" maxlength="120"></label><label>Voiceover<textarea id="media-copilot-preview-voiceover" rows="4" maxlength="1800"></textarea></label><label>On-screen text<textarea id="media-copilot-preview-onscreen" rows="2" maxlength="600"></textarea></label><label>Visual direction<textarea id="media-copilot-preview-visual" rows="3" maxlength="600"></textarea></label><div class="media-copilot-preview-actions"><button type="button" class="primary" id="media-copilot-apply">Apply to draft</button><button type="button" class="item-action" id="media-copilot-discard">Discard</button></div></section><p class="media-copilot-privacy">Text questions send project text only. Video analysis sends up to four downscaled still frames and project metadata after your explicit click; the original video is never uploaded or stored. Audio pause scans stay local. Visual analysis cannot judge speech performance or produce word-level transcripts. Applying scene rewrites changes the draft only; Save changes remains a separate step.</p>';
     const side = editor.querySelector(".media-editor-side");
     if (side) side.after(panel);
     else editor.append(panel);
@@ -291,7 +291,7 @@ export function createMediaWorkspace({ api, toast }) {
       return;
     }
     score.textContent = String(report.score);
-    label.textContent = report.label + " · " + report.stats.scenes + " scenes · " + report.stats.tracks + " tracks";
+    label.textContent = "Structural checklist (heuristic) · " + report.stats.scenes + " scenes · " + report.stats.tracks + " tracks";
     if (!report.findings.length) {
       list.append(makeElement("li", "copilot-finding-good", "No obvious structure issues found. Preview the edit before export."));
       return;
@@ -492,6 +492,33 @@ export function createMediaWorkspace({ api, toast }) {
     } : null;
   }
 
+  function renderCopilotMediaMarkers(markers, emptyMessage = "") {
+    const target = byId("media-copilot-media-markers");
+    if (!target) return;
+    target.replaceChildren();
+    if (!Array.isArray(markers) || !markers.length) {
+      if (emptyMessage) target.append(makeElement("p", "media-copilot-marker-empty", emptyMessage));
+      return;
+    }
+    markers.slice(0, 16).forEach((marker) => {
+      const item = makeElement("article", "media-copilot-marker media-copilot-marker-" + (marker.severity || "suggestion"));
+      const heading = makeElement("strong", "", marker.title || "Review point");
+      const detail = makeElement("span", "", marker.detail || "");
+      const row = makeElement("div", "media-copilot-marker-row");
+      const time = Math.max(0, Math.min(currentProject?.durationSeconds || 0, Number(marker.timeSeconds) || 0));
+      const timeLabel = makeElement("small", "", time.toFixed(1) + "s");
+      const jump = makeElement("button", "item-action", "Jump to timeline");
+      jump.type = "button";
+      jump.addEventListener("click", () => {
+        renderPreviewAtTime(time * 1000);
+        updateCopilotContext();
+      });
+      row.append(timeLabel, jump);
+      item.append(heading, detail, row);
+      target.append(item);
+    });
+  }
+
   async function runMediaVisualAnalysis() {
     if (!currentProject || mediaAnalysisBusy) return;
     const output = byId("media-copilot-answer");
@@ -524,15 +551,22 @@ export function createMediaWorkspace({ api, toast }) {
       const lines = [
         "VISUAL REVIEW",
         analysis.summary || "No summary returned.",
-        "",
-        ...findings.map((finding) =>
-          "[" + Number(finding.timeSeconds || 0).toFixed(1) + "s · " + String(finding.severity || "suggestion").toUpperCase() + "] " +
-          String(finding.observation || "") + " — " + String(finding.recommendation || "")
-        ),
         ...(suggestions.length ? ["", "EDIT SUGGESTIONS", ...suggestions.map((item) => "• " + item)] : []),
         ...(limitations.length ? ["", "LIMITS", ...limitations.map((item) => "• " + item)] : [])
       ];
       if (output) output.textContent = lines.join("\n");
+      renderCopilotMediaMarkers(localAudioScan.silenceSegments.map((segment) => ({
+        timeSeconds: localAudioScan.timelineStart + Math.max(0, segment.startSeconds - localAudioScan.sourceIn) / localAudioScan.speed,
+        severity: "info",
+        title: "Low-volume candidate · " + segment.durationSeconds.toFixed(2) + "s",
+        detail: "This is a signal-level pause candidate, not proof of missing speech. Listen before trimming."
+      })), "No sustained low-volume intervals were found above the configured threshold.");
+      renderCopilotMediaMarkers(findings.map((finding) => ({
+        timeSeconds: finding.timeSeconds,
+        severity: finding.severity,
+        title: String(finding.severity || "suggestion").toUpperCase() + " · " + Number(finding.timeSeconds || 0).toFixed(1) + "s",
+        detail: String(finding.observation || "") + " — " + String(finding.recommendation || "")
+      })), "Visual review returned no time-coded findings. Preview the clip and decide what to change.");
     } catch (error) {
       if (output) output.textContent = error.message + "\nText-based smart checks are still available above.";
     } finally {
