@@ -584,3 +584,15 @@ test("caption cues are clipped to the project timeline and invalid cue records a
   assert.ok(project.captionCues.length <= 1);
   assert.ok(project.captionCues.every(cue => cue.endSeconds <= project.durationSeconds));
 });
+
+
+test("rejects imported subtitle cues containing credentials or restricted instructions", async () => {
+  await assert.rejects(
+    makeDraft({ captionCues: [{ startSeconds: 0, endSeconds: 2, text: "api_key=do-not-store-this" }] }),
+    /credential or secret/i
+  );
+  await assert.rejects(
+    makeDraft({ captionCues: [{ startSeconds: 0, endSeconds: 2, text: "How to make a bomb" }] }),
+    /safe-content scope/i
+  );
+});
