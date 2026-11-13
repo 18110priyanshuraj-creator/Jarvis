@@ -464,6 +464,13 @@ export function normalizeMediaProject(input = {}) {
   const durationSeconds = Math.min(format.maxDurationSeconds,
     Array.isArray(input.tracks) && input.tracks.length ? timelineDuration : Math.max(sceneDurationSeconds, timelineDuration));
   const captionCues = normalizeCaptionCues(input.captionCues, durationSeconds);
+  const captionText = captionCues.map((cue) => cue.text).join("\n");
+  if (SECRET_PATTERN.test(captionText) || TOKEN_PATTERN.test(captionText)) {
+    throw new TypeError("JARVIS will not store subtitle captions that appear to contain a credential or secret.");
+  }
+  if (RESTRICTED_MEDIA_PATTERN.test(captionText)) {
+    throw new TypeError("These subtitle captions are outside the supported safe-content scope.");
+  }
   const captionStyle = normalizeCaptionStyle(input.captionStyle);
   const state = PROJECT_STATES.has(input.status) ? input.status : "draft";
   const createdAt = validDate(input.createdAt, now);
