@@ -102,6 +102,51 @@ export function getAIProviderStatus() {
   };
 }
 
+const MAX_IMAGE_PARTS_PER_MESSAGE = 4;
+const MAX_IMAGE_DATA_URL_LENGTH = 180_000;
+const MAX_MULTIMODAL_MESSAGE_CHARS = 650_000;
+
+function normalizeMessageContent(content) {
+  if (typeof content === "string") return content.trim().slice(0, MAX_MESSAGE_CHARS);
+  if (!Array.isArray(content) || content.length < 1 || content.length > MAX_IMAGE_PARTS_PER_MESSAGE + 1) return "";
+  let totalChars = 0;
+  let imageCount = 0;
+  const parts = [];
+  for (const part of content) {
+    if (!part || typeof part !== "object") continue;
+    if (part.type === "text" && typeof part.text === "string") {
+      const text = part.text.trim().slice(0, MAX_MESSAGE_CHARS);
+      if (text) {
+        totalChars += text.length;
+        parts.push({ type: "text", text });
+      }
+      continue;
+    }
+    if (part.type === "image_url" && typeof part.image_url?.url === "string") {
+      const url = part.image_url.url;
+      const match = url.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/i);
+      if (!match || url.length > MAX_IMAGE_DATA_URL_LENGTH) {
+        throw new TypeError("AI image inputs must be small base64 JPEG, PNG or WebP data URLs.");
+      }
+      imageCount++;
+      if (imageCount > MAX_IMAGE_PARTS_PER_MESSAGE) {
+        throw new TypeError("An AI message may contain at most four image frames.");
+      }
+      totalChars += url.length;
+      const detail = ["low", "auto"].includes(part.image_url.detail) ? part.image_url.detail : "low";
+      parts.push({ type: "image_url", image_url: { url, detail } });
+      continue;
+    }
+    throw new TypeError("AI message content contains an unsupported multimodal part.");
+  }
+  if (totalChars > MAX_MULTIMODAL_MESSAGE_CHARS) {
+    throw new TypeError("AI multimodal message exceeds the safe image preview size.");
+  }
+  return parts.some(part => part.type === "image_url")
+    ? parts
+    : parts.filter(part => part.type === "text").map(part => part.text).join("\n").trim().slice(0, MAX_MESSAGE_CHARS);
+}
+
 function normalizeMessages(messages) {
   if (!Array.isArray(messages) || messages.length < 1 || messages.length > MAX_MESSAGES) {
     throw new TypeError("AI messages must contain between one and twenty entries.");
@@ -109,8 +154,10 @@ function normalizeMessages(messages) {
   const normalized = [];
   for (const item of messages) {
     if (!item || !["system", "user", "assistant"].includes(item.role)) continue;
-    const content = typeof item.content === "string" ? item.content.trim().slice(0, MAX_MESSAGE_CHARS) : "";
-    if (content) normalized.push({ role: item.role, content });
+    const content = normalizeMessageContent(item.content);
+    if ((typeof content === "string" && content) || (Array.isArray(content) && content.length)) {
+      normalized.push({ role: item.role, content });
+    }
   }
   if (!normalized.length) throw new TypeError("AI messages cannot be empty.");
   return normalized;

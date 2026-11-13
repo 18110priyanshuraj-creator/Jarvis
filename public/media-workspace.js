@@ -1,6 +1,8 @@
 import { collectTimelineSnapPoints, snapTimelineEdge, snapTimelineMoveStart } from "./media-timeline-snapping.js";
 import { createMediaAssetLibrary, formatMediaAssetSize } from "./media-asset-library.js";
 import { clampMediaEditorTime, resolveMediaEditorShortcut } from "./media-editor-shortcuts.js";
+import { assessMediaExport } from "./media-export-quality.js";
+import { analyzeMediaProject, buildMediaCopilotPrompt, parseMediaSceneRewrite } from "./media-copilot.js";
 
 const FORMATS = {
   "vertical-short": { width: 720, height: 1280, maxDurationSeconds: 90 },
@@ -38,6 +40,11 @@ export function createMediaWorkspace({ api, toast }) {
   let activeVideoSceneId = null;
   const assetLibrary = createMediaAssetLibrary();
   let pendingAssetLibraryFile = null;
+  let copilotOpen = false;
+  let pendingSceneRewrite = null;
+  let copilotBusy = false;
+  let mediaAnalysisBusy = false;
+  let localAudioScan = null;
 
   const byId = (id) => document.getElementById(id);
 
@@ -146,6 +153,600 @@ export function createMediaWorkspace({ api, toast }) {
     });
     wrapper.append(heading, readout, input);
     return wrapper;
+  }
+
+
+  function ensureStudioCommandDeck() {
+    const view = byId("view-media");
+    if (!view || byId("media-studio-command-deck")) return;
+    const deck = makeElement("section", "media-studio-command-deck");
+    deck.id = "media-studio-command-deck";
+    deck.innerHTML = '<div class="studio-deck-heading"><div><p class="eyebrow">JARVIS CREATOR OS</p><h2>Creator Command Deck</h2><p>Editing, ideas, campaigns and connected workflows — ek jagah se.</p></div><span class="studio-deck-live"><i></i> WORKSPACE READY</span></div><div class="studio-deck-metrics"><div><strong id="studio-metric-projects">0</strong><span>Projects</span></div><div><strong id="studio-metric-drafts">0</strong><span>Drafts to review</span></div><div><strong id="studio-metric-scenes">0</strong><span>Storyboard scenes</span></div><div><strong id="studio-metric-duration">0 min</strong><span>Total timeline</span></div></div><div class="studio-tool-grid"><button type="button" data-studio-target="editor"><b>Video Editor</b><span>Storyboard, preview, multi-track timeline and exports</span><small>LOCAL EDITING</small></button><button type="button" data-studio-target="creator"><b>Campaign Studio</b><span>Shorts, carousels, scripts, titles and social drafts</span><small>AI-ASSISTED</small></button><button type="button" data-studio-target="creator"><b>Trend Radar & SEO</b><span>Research-backed trend notes and SEO page drafts</span><small>REVIEW SOURCES</small></button><button type="button" data-studio-target="creator"><b>Thumbnail & Characters</b><span>Thumbnail canvas and reusable stick-figure poses</span><small>CREATOR TOOLS</small></button><button type="button" data-studio-target="research"><b>Research Desk</b><span>Explore topics and collect sources before scripting</span><small>RESEARCH</small></button><button type="button" data-studio-target="devices"><b>Android Control</b><span>Pair your Companion and use supported device actions</span><small>PERMISSION-GATED</small></button><button type="button" data-studio-target="chat"><b>Voice Assistant</b><span>Ask JARVIS and continue your workspace conversation</span><small>VOICE / CHAT</small></button><button type="button" data-studio-target="editor"><b>Captions & Exports</b><span>Review storyboard captions, JSON, images and video export</span><small>LOCAL EXPORT</small></button></div><p class="studio-deck-footnote">AI features depend on a configured provider. Trend research and connected publishing may need permissions. No tile publishes or uploads content by itself.</p>';
+    const heading = view.querySelector(".section-heading");
+    if (heading) heading.after(deck);
+    deck.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-studio-target]");
+      if (!button) return;
+      const target = button.dataset.studioTarget;
+      if (target === "editor") {
+        const projectsHeading = byId("media-project-list");
+        (projectsHeading || byId("media-create-form"))?.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+      document.querySelector('.nav-item[data-view="' + target + '"]')?.click();
+    });
+    refreshStudioDashboardMetrics();
+  }
+
+  function refreshStudioDashboardMetrics() {
+    const totalScenes = projects.reduce((sum, project) => sum + (Array.isArray(project.scenes) ? project.scenes.length : 0), 0);
+    const draftCount = projects.filter((project) => project.status !== "approved").length;
+    const totalSeconds = projects.reduce((sum, project) => sum + Math.max(0, Number(project.durationSeconds) || 0), 0);
+    if (byId("studio-metric-projects")) byId("studio-metric-projects").textContent = String(projects.length);
+    if (byId("studio-metric-drafts")) byId("studio-metric-drafts").textContent = String(draftCount);
+    if (byId("studio-metric-scenes")) byId("studio-metric-scenes").textContent = String(totalScenes);
+    if (byId("studio-metric-duration")) byId("studio-metric-duration").textContent = Math.round(totalSeconds / 60) + " min";
+  }
+
+  function ensureCopilotUI() {
+    const editor = byId("media-editor");
+    const header = editor?.querySelector(".media-editor-header");
+    if (!editor || !header || byId("media-copilot-toggle")) return;
+    const toggle = makeElement("button", "item-action media-copilot-toggle", "✦ JARVIS side panel");
+    toggle.type = "button";
+    toggle.id = "media-copilot-toggle";
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-controls", "media-ai-sidecar");
+    toggle.addEventListener("click", () => setCopilotOpen(!copilotOpen));
+    header.append(toggle);
+
+    const panel = makeElement("aside", "media-ai-sidecar hidden");
+    panel.id = "media-ai-sidecar";
+    panel.setAttribute("aria-label", "JARVIS editing copilot");
+    panel.innerHTML = '<div class="media-ai-sidecar-head"><div><p class="eyebrow">LIVE EDITING COMPANION</p><h3>JARVIS Copilot</h3><span class="media-ai-context-badge">PROJECT AWARE</span></div><button type="button" class="item-action" id="media-copilot-close" aria-label="Hide side panel">Hide</button></div><p id="media-copilot-context" class="media-ai-context">Open a project to load its editing context.</p><section class="media-copilot-quick-tools" aria-label="Quick editing tools"><strong>Quick tools</strong><div><button type="button" data-copilot-tool="creator">Creator mode</button><button type="button" data-copilot-tool="templates">Templates</button><button type="button" data-copilot-tool="captions">Captions SRT</button><button type="button" data-copilot-tool="motion">AI motion graphics</button><button type="button" data-copilot-tool="timeline">Timeline</button></div></section><section class="media-copilot-audit"><div class="media-copilot-section-head"><strong>Smart edit check</strong><button type="button" class="item-action" id="media-copilot-audit-button">Scan</button></div><div class="media-copilot-score"><strong id="media-copilot-score">—</strong><span id="media-copilot-score-label">Waiting for project</span></div><ul id="media-copilot-findings" class="media-copilot-findings"><li>Open a storyboard to inspect pacing, narration and timeline structure.</li></ul></section><div class="media-copilot-media-actions"><div><strong>Analyze real media</strong><span>Choose a video clip or audio track in the timeline first.</span></div><button type="button" class="primary" id="media-copilot-analyze-video">Analyze selected video frames</button><button type="button" class="item-action" id="media-copilot-scan-audio">Scan selected audio for long pauses</button><p>Video review sends up to four small still frames only after you press Analyze. Audio pause scanning runs locally in your browser.</p></div><div class="media-copilot-actions"><button type="button" class="primary" id="media-copilot-improve">Improve selected scene</button><button type="button" class="item-action" data-copilot-prompt="Review this edit and give me the three most important improvements, in priority order.">Review this edit</button><button type="button" class="item-action" data-copilot-prompt="Suggest a stronger opening hook and a clear first 3-second visual.">Improve the hook</button><button type="button" class="item-action" data-copilot-prompt="Review the scene pacing and suggest where to tighten the storyboard without losing meaning.">Tighten pacing</button><button type="button" class="item-action" data-copilot-prompt="Suggest concise on-screen captions and a title that accurately matches this video.">Titles & captions</button></div><form id="media-copilot-form" class="media-copilot-form"><label for="media-copilot-question">Ask about this edit</label><textarea id="media-copilot-question" rows="3" maxlength="800" placeholder="Example: Is this intro engaging? What should I change?"></textarea><button type="submit" class="primary" id="media-copilot-send">Ask JARVIS</button></form><div id="media-copilot-answer" class="media-copilot-answer" role="status" aria-live="polite">JARVIS can review the project text and selected scene. Media files themselves stay in this browser.</div><div id="media-copilot-media-markers" class="media-copilot-media-markers" aria-live="polite"></div><section id="media-copilot-preview" class="media-copilot-preview hidden"><div><strong>Proposed scene rewrite</strong><p>Review and edit every field before applying it to your draft.</p></div><label>Scene heading<input id="media-copilot-preview-heading" maxlength="120"></label><label>Voiceover<textarea id="media-copilot-preview-voiceover" rows="4" maxlength="1800"></textarea></label><label>On-screen text<textarea id="media-copilot-preview-onscreen" rows="2" maxlength="600"></textarea></label><label>Visual direction<textarea id="media-copilot-preview-visual" rows="3" maxlength="600"></textarea></label><div class="media-copilot-preview-actions"><button type="button" class="primary" id="media-copilot-apply">Apply to draft</button><button type="button" class="item-action" id="media-copilot-discard">Discard</button></div></section><p class="media-copilot-privacy">Text questions send project text only. Video analysis sends up to four downscaled still frames and project metadata after your explicit click; the original video is never uploaded or stored. Audio pause scans stay local. Visual analysis cannot judge speech performance or produce word-level transcripts. Applying scene rewrites changes the draft only; Save changes remains a separate step.</p>';
+    const side = editor.querySelector(".media-editor-side");
+    if (side) side.after(panel);
+    else editor.append(panel);
+
+    byId("media-copilot-close").addEventListener("click", () => setCopilotOpen(false));
+    panel.querySelectorAll("[data-copilot-tool]").forEach((button) => {
+      button.addEventListener("click", () => handleCopilotQuickTool(button.dataset.copilotTool));
+    });
+    byId("media-copilot-audit-button").addEventListener("click", renderCopilotAudit);
+    byId("media-copilot-analyze-video").addEventListener("click", runMediaVisualAnalysis);
+    byId("media-copilot-scan-audio").addEventListener("click", scanSelectedAudioClip);
+    byId("media-copilot-improve").addEventListener("click", () => runCopilotRequest("Improve the selected scene. Return a complete proposed rewrite.", "rewrite"));
+    byId("media-copilot-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const question = byId("media-copilot-question").value.trim();
+      if (question) runCopilotRequest(question, "ask");
+    });
+    panel.querySelectorAll("[data-copilot-prompt]").forEach((button) => {
+      button.addEventListener("click", () => runCopilotRequest(button.dataset.copilotPrompt, "ask"));
+    });
+    byId("media-copilot-apply").addEventListener("click", applyCopilotRewrite);
+    byId("media-copilot-discard").addEventListener("click", discardCopilotRewrite);
+  }
+
+  function handleCopilotQuickTool(tool) {
+    const scrollTo = (element) => element?.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (tool === "creator") {
+      if (currentProject) {
+        scrollTo(byId("media-editor-project-title"));
+        byId("media-editor-project-title")?.focus({ preventScroll: true });
+      } else {
+        scrollTo(byId("media-create-form"));
+      }
+      return;
+    }
+    if (!currentProject) {
+      toast("Open a Media Studio project first.", true);
+      return;
+    }
+    if (tool === "templates") {
+      const style = byId("media-editor-visual-style");
+      scrollTo(style);
+      style?.focus({ preventScroll: true });
+      if (currentProject.status !== "draft") toast("Approved projects are read-only. Duplicate or create a draft to change its visual template.");
+      return;
+    }
+    if (tool === "captions") {
+      const button = byId("media-export-captions");
+      if (!button || button.disabled) {
+        scrollTo(byId("media-export-status"));
+        toast("Review and approve this storyboard before exporting SRT captions.", true);
+        return;
+      }
+      button.click();
+      return;
+    }
+    if (tool === "motion") {
+      const scene = getCopilotScene();
+      if (!scene) return toast("Select a scene or a timeline clip first.", true);
+      const index = currentProject.scenes.indexOf(scene);
+      const card = byId("media-editor-scenes")?.children?.[index];
+      const motion = card?.querySelector('[data-field="animation"]');
+      const camera = card?.querySelector('[data-field="cameraMotion"]');
+      scrollTo(card);
+      (motion || camera)?.focus({ preventScroll: true });
+      if (!motion && !camera) toast("Motion controls are not available for this scene.", true);
+      return;
+    }
+    if (tool === "timeline") {
+      scrollTo(document.querySelector(".media-timeline-panel"));
+      return;
+    }
+  }
+
+  function setCopilotOpen(open) {
+    copilotOpen = open === true;
+    const panel = byId("media-ai-sidecar");
+    const editor = byId("media-editor");
+    const toggle = byId("media-copilot-toggle");
+    panel?.classList.toggle("hidden", !copilotOpen);
+    editor?.classList.toggle("has-ai-sidecar", copilotOpen);
+    toggle?.setAttribute("aria-expanded", String(copilotOpen));
+    if (copilotOpen) {
+      updateCopilotContext();
+      renderCopilotAudit();
+    }
+  }
+
+  function getCopilotScene() {
+    if (!currentProject || !Array.isArray(currentProject.scenes) || !currentProject.scenes.length) return null;
+    const selection = selectedTimelineClip();
+    if (selection?.clip?.sceneId) {
+      const selected = currentProject.scenes.find((scene) => scene.id === selection.clip.sceneId);
+      if (selected) return selected;
+    }
+    const frame = sceneAtTime(currentProject, previewTimeMs);
+    return currentProject.scenes[frame.index >= 0 ? frame.index : 0] || null;
+  }
+
+  function updateCopilotContext() {
+    const target = byId("media-copilot-context");
+    if (!target) return;
+    if (!currentProject) {
+      target.textContent = "Open a project to load its editing context.";
+      return;
+    }
+    const selection = selectedTimelineClip();
+    const scene = getCopilotScene();
+    const sceneIndex = scene ? currentProject.scenes.indexOf(scene) + 1 : 0;
+    const clipText = selection?.clip
+      ? "Selected clip: " + (selection.clip.label || selection.clip.assetName || "Clip") + " · " + Number(selection.clip.duration || 0).toFixed(1) + "s"
+      : "No clip selected";
+    target.textContent = currentProject.title + " · " + currentProject.formatLabel + " · " +
+      (scene ? "Scene " + sceneIndex : "No scene selected") + " · " + clipText +
+      (currentProject.status !== "draft" ? " · Read-only approved project" : "");
+    const improve = byId("media-copilot-improve");
+    if (improve) improve.disabled = !scene || currentProject.status !== "draft" || copilotBusy;
+    const apply = byId("media-copilot-apply");
+    if (apply) apply.disabled = !scene || currentProject.status !== "draft" || copilotBusy;
+    const selectedAsset = selection ? timelineAssets.get(selection.clip.id) : null;
+    const analyzeVideo = byId("media-copilot-analyze-video");
+    if (analyzeVideo) analyzeVideo.disabled = mediaAnalysisBusy || !selectedAsset || selectedAsset.type !== "video";
+    const scanAudio = byId("media-copilot-scan-audio");
+    if (scanAudio) scanAudio.disabled = mediaAnalysisBusy || !selectedAsset || selectedAsset.type !== "audio";
+  }
+
+  function renderCopilotAudit() {
+    const report = currentProject ? analyzeMediaProject(currentProject) : null;
+    const score = byId("media-copilot-score");
+    const label = byId("media-copilot-score-label");
+    const list = byId("media-copilot-findings");
+    if (!score || !label || !list) return;
+    list.replaceChildren();
+    if (!report) {
+      score.textContent = "—";
+      label.textContent = "Waiting for project";
+      list.append(makeElement("li", "", "Open a storyboard to inspect it."));
+      return;
+    }
+    score.textContent = String(report.score);
+    label.textContent = "Structural checklist (heuristic) · " + report.stats.scenes + " scenes · " + report.stats.tracks + " tracks";
+    if (!report.findings.length) {
+      list.append(makeElement("li", "copilot-finding-good", "No obvious structure issues found. Preview the edit before export."));
+      return;
+    }
+    report.findings.slice(0, 8).forEach((finding) => {
+      const item = makeElement("li", "copilot-finding-" + finding.level);
+      const title = makeElement("strong", "", finding.title);
+      const detail = makeElement("span", "", finding.detail);
+      item.append(title, detail);
+      if (Number.isInteger(finding.sceneIndex)) {
+        const review = makeElement("button", "item-action", "Review scene " + (finding.sceneIndex + 1));
+        review.type = "button";
+        review.addEventListener("click", () => focusCopilotScene(finding.sceneIndex));
+        item.append(review);
+      }
+      list.append(item);
+    });
+  }
+
+  function focusCopilotScene(index) {
+    if (!currentProject || !currentProject.scenes[index]) return;
+    const scene = currentProject.scenes[index];
+    const main = currentProject.tracks?.find((track) => track.id === "track-main-video");
+    const clip = main?.clips?.find((item) => item.sceneId === scene.id);
+    if (clip) {
+      selectedTimelineClipId = clip.id;
+      renderTimelineEditor();
+    }
+    const card = byId("media-editor-scenes")?.children?.[index];
+    card?.scrollIntoView({ behavior: "smooth", block: "center" });
+    renderPreview(currentProject, index);
+    updateCopilotContext();
+  }
+
+  async function runCopilotRequest(question, mode = "ask") {
+    if (!currentProject || copilotBusy || mediaAnalysisBusy) return;
+    const scene = getCopilotScene();
+    if (mode === "rewrite" && (!scene || currentProject.status !== "draft")) {
+      toast("Select a draft scene before requesting an editable rewrite.", true);
+      return;
+    }
+    copilotBusy = true;
+    const send = byId("media-copilot-send");
+    const improve = byId("media-copilot-improve");
+    if (send) send.disabled = true;
+    if (improve) improve.disabled = true;
+    const output = byId("media-copilot-answer");
+    if (output) output.textContent = mode === "rewrite" ? "JARVIS is preparing a scene rewrite…" : "JARVIS is reviewing the project context…";
+    try {
+      const prompt = buildMediaCopilotPrompt({ project: currentProject, scene, question, mode });
+      const result = await api("/api/chat", {
+        method: "POST",
+        body: JSON.stringify({ message: prompt, applicationId: "web-dashboard" })
+      });
+      const answer = String(result?.answer || "").trim();
+      if (!answer) throw new Error("JARVIS returned an empty response. Try again.");
+      if (mode === "rewrite") {
+        const proposed = parseMediaSceneRewrite(answer, scene);
+        if (!proposed) {
+          output.textContent = "JARVIS replied, but the result was not a valid editable scene proposal. You can still read the response below:\n\n" + answer;
+          discardCopilotRewrite();
+          return;
+        }
+        pendingSceneRewrite = { sceneId: scene.id, values: proposed };
+        byId("media-copilot-preview-heading").value = proposed.heading;
+        byId("media-copilot-preview-voiceover").value = proposed.voiceover;
+        byId("media-copilot-preview-onscreen").value = proposed.onScreenText;
+        byId("media-copilot-preview-visual").value = proposed.visualPrompt;
+        byId("media-copilot-preview").classList.remove("hidden");
+        output.textContent = "Proposed rewrite ready. Review the fields below; nothing has changed yet.";
+      } else {
+        output.textContent = answer;
+      }
+    } catch (error) {
+      if (output) output.textContent = error.message + " Smart local edit checks are still available above.";
+    } finally {
+      copilotBusy = false;
+      if (send) send.disabled = false;
+      updateCopilotContext();
+    }
+  }
+
+  function applyCopilotRewrite() {
+    if (!currentProject || currentProject.status !== "draft" || !pendingSceneRewrite) return;
+    const scene = currentProject.scenes.find((item) => item.id === pendingSceneRewrite.sceneId);
+    if (!scene) return toast("The selected scene no longer exists. Generate the proposal again.", true);
+    scene.heading = byId("media-copilot-preview-heading").value.trim().slice(0, 120);
+    scene.voiceover = byId("media-copilot-preview-voiceover").value.trim().slice(0, 1800);
+    scene.onScreenText = byId("media-copilot-preview-onscreen").value.trim().slice(0, 600);
+    scene.visualPrompt = byId("media-copilot-preview-visual").value.trim().slice(0, 600);
+    if (!scene.heading || !scene.voiceover || !scene.onScreenText || !scene.visualPrompt) {
+      return toast("Complete all four fields before applying the rewrite.", true);
+    }
+    const index = currentProject.scenes.indexOf(scene);
+    pendingSceneRewrite = null;
+    byId("media-copilot-preview").classList.add("hidden");
+    syncSceneTimeline(currentProject);
+    renderSceneEditors();
+    renderTimelineEditor();
+    renderPreview(currentProject, index);
+    setExportStatus("JARVIS rewrite applied to the local draft. Press Save changes to keep it in your workspace.");
+    const output = byId("media-copilot-answer");
+    if (output) output.textContent = "Changes applied to Scene " + (index + 1) + ". Review the preview, then press Save changes.";
+    renderCopilotAudit();
+  }
+
+  function discardCopilotRewrite() {
+    pendingSceneRewrite = null;
+    byId("media-copilot-preview")?.classList.add("hidden");
+  }
+
+  function waitForVideoSeek(video, targetSeconds) {
+    if (Math.abs(Number(video.currentTime || 0) - targetSeconds) < 0.04 && video.readyState >= 2) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        video.removeEventListener("seeked", onSeeked);
+        video.removeEventListener("error", onError);
+      };
+      const onSeeked = () => { cleanup(); resolve(); };
+      const onError = () => { cleanup(); reject(new Error("The selected video frame could not be decoded.")); };
+      video.addEventListener("seeked", onSeeked, { once: true });
+      video.addEventListener("error", onError, { once: true });
+      video.currentTime = targetSeconds;
+    });
+  }
+
+  async function captureSelectedVideoFrames() {
+    const selection = selectedTimelineClip();
+    const asset = selection ? timelineAssets.get(selection.clip.id) : null;
+    if (!selection || asset?.type !== "video" || asset.element?.tagName !== "VIDEO") {
+      throw new Error("Select a video clip on the timeline and attach its local media file first.");
+    }
+    const video = asset.element;
+    if (!Number.isFinite(video.duration) || video.duration < 1 || video.videoWidth < 2) {
+      throw new Error("The selected video is not ready for frame sampling. Preview it once, then retry.");
+    }
+    const originalTime = video.currentTime;
+    const wasPaused = video.paused;
+    video.pause();
+    const clip = selection.clip;
+    const sourceStart = Math.max(0, Number(clip.sourceIn) || 0);
+    const sourceEnd = Math.min(video.duration, Number(clip.sourceOut) || video.duration);
+    const sourceSpan = Math.max(0.5, sourceEnd - sourceStart);
+    const percentages = [0.08, 0.35, 0.65, 0.92];
+    const frames = [];
+    try {
+      for (const percentage of percentages) {
+        const sourceTime = Math.max(0, Math.min(video.duration - 0.05, sourceStart + sourceSpan * percentage));
+        await waitForVideoSeek(video, sourceTime);
+        const maxDimension = 384;
+        const scale = Math.min(1, maxDimension / Math.max(video.videoWidth, video.videoHeight));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(2, Math.round(video.videoWidth * scale));
+        canvas.height = Math.max(2, Math.round(video.videoHeight * scale));
+        const context = canvas.getContext("2d", { alpha: false });
+        if (!context) throw new Error("This browser could not create a video preview canvas.");
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.42);
+        if (dataUrl.length > 180000) throw new Error("A sampled frame is too large. Choose a lower-resolution source clip.");
+        frames.push({
+          timestampSeconds: Math.max(0, Number(clip.start || 0) + Number(clip.duration || sourceSpan) * percentage),
+          dataUrl
+        });
+      }
+    } finally {
+      try {
+        await waitForVideoSeek(video, Math.max(0, Math.min(video.duration - 0.05, originalTime)));
+        if (!wasPaused && previewing) await video.play();
+      } catch { /* Keep the preview stopped if the browser cannot restore the frame. */ }
+    }
+    return frames;
+  }
+
+  function currentAudioAnalysisForProject() {
+    if (!localAudioScan || localAudioScan.projectId !== currentProject?.id) return null;
+    const sourceIn = localAudioScan.sourceIn || 0;
+    const sourceOut = localAudioScan.sourceOut ?? localAudioScan.durationSeconds;
+    const speed = Math.max(0.25, Number(localAudioScan.speed) || 1);
+    const silenceSegments = localAudioScan.silenceSegments.map((segment) => {
+      const clipSourceStart = Math.max(segment.startSeconds, sourceIn);
+      const clipSourceEnd = Math.min(segment.endSeconds, sourceOut);
+      const durationSeconds = Math.max(0, (clipSourceEnd - clipSourceStart) / speed);
+      return {
+        startSeconds: localAudioScan.timelineStart + Math.max(0, clipSourceStart - sourceIn) / speed,
+        endSeconds: localAudioScan.timelineStart + Math.max(0, clipSourceEnd - sourceIn) / speed,
+        durationSeconds
+      };
+    }).filter((segment) =>
+      segment.endSeconds <= currentProject.durationSeconds + 0.1 &&
+      segment.durationSeconds >= 0.4 &&
+      segment.endSeconds > segment.startSeconds
+    );
+    return silenceSegments.length ? {
+      durationSeconds: currentProject.durationSeconds,
+      silenceSegments
+    } : null;
+  }
+
+  function renderCopilotMediaMarkers(markers, emptyMessage = "") {
+    const target = byId("media-copilot-media-markers");
+    if (!target) return;
+    target.replaceChildren();
+    if (!Array.isArray(markers) || !markers.length) {
+      if (emptyMessage) target.append(makeElement("p", "media-copilot-marker-empty", emptyMessage));
+      return;
+    }
+    markers.slice(0, 16).forEach((marker) => {
+      const item = makeElement("article", "media-copilot-marker media-copilot-marker-" + (marker.severity || "suggestion"));
+      const heading = makeElement("strong", "", marker.title || "Review point");
+      const detail = makeElement("span", "", marker.detail || "");
+      const row = makeElement("div", "media-copilot-marker-row");
+      const time = Math.max(0, Math.min(currentProject?.durationSeconds || 0, Number(marker.timeSeconds) || 0));
+      const timeLabel = makeElement("small", "", time.toFixed(1) + "s");
+      const jump = makeElement("button", "item-action", "Jump to timeline");
+      jump.type = "button";
+      jump.addEventListener("click", () => {
+        renderPreviewAtTime(time * 1000);
+        updateCopilotContext();
+      });
+      row.append(timeLabel, jump);
+      item.append(heading, detail, row);
+      target.append(item);
+    });
+  }
+
+  async function runMediaVisualAnalysis() {
+    if (!currentProject || mediaAnalysisBusy) return;
+    const output = byId("media-copilot-answer");
+    const button = byId("media-copilot-analyze-video");
+    mediaAnalysisBusy = true;
+    if (button) button.disabled = true;
+    if (output) output.textContent = "Sampling up to four frames locally. The original video file stays on this device…";
+    try {
+      const frames = await captureSelectedVideoFrames();
+      const result = await api("/api/media/analyze", {
+        method: "POST",
+        body: JSON.stringify({
+          project: {
+            title: currentProject.title,
+            format: currentProject.format,
+            platform: currentProject.platform,
+            language: currentProject.language,
+            tone: currentProject.tone,
+            durationSeconds: currentProject.durationSeconds
+          },
+          question: "Review the selected timeline clip for visual continuity, repeated-looking shots, framing, title readability and practical edit improvements. Give time-coded findings.",
+          frames,
+          audioAnalysis: currentAudioAnalysisForProject()
+        })
+      });
+      const analysis = result.analysis || {};
+      const findings = Array.isArray(analysis.visualFindings) ? analysis.visualFindings : [];
+      const suggestions = Array.isArray(analysis.editSuggestions) ? analysis.editSuggestions : [];
+      const limitations = Array.isArray(analysis.limitations) ? analysis.limitations : [];
+      const lines = [
+        "VISUAL REVIEW",
+        analysis.summary || "No summary returned.",
+        ...(suggestions.length ? ["", "EDIT SUGGESTIONS", ...suggestions.map((item) => "• " + item)] : []),
+        ...(limitations.length ? ["", "LIMITS", ...limitations.map((item) => "• " + item)] : [])
+      ];
+      if (output) output.textContent = lines.join("\n");
+      renderCopilotMediaMarkers(findings.map((finding) => ({
+        timeSeconds: finding.timeSeconds,
+        severity: finding.severity,
+        title: String(finding.severity || "suggestion").toUpperCase() + " · " + Number(finding.timeSeconds || 0).toFixed(1) + "s",
+        detail: String(finding.observation || "") + " — " + String(finding.recommendation || "")
+      })), "Visual review returned no time-coded findings. Preview the clip and decide what to change.");
+    } catch (error) {
+      if (output) output.textContent = error.message + "\nText-based smart checks are still available above.";
+    } finally {
+      mediaAnalysisBusy = false;
+      updateCopilotContext();
+    }
+  }
+
+  async function scanSelectedAudioClip() {
+    if (!currentProject || mediaAnalysisBusy) return;
+    const selection = selectedTimelineClip();
+    const asset = selection ? timelineAssets.get(selection.clip.id) : null;
+    const output = byId("media-copilot-answer");
+    if (!selection || asset?.type !== "audio" || !asset.file) {
+      if (output) output.textContent = "Select an attached audio clip on an Audio track first. This scan runs locally and does not upload the sound.";
+      return;
+    }
+    if (asset.file.size > 25 * 1024 * 1024) {
+      if (output) output.textContent = "For this local scan, choose an audio file under 25 MiB. Your original file remains untouched.";
+      return;
+    }
+    mediaAnalysisBusy = true;
+    const button = byId("media-copilot-scan-audio");
+    if (button) button.disabled = true;
+    if (output) output.textContent = "Scanning audio loudness locally for long low-volume intervals…";
+    let context = null;
+    try {
+      const AudioContextType = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextType) throw new Error("This browser does not support local audio decoding.");
+      context = new AudioContextType();
+      const buffer = await context.decodeAudioData(await asset.file.arrayBuffer());
+      if (!Number.isFinite(buffer.duration) || buffer.duration > 600) {
+        throw new Error("Choose an audio clip of ten minutes or less for this quick local scan.");
+      }
+      const windowSeconds = 0.05;
+      const silenceThreshold = 0.007;
+      const minSilenceSeconds = 0.45;
+      const sampleCount = buffer.length;
+      const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index));
+      const step = Math.max(1, Math.floor(buffer.sampleRate * windowSeconds));
+      const silenceSegments = [];
+      let silenceStart = null;
+      let energySum = 0;
+      let energyWindows = 0;
+      let peak = 0;
+      for (let start = 0; start < sampleCount; start += step) {
+        if (start > 0 && Math.floor(start / step) % 40 === 0) {
+          await new Promise((resolve) => window.setTimeout(resolve, 0));
+        }
+        const end = Math.min(sampleCount, start + step);
+        let sumSquares = 0;
+        let count = 0;
+        for (const channel of channels) {
+          for (let index = start; index < end; index++) {
+            const sample = channel[index] || 0;
+            const magnitude = Math.abs(sample);
+            if (magnitude > peak) peak = magnitude;
+            sumSquares += sample * sample;
+            count++;
+          }
+        }
+        const rms = count ? Math.sqrt(sumSquares / count) : 0;
+        energySum += rms;
+        energyWindows++;
+        const time = start / buffer.sampleRate;
+        if (rms < silenceThreshold) {
+          if (silenceStart === null) silenceStart = time;
+        } else if (silenceStart !== null) {
+          const silenceEnd = time;
+          if (silenceEnd - silenceStart >= minSilenceSeconds) {
+            silenceSegments.push({
+              startSeconds: silenceStart,
+              endSeconds: silenceEnd,
+              durationSeconds: silenceEnd - silenceStart
+            });
+          }
+          silenceStart = null;
+        }
+      }
+      if (silenceStart !== null && buffer.duration - silenceStart >= minSilenceSeconds) {
+        silenceSegments.push({
+          startSeconds: silenceStart,
+          endSeconds: buffer.duration,
+          durationSeconds: buffer.duration - silenceStart
+        });
+      }
+      const averageRms = energyWindows ? energySum / energyWindows : 0;
+      localAudioScan = {
+        projectId: currentProject.id,
+        clipId: selection.clip.id,
+        timelineStart: Number(selection.clip.start || 0),
+        sourceIn: Math.max(0, Number(selection.clip.sourceIn) || 0),
+        sourceOut: selection.clip.sourceOut === null || selection.clip.sourceOut === undefined
+          ? buffer.duration : Math.min(buffer.duration, Number(selection.clip.sourceOut)),
+        speed: Math.max(0.25, Number(selection.clip.speed) || 1),
+        durationSeconds: buffer.duration,
+        silenceSegments: silenceSegments.slice(0, 24),
+        averageDb: 20 * Math.log10(Math.max(0.000001, averageRms)),
+        peakDb: 20 * Math.log10(Math.max(0.000001, peak))
+      };
+      const lines = [
+        "LOCAL AUDIO SCAN COMPLETE",
+        "Duration: " + buffer.duration.toFixed(1) + "s · " + localAudioScan.silenceSegments.length + " low-volume candidate interval(s).",
+        "Average level: " + localAudioScan.averageDb.toFixed(1) + " dBFS · Peak: " + localAudioScan.peakDb.toFixed(1) + " dBFS.",
+        "",
+        ...localAudioScan.silenceSegments.map((segment) => {
+          const sourceStart = Math.max(segment.startSeconds, localAudioScan.sourceIn);
+          const sourceEnd = Math.min(segment.endSeconds, localAudioScan.sourceOut);
+          const timelineStart = localAudioScan.timelineStart + Math.max(0, sourceStart - localAudioScan.sourceIn) / localAudioScan.speed;
+          const timelineEnd = localAudioScan.timelineStart + Math.max(0, sourceEnd - localAudioScan.sourceIn) / localAudioScan.speed;
+          return timelineEnd > timelineStart
+            ? timelineStart.toFixed(2) + "s – " + timelineEnd.toFixed(2) + "s · " +
+                ((timelineEnd - timelineStart)).toFixed(2) + "s low-volume candidate"
+            : null;
+        }).filter(Boolean),
+        "",
+        "These are signal-level candidates, not proof of a bad take or missing speech. Review before trimming. Nothing was changed."
+      ];
+      if (output) output.textContent = lines.join("\n");
+      renderCopilotMediaMarkers(localAudioScan.silenceSegments.map((segment) => ({
+        timeSeconds: localAudioScan.timelineStart + Math.max(0, segment.startSeconds - localAudioScan.sourceIn) / localAudioScan.speed,
+        severity: "info",
+        title: "Low-volume candidate · " + segment.durationSeconds.toFixed(2) + "s",
+        detail: "This is a signal-level pause candidate, not proof of missing speech. Listen before trimming."
+      })), "No sustained low-volume intervals were found above the configured threshold.");
+    } catch (error) {
+      localAudioScan = null;
+      if (output) output.textContent = error.message + " Use a browser-supported MP3, WAV, M4A or AAC audio file.";
+    } finally {
+      if (context && context.state !== "closed") context.close().catch(() => {});
+      mediaAnalysisBusy = false;
+      updateCopilotContext();
+    }
   }
 
   const VISUAL_CHOICES = [
@@ -1027,6 +1628,7 @@ export function createMediaWorkspace({ api, toast }) {
       root.append(row);
     }
     renderTimelineInspector();
+    updateCopilotContext();
     for (const id of ["media-timeline-add-video", "media-timeline-add-overlay", "media-timeline-add-audio"]) {
       const button = byId(id);
       if (button) button.disabled = currentProject.status !== "draft" || currentProject.tracks.length >= 8;
@@ -1471,6 +2073,7 @@ export function createMediaWorkspace({ api, toast }) {
   }
 
   function renderProjectList() {
+    refreshStudioDashboardMetrics();
     const target = byId("media-project-list");
     if (!target) return;
     target.replaceChildren();
@@ -1678,6 +2281,7 @@ export function createMediaWorkspace({ api, toast }) {
     }
     selectedProjectId = id;
     currentProject = structuredClone(selected);
+    ensureCopilotUI();
     byId("media-editor").classList.remove("hidden");
     byId("media-editor-project-title").value = currentProject.title;
     byId("media-editor-audience").value = currentProject.audience || "";
@@ -1694,6 +2298,8 @@ export function createMediaWorkspace({ api, toast }) {
     setEditorControls();
     refreshAssetLibrary();
     restoreLibraryAssets(currentProject);
+    updateCopilotContext();
+    renderCopilotAudit();
   }
 
   function wrapCanvasText(ctx, value, maxWidth, maxLines) {
@@ -2513,6 +3119,57 @@ export function createMediaWorkspace({ api, toast }) {
     setEditorControls();
   }
 
+  async function inspectExportBlob(blob, expected) {
+    if (typeof document === "undefined" || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") {
+      return { available: false, verified: false, issues: ["This browser cannot inspect the exported file metadata."] };
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+    try {
+      await new Promise((resolve, reject) => {
+        const timer = window.setTimeout(() => reject(new Error("Video metadata inspection timed out.")), 12000);
+        const finish = (handler, value) => {
+          window.clearTimeout(timer);
+          video.removeEventListener("loadedmetadata", onLoaded);
+          video.removeEventListener("error", onError);
+          handler(value);
+        };
+        const onLoaded = () => finish(resolve);
+        const onError = () => finish(reject, new Error("The browser could not read the exported video's metadata."));
+        video.addEventListener("loadedmetadata", onLoaded, { once: true });
+        video.addEventListener("error", onError, { once: true });
+        video.src = objectUrl;
+        video.load();
+      });
+      return {
+        available: true,
+        ...assessMediaExport({
+          blobSizeBytes: blob.size,
+          mimeType: blob.type,
+          actualWidth: video.videoWidth,
+          actualHeight: video.videoHeight,
+          actualDurationSeconds: video.duration,
+          expectedWidth: expected.width,
+          expectedHeight: expected.height,
+          expectedDurationSeconds: expected.durationSeconds
+        })
+      };
+    } catch (error) {
+      return {
+        available: false,
+        verified: false,
+        issues: [error instanceof Error ? error.message : "Video metadata inspection was unavailable."]
+      };
+    } finally {
+      video.removeAttribute("src");
+      video.load();
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
   async function exportWebm() {
     const project = approvedProject();
     if (typeof MediaRecorder === "undefined" || typeof HTMLCanvasElement.prototype.captureStream !== "function") {
@@ -2675,11 +3332,26 @@ export function createMediaWorkspace({ api, toast }) {
         throw new Error("Video export cancelled. No file was downloaded.");
       }
       const blob = await finished;
+      if (!blob || blob.size < 1024) {
+        throw new Error("The browser produced an empty or incomplete video file. It was not downloaded.");
+      }
+      const verification = await inspectExportBlob(blob, {
+        width: canvas.width,
+        height: canvas.height,
+        durationSeconds: project.durationSeconds
+      });
       const suffix = hasAudio ? "-mixed-audio" + extension : extension;
       downloadBlob(cleanFileName(project.title) + suffix, blob);
-      setExportStatus("Video export finished as " + extension.slice(1).toUpperCase() +
-        (hasAudio ? " with the selected local audio mix." : " without audio.") +
-        " Preview the downloaded file before using it.");
+      if (verification.verified) {
+        setExportStatus("Export verified: " + verification.actualWidth + "×" + verification.actualHeight +
+          ", " + formatDurationLabel(verification.actualDurationSeconds) + ", " +
+          (hasAudio ? "audio mix included." : "silent video.") +
+          " Review the final picture and sound before publishing.");
+      } else {
+        const details = verification.issues?.length ? " " + verification.issues.join(" ") : "";
+        setExportStatus("Video downloaded, but automatic verification was not completed." +
+          details + " Preview the file and check its picture, duration and sound before publishing.", true);
+      }
     } finally {
       if (animation) cancelAnimationFrame(animation);
       if (recorder && recorder.state !== "inactive") recorder.stop();
@@ -2828,6 +3500,8 @@ export function createMediaWorkspace({ api, toast }) {
   function initialize() {
     if (initialized) return;
     initialized = true;
+    ensureStudioCommandDeck();
+    ensureCopilotUI();
 
     byId("media-asset-library-file")?.addEventListener("change", (event) => {
       pendingAssetLibraryFile = event.target.files?.[0] || null;
@@ -2948,6 +3622,8 @@ export function createMediaWorkspace({ api, toast }) {
     byId("media-editor-close")?.addEventListener("click", () => {
       currentProject = null;
       stopPreview();
+      setCopilotOpen(false);
+      byId("media-editor").classList.remove("has-ai-sidecar");
       byId("media-editor").classList.add("hidden");
     });
     byId("media-export-json")?.addEventListener("click", () => {

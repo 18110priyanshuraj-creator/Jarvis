@@ -515,6 +515,14 @@ There are two separate Canva control paths:
 - Android hands-free commands can toggle selected Canva text formatting, set a bounded font size, and open the selected-media Replace control when the installed Canva app is foregrounded. File selection and final visual verification remain manual.
 - Repository license and compatibility decisions are recorded in [JARVIS repository feature harvest](docs/JARVIS_REPOSITORY_FEATURE_HARVEST.md).
 
+## Creator Copilot and media visual review (feature branch)
+
+- The Media Studio editor has a collapsible right-side JARVIS copilot and a Creator Command Deck linking the existing video, campaign, trend/SEO, thumbnail, research, Android and voice workspaces.
+- For a selected video clip, the user may explicitly send up to four downscaled still frames plus project metadata for AI visual review. The original video is not uploaded by this endpoint.
+- An optional audio-track scan decodes supported audio locally and marks long low-volume candidates; it does not auto-trim or assume a bad take.
+- Scene rewrites require preview, explicit apply and a separate Save changes action.
+- This is not full-motion video understanding, word-level transcription, diarized take detection or automatic repeated-speech removal. See [JARVIS Creator Copilot guide](docs/JARVIS_CREATOR_COPILOT_2026.md) for usage, privacy and limits.
+
 ## Android release and final acceptance
 
 Main includes the advanced multitrack Media Studio, bounded Canva accessibility drag support, and Creator Campaign Studio. See [JARVIS release and acceptance status](docs/JARVIS_RELEASE_AND_ACCEPTANCE.md) for the exact feature boundaries, the signed-APK workflow, required private GitHub Actions secrets, and the physical Galaxy Tab A9 acceptance checklist.
