@@ -8,6 +8,11 @@ const ENV_KEYS = [
   "JARVIS_AI_REQUEST_TIMEOUT_MS", "JARVIS_AI_RETRY_ATTEMPTS"
 ];
 
+for (let index = 1; index <= 7; index++) {
+  ENV_KEYS.push(`JARVIS_GEMINI_API_KEY_${index}`, `GEMINI_API_KEY_${index}`);
+}
+ENV_KEYS.push("JARVIS_GEMINI_API_KEY", "GEMINI_API_KEY");
+
 async function withEnv(values, callback) {
   const previous = Object.fromEntries(ENV_KEYS.map(key => [key, process.env[key]]));
   try {
@@ -130,5 +135,90 @@ test("AI provider rejects unsupported roles and empty responses", async () => {
       })),
       error => error.code === "AI_PROVIDER_EMPTY_RESPONSE"
     );
+  });
+});
+
+
+test("Gemini uses the current stable model and fails over across seven keys without exposing them", async () => {
+  const keys = Object.fromEntries(Array.from({ length: 7 }, (_, index) => [
+    `JARVIS_GEMINI_API_KEY_${index + 1}`, `gemini-secret-${index + 1}`
+  ]));
+  await withEnv({
+    NODE_ENV: "production",
+    JARVIS_AI_BASE_URL: "https://generativelanguage.googleapis.com/v1beta/openai",
+    JARVIS_AI_MODEL: "gemini-3.8-flash",
+    JARVIS_AI_ENABLED: "true",
+    JARVIS_AI_CHAT_ENABLED: "true",
+    JARVIS_AI_PLANNER_ENABLED: "true",
+    ...keys
+  }, async () => {
+    const status = getAIProviderStatus();
+    assert.equal(status.provider, "google-gemini");
+    assert.equal(status.model, "gemini-3.8-flash");
+    assert.equal(status.configured, true);
+    assert.equal(status.keyCount, 7);
+    assert.equal(status.failoverEnabled, true);
+    assert.equal(JSON.stringify(status).includes("gemini-secret"), false);
+
+    const authHeaders = [];
+    let calls = 0;
+    const statuses = [429, 403, 401, 503];
+    const result = await createChatCompletion([{ role: "user", content: "Hello JARVIS" }], {}, async (url, options) => {
+      calls++;
+      authHeaders.push(options.headers.Authorization);
+      assert.equal(url, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
+      assert.equal(options.headers["x-goog-api-client"], "jarvis-personal-assistant/1.0.0");
+      const failedStatus = statuses[calls - 1];
+      if (failedStatus) return { ok: false, status: failedStatus };
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "Gemini is ready." } }] }) };
+    });
+    assert.equal(result.provider, "google-gemini");
+    assert.equal(result.model, "gemini-3.8-flash");
+    assert.equal(result.content, "Gemini is ready.");
+    assert.equal(calls, 5);
+    assert.deepEqual(authHeaders, Array.from({ length: 5 }, (_, index) => `Bearer gemini-secret-${index + 1}`));
+  });
+});
+
+test("Gemini legacy single-key configuration remains supported without claiming seven-key failover", async () => {
+  await withEnv({
+    NODE_ENV: "production",
+    JARVIS_AI_BASE_URL: "https://generativelanguage.googleapis.com/v1beta/openai",
+    JARVIS_AI_MODEL: "gemini-3.8-flash",
+    JARVIS_AI_ENABLED: "true",
+    GEMINI_API_KEY: "legacy-gemini-secret"
+  }, async () => {
+    const status = getAIProviderStatus();
+    assert.equal(status.configured, true);
+    assert.equal(status.keyCount, 1);
+    assert.equal(status.failoverEnabled, false);
+    let authorization;
+    await createChatCompletion([{ role: "user", content: "Test" }], {}, async (_url, options) => {
+      authorization = options.headers.Authorization;
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "OK" } }] }) };
+    });
+    assert.equal(authorization, "Bearer legacy-gemini-secret");
+  });
+});
+
+test("Gemini stops on invalid request instead of wasting the remaining keys", async () => {
+  await withEnv({
+    NODE_ENV: "production",
+    JARVIS_AI_BASE_URL: "https://generativelanguage.googleapis.com/v1beta/openai",
+    JARVIS_AI_MODEL: "gemini-3.8-flash",
+    JARVIS_AI_ENABLED: "true",
+    ...Object.fromEntries(Array.from({ length: 7 }, (_, index) => [
+      `JARVIS_GEMINI_API_KEY_${index + 1}`, `gemini-secret-${index + 1}`
+    ]))
+  }, async () => {
+    let calls = 0;
+    await assert.rejects(
+      createChatCompletion([{ role: "user", content: "Test" }], {}, async () => {
+        calls++;
+        return { ok: false, status: 400 };
+      }),
+      error => error.code === "AI_PROVIDER_REQUEST_ERROR"
+    );
+    assert.equal(calls, 1);
   });
 });
