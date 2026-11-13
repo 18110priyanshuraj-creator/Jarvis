@@ -824,3 +824,19 @@
 .media-copilot-media-actions button:disabled {
   opacity: .42; cursor: not-allowed; transform: none;
 }
+
+
+.media-copilot-media-markers { display: grid; gap: 7px; }
+.media-copilot-marker {
+  display: grid; gap: 6px; padding: 9px 10px;
+  border: 1px solid rgba(121, 159, 210, .16); border-radius: 9px;
+  background: rgba(5, 12, 23, .72);
+}
+.media-copilot-marker strong { color: #dbe6f6; font-size: .68rem; }
+.media-copilot-marker > span { color: #91a2bc; font-size: .64rem; line-height: 1.5; overflow-wrap: anywhere; }
+.media-copilot-marker-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.media-copilot-marker-row small { color: #aac3e2; font-size: .62rem; font-variant-numeric: tabular-nums; }
+.media-copilot-marker-row button { min-height: 28px; padding: 4px 8px; font-size: .6rem; }
+.media-copilot-marker-warning { border-color: rgba(222, 163, 100, .3); }
+.media-copilot-marker-info { border-color: rgba(116, 155, 207, .22); }
+.media-copilot-marker-empty { margin: 0; color: #879bb7; font-size: .65rem; line-height: 1.5; }
