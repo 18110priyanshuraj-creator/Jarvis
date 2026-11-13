@@ -3878,6 +3878,33 @@ export function createMediaWorkspace({ api, toast }) {
       if (previewing) stopPreview();
       renderPreviewAtTime(Number(event.target.value) * 1000);
     });
+    byId("media-caption-file")?.addEventListener("change", async (event) => {
+      const file = event.target.files?.[0];
+      try { await importCaptionFile(file); }
+      catch (error) { setCaptionStatus(error.message, true); toast(error.message, true); }
+      finally { event.target.value = ""; }
+    });
+    byId("media-caption-enabled")?.addEventListener("change", updateCaptionSetting);
+    byId("media-caption-preset")?.addEventListener("change", updateCaptionSetting);
+    byId("media-caption-position")?.addEventListener("change", updateCaptionSetting);
+    byId("media-caption-size")?.addEventListener("change", updateCaptionSetting);
+    byId("media-caption-add")?.addEventListener("click", addCaptionCue);
+    byId("media-caption-clear")?.addEventListener("click", clearCaptions);
+    byId("media-caption-search")?.addEventListener("change", () => {
+      captionPage = 0;
+      renderCaptionWorkbench();
+    });
+    byId("media-caption-list")?.addEventListener("input", handleCaptionListInput);
+    byId("media-caption-list")?.addEventListener("change", handleCaptionListChange);
+    byId("media-caption-list")?.addEventListener("click", handleCaptionListClick);
+    byId("media-caption-page-prev")?.addEventListener("click", () => {
+      captionPage = Math.max(0, captionPage - 1);
+      renderCaptionWorkbench();
+    });
+    byId("media-caption-page-next")?.addEventListener("click", () => {
+      captionPage++;
+      renderCaptionWorkbench();
+    });
     byId("media-timeline-inspector")?.addEventListener("input", updateTimelineField);
     byId("media-timeline-inspector")?.addEventListener("change", (event) => {
       if (event.target?.dataset?.timelineField) {
