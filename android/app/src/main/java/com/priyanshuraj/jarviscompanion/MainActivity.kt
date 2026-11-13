@@ -61,7 +61,7 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Executors
 
-internal const val DEFAULT_WORKSPACE_URL = "https://jarvis-personal-assistant-nutriton.vercel.app"
+internal const val DEFAULT_WORKSPACE_URL = "https://jarvis-personal-assistant-3j3d.onrender.com"
 
 class MainActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
