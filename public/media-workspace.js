@@ -2272,6 +2272,221 @@ export function createMediaWorkspace({ api, toast }) {
       : "Approve the storyboard before exporting. Approval does not publish or upload anything.";
   }
 
+  function setCaptionStatus(message, isError = false) {
+    const target = byId("media-caption-status");
+    if (!target) return;
+    target.textContent = message;
+    target.classList.toggle("error-text", isError);
+  }
+
+  function captionClock(seconds) {
+    const value = Math.max(0, Number(seconds) || 0);
+    const minutes = Math.floor(value / 60);
+    const remainder = value - minutes * 60;
+    return String(minutes).padStart(2, "0") + ":" + remainder.toFixed(2).padStart(5, "0");
+  }
+
+  function renderCaptionWorkbench() {
+    if (!currentProject) return;
+    const cues = Array.isArray(currentProject.captionCues) ? currentProject.captionCues : [];
+    const style = normalizeCaptionStyle(currentProject.captionStyle);
+    currentProject.captionStyle = style;
+    const enabled = byId("media-caption-enabled");
+    const preset = byId("media-caption-preset");
+    const position = byId("media-caption-position");
+    const size = byId("media-caption-size");
+    if (enabled) enabled.checked = currentProject.captionsEnabled === true && cues.length > 0;
+    if (preset) preset.value = style.preset;
+    if (position) position.value = style.position;
+    if (size) size.value = style.size;
+
+    const search = String(byId("media-caption-search")?.value || "").trim().toLocaleLowerCase();
+    const filtered = search
+      ? cues.filter((cue) => cue.text.toLocaleLowerCase().includes(search))
+      : cues;
+    const pageSize = 20;
+    const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+    captionPage = Math.max(0, Math.min(captionPage, pageCount - 1));
+    const pageStart = captionPage * pageSize;
+    const pageCues = filtered.slice(pageStart, pageStart + pageSize);
+    const list = byId("media-caption-list");
+    if (list) {
+      list.replaceChildren();
+      if (!pageCues.length) {
+        list.append(makeElement("p", "media-caption-empty",
+          cues.length ? "No captions match this search." : "No timed captions yet. Import an SRT/WebVTT file or add a cue at the playhead."));
+      }
+      pageCues.forEach((cue, pageIndex) => {
+        const card = makeElement("article", "media-caption-row");
+        card.dataset.captionId = cue.id;
+        const heading = makeElement("div", "media-caption-row-heading");
+        const globalIndex = pageStart + pageIndex + 1;
+        heading.append(
+          makeElement("strong", "", "Cue " + globalIndex),
+          makeElement("span", "media-caption-time-label", captionClock(cue.startSeconds) + " → " + captionClock(cue.endSeconds))
+        );
+        const timing = makeElement("div", "media-caption-timing");
+        const startLabel = makeElement("label", "media-field");
+        startLabel.append(makeElement("span", "", "Start (seconds)"));
+        const startInput = makeElement("input", "media-scene-input");
+        startInput.type = "number";
+        startInput.min = "0";
+        startInput.max = String(currentProject.durationSeconds || 1200);
+        startInput.step = "0.05";
+        startInput.value = String(cue.startSeconds);
+        startInput.dataset.captionId = cue.id;
+        startInput.dataset.captionField = "startSeconds";
+        startLabel.append(startInput);
+        const endLabel = makeElement("label", "media-field");
+        endLabel.append(makeElement("span", "", "End (seconds)"));
+        const endInput = makeElement("input", "media-scene-input");
+        endInput.type = "number";
+        endInput.min = "0";
+        endInput.max = String(currentProject.durationSeconds || 1200);
+        endInput.step = "0.05";
+        endInput.value = String(cue.endSeconds);
+        endInput.dataset.captionId = cue.id;
+        endInput.dataset.captionField = "endSeconds";
+        endLabel.append(endInput);
+        timing.append(startLabel, endLabel);
+        const textLabel = makeElement("label", "media-caption-text-field");
+        textLabel.append(makeElement("span", "", "Caption text"));
+        const textInput = makeElement("textarea", "media-scene-input");
+        textInput.rows = 2;
+        textInput.maxLength = 500;
+        textInput.value = cue.text;
+        textInput.dataset.captionId = cue.id;
+        textInput.dataset.captionField = "text";
+        textLabel.append(textInput);
+        const actions = makeElement("div", "media-caption-actions");
+        const jump = makeElement("button", "item-action", "Jump to cue");
+        jump.type = "button";
+        jump.dataset.captionAction = "jump";
+        jump.dataset.captionId = cue.id;
+        const remove = makeElement("button", "item-action media-caption-remove", "Remove");
+        remove.type = "button";
+        remove.dataset.captionAction = "remove";
+        remove.dataset.captionId = cue.id;
+        actions.append(jump, remove);
+        card.append(heading, timing, textLabel, actions);
+        list.append(card);
+      });
+    }
+    const pageLabel = byId("media-caption-page-label");
+    if (pageLabel) pageLabel.textContent = filtered.length
+      ? "Showing " + (pageStart + 1) + "–" + Math.min(filtered.length, pageStart + pageSize) + " of " + filtered.length
+      : "No captions";
+    const previous = byId("media-caption-page-prev");
+    const next = byId("media-caption-page-next");
+    if (previous) previous.disabled = captionPage <= 0;
+    if (next) next.disabled = captionPage >= pageCount - 1;
+    const status = byId("media-caption-status");
+    if (status && !status.dataset.customMessage) {
+      status.textContent = cues.length
+        ? cues.length + " timed cue(s) · " + (currentProject.captionsEnabled ? "Burn-in enabled" : "Captions hidden from preview/export") +
+          " · Save changes to persist edits."
+        : "Import an SRT or WebVTT file, or add a cue manually. Timed captions are not automatically transcribed from speech.";
+    }
+  }
+
+  function updateCaptionSetting() {
+    if (!currentProject || currentProject.status !== "draft") return;
+    const cues = currentProject.captionCues || [];
+    currentProject.captionStyle = normalizeCaptionStyle({
+      preset: byId("media-caption-preset")?.value,
+      position: byId("media-caption-position")?.value,
+      size: byId("media-caption-size")?.value
+    });
+    currentProject.captionsEnabled = byId("media-caption-enabled")?.checked === true && cues.length > 0;
+    renderPreviewAtTime(previewTimeMs);
+    renderCaptionWorkbench();
+  }
+
+  async function importCaptionFile(file) {
+    if (!currentProject || currentProject.status !== "draft" || !file) return;
+    if (file.size > 250_000) throw new Error("Subtitle files must be 250 KB or smaller.");
+    const cues = parseTimedCaptionFile(await file.text(), currentProject.durationSeconds);
+    currentProject.captionCues = normalizeCaptionCues(cues, currentProject.durationSeconds);
+    currentProject.captionsEnabled = currentProject.captionCues.length > 0;
+    captionPage = 0;
+    if (byId("media-caption-search")) byId("media-caption-search").value = "";
+    renderCaptionWorkbench();
+    renderPreviewAtTime(previewTimeMs);
+    setCaptionStatus("Imported " + currentProject.captionCues.length + " timed captions from " + file.name +
+      ". The subtitle file itself stays local; press Save changes to save cue text and timing with this project.");
+    toast("Imported " + currentProject.captionCues.length + " subtitle cues.");
+  }
+
+  function addCaptionCue() {
+    if (!currentProject || currentProject.status !== "draft") return;
+    const duration = Math.max(0, Number(currentProject.durationSeconds) || 0);
+    if (duration < 0.25) {
+      toast("Add a timeline clip before creating a caption cue.", true);
+      return;
+    }
+    const startSeconds = Math.min(Math.max(0, previewTimeMs / 1000), Math.max(0, duration - 0.25));
+    const endSeconds = Math.min(duration, startSeconds + Math.min(2.5, duration - startSeconds));
+    const id = "caption-" + (window.crypto?.randomUUID?.() || Date.now() + "-" + Math.floor(Math.random() * 100000));
+    currentProject.captionCues = normalizeCaptionCues([
+      ...(currentProject.captionCues || []),
+      { id, startSeconds, endSeconds, text: "Edit this caption" }
+    ], duration);
+    currentProject.captionsEnabled = true;
+    const index = currentProject.captionCues.findIndex((cue) => cue.id === id);
+    captionPage = Math.max(0, Math.floor(Math.max(0, index) / 20));
+    renderCaptionWorkbench();
+    renderPreviewAtTime(previewTimeMs);
+    const input = byId("media-caption-list")?.querySelector('[data-caption-id="' + id + '"][data-caption-field="text"]');
+    input?.focus();
+    input?.select();
+  }
+
+  function handleCaptionListInput(event) {
+    const cueId = event.target?.dataset?.captionId;
+    const field = event.target?.dataset?.captionField;
+    if (!cueId || !field || !currentProject || currentProject.status !== "draft") return;
+    const cue = currentProject.captionCues?.find((item) => item.id === cueId);
+    if (!cue) return;
+    if (field === "text") cue.text = String(event.target.value || "").slice(0, 500);
+    else cue[field] = Number(event.target.value);
+    renderPreviewAtTime(previewTimeMs);
+  }
+
+  function handleCaptionListChange(event) {
+    if (!currentProject || currentProject.status !== "draft") return;
+    const cueId = event.target?.dataset?.captionId;
+    if (!cueId || !event.target?.dataset?.captionField) return;
+    currentProject.captionCues = normalizeCaptionCues(currentProject.captionCues, currentProject.durationSeconds);
+    renderCaptionWorkbench();
+    renderPreviewAtTime(previewTimeMs);
+  }
+
+  function handleCaptionListClick(event) {
+    const button = event.target?.closest?.("[data-caption-action]");
+    if (!button || !currentProject || currentProject.status !== "draft") return;
+    const cue = currentProject.captionCues?.find((item) => item.id === button.dataset.captionId);
+    if (!cue) return;
+    if (button.dataset.captionAction === "jump") {
+      renderPreviewAtTime(cue.startSeconds * 1000);
+      updateCopilotContext();
+    } else if (button.dataset.captionAction === "remove") {
+      currentProject.captionCues = currentProject.captionCues.filter((item) => item.id !== cue.id);
+      if (!currentProject.captionCues.length) currentProject.captionsEnabled = false;
+      renderCaptionWorkbench();
+      renderPreviewAtTime(previewTimeMs);
+    }
+  }
+
+  function clearCaptions() {
+    if (!currentProject || currentProject.status !== "draft" || !currentProject.captionCues?.length) return;
+    if (!window.confirm("Clear all imported and manually added subtitle cues from this draft?")) return;
+    currentProject.captionCues = [];
+    currentProject.captionsEnabled = false;
+    captionPage = 0;
+    renderCaptionWorkbench();
+    renderPreviewAtTime(previewTimeMs);
+  }
+
   function selectProject(id) {
     const selected = projects.find((item) => item.id === id);
     if (!selected) return;
