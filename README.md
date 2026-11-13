@@ -485,6 +485,10 @@ Implementation contract: `docs/JARVIS_PHASE_20_KNOWLEDGE_MANAGER.md`. Physical G
 
 ## Canva Connect design automation (feature branch)
 
+There are two separate Canva control paths:
+- **Android UI control** does not require Canva OAuth. It operates only the selected Canva app's visible, exact accessible controls; the user selects the design element, chooses files, and verifies the final result.
+- **Optional Canva MCP design editor** requires a Canva developer app, the existing JARVIS Canva OAuth client settings, and the encrypted token vault. It adds supported design-element edits via reviewable transactions, but does not unlock arbitrary video timeline trimming, keyframes, or audio-track editing.
+
 - Canva OAuth now requests design metadata/read, design content read/write, brand-template metadata/content read, and asset read/write scopes. Existing thumbnail-only connections remain recognizable but must be reauthorized to enable the expanded automation.
 - The Creator Studio can list Canva designs and brand templates, inspect design/template data sets, create a design from a brand template or compatible existing design, update compatible template-backed fields on an existing design, and submit/poll export jobs including MP4, PNG, PDF, JPG, GIF and PPTX.
 - Autofill field values are explicit typed JSON supplied and reviewed by the user. Image/video fields require an asset ID that already exists in Canva; JARVIS does not invent an uploaded asset ID.
