@@ -63,3 +63,13 @@ test("invalid files and unsupported caption styles are handled safely", () => {
     preset: "bold-box", position: "bottom", size: "medium"
   });
 });
+
+
+test("rejects cues with missing or non-numeric timestamps", () => {
+  const cues = normalizeCaptionCues([
+    { id: "missing-start", endSeconds: 3, text: "No start" },
+    { id: "bad-time", startSeconds: "nope", endSeconds: 4, text: "Bad time" },
+    { id: "valid", startSeconds: 1, endSeconds: 2, text: "Good cue" }
+  ], 10);
+  assert.deepEqual(cues.map(cue => cue.text), ["Good cue"]);
+});
