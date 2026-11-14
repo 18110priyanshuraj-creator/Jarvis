@@ -10,6 +10,9 @@ import { createAutoHealWorkspace } from "./auto-heal.js";
 import { createSpecialistWorkersWorkspace } from "./specialist-workers.js";
 import { createScheduleWorkspace } from "./schedule-workspace.js";
 import { parseMediaCreationIntent } from "./media-intent.js";
+import { createSessionEpoch } from "./session-epoch.js";
+
+const sessionEpoch = createSessionEpoch();
 const $ = (selector) => document.querySelector(selector);
 const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, taskPlan: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", knowledgeFilter: "all", knowledgeSummary: { total: 0, trusted: 0, unreviewed: 0, rejected: 0 }, diagnostics: null, activeView: "chat" };
 let toastTimer;
@@ -23,6 +26,9 @@ function toast(message, isError = false) {
 }
 
 async function api(url, options = {}) {
+  // Bind each request to the auth state it started under. A late 401 from a
+  // pre-login request must not hide the workspace after a newer login.
+  const requestEpoch = sessionEpoch.capture();
   const headers = { ...(options.headers || {}) };
   if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   let response;
@@ -33,7 +39,7 @@ async function api(url, options = {}) {
   }
   const payload = await response.json().catch(() => ({}));
   if (response.status === 401 && url !== "/api/login") {
-    showLogin();
+    sessionEpoch.runIfCurrent(requestEpoch, showLogin);
     const message = url === "/api/session"
       ? "Sign-in was not retained by this browser. Enable site cookies, then sign in again."
       : "Your session expired. Please sign in again.";
@@ -53,7 +59,8 @@ async function api(url, options = {}) {
 // lets the full dashboard re-run its authenticated boot after that script
 // confirms the browser retained the HttpOnly session cookie.
 window.addEventListener("jarvis:authenticated", () => {
-  void boot();
+  // Advance the auth epoch so any pre-login request/boot becomes stale.
+  void boot(sessionEpoch.advance());
 });
 
 const mediaWorkspace = createMediaWorkspace({ api, toast });
@@ -82,14 +89,18 @@ function showApp() {
   $("#app-shell").classList.remove("hidden");
 }
 
-async function boot() {
+async function boot(bootEpoch = sessionEpoch.capture()) {
   try {
     await api("/api/session");
   } catch (error) {
+    // Ignore results from a boot that started before a newer sign-in.
+    if (!sessionEpoch.isCurrent(bootEpoch)) return;
     showLogin();
     if (error.status !== 401) toast(error.message, true);
     return;
   }
+
+  if (!sessionEpoch.isCurrent(bootEpoch)) return;
 
   // Authentication and workspace hydration are separate. A non-auth data error
   // must not send an already signed-in user back to the password screen.
@@ -97,15 +108,21 @@ async function boot() {
   try {
     await refreshState();
   } catch (error) {
+    if (!sessionEpoch.isCurrent(bootEpoch)) return;
     toast("You are signed in, but some workspace data could not load: " + error.message, true);
     return;
   }
 
+  if (!sessionEpoch.isCurrent(bootEpoch)) return;
+
   try {
     await creatorCampaignStudio.loadHistory();
   } catch (error) {
+    if (!sessionEpoch.isCurrent(bootEpoch)) return;
     toast("Workspace unlocked. Creator history could not be loaded: " + error.message, true);
   }
+
+  if (!sessionEpoch.isCurrent(bootEpoch)) return;
 
   const params = new URLSearchParams(window.location.search);
   if (params.get("integration") === "google_drive_connected" && params.get("capability") === "youtube_upload") {
@@ -2037,6 +2054,8 @@ function renderTasks() {
 }
 
 $("#logout-button").addEventListener("click", async () => {
+  // Invalidate any in-flight authenticated boot before signing out.
+  sessionEpoch.advance();
   stopHandsFreeMode();
   try { await api("/api/logout", { method: "POST", body: JSON.stringify({}) }); } catch { /* always return to sign-in */ }
   state.chats = [];
