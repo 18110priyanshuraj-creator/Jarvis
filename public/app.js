@@ -25,13 +25,27 @@ function toast(message, isError = false) {
 async function api(url, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  const response = await fetch(url, { ...options, headers, credentials: "same-origin" });
+  let response;
+  try {
+    response = await fetch(url, { ...options, headers, credentials: "same-origin", cache: "no-store" });
+  } catch {
+    throw new Error("Cannot reach JARVIS right now. Check your connection and try again.");
+  }
   const payload = await response.json().catch(() => ({}));
   if (response.status === 401 && url !== "/api/login") {
     showLogin();
-    throw new Error("Your session expired. Please sign in again.");
+    const message = url === "/api/session"
+      ? "Sign-in was not retained by this browser. Enable site cookies, then sign in again."
+      : "Your session expired. Please sign in again.";
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
-  if (!response.ok) throw new Error(payload.error || "Request failed. Please try again.");
+  if (!response.ok) {
+    const error = new Error(payload.error || "Request failed. Please try again.");
+    error.status = response.status;
+    throw error;
+  }
   return payload;
 }
 
@@ -64,29 +78,45 @@ function showApp() {
 async function boot() {
   try {
     await api("/api/session");
-    showApp();
-    await refreshState();
-    await creatorCampaignStudio.loadHistory();
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("integration") === "google_drive_connected" && params.get("capability") === "youtube_upload") {
-      toast("YouTube upload permission connected. Review an approved video before uploading.");
-    } else if (params.get("integration") === "google_drive_connected" && params.get("capability") === "youtube_analytics") {
-      toast("Read-only YouTube Analytics permission connected. Open Creator Studio to load channel reports.");
-    } else if (params.get("integration") === "google_drive_connected" && params.get("capability") === "create_docs") {
-      toast("Google Drive connected. New Google Docs can now be created after preview and confirmation.");
-    } else if (params.get("integration") === "google_drive_connected") {
-      toast("Google Drive connected with read-only metadata access.");
-    } else if (params.get("integration") === "google_drive_error") {
-      toast("Google Drive was not connected. Check the OAuth setup and try again.", true);
-    } else if (params.get("integration") === "canva_connected") {
-      toast("Canva connected. Open Creator Studio to create a thumbnail design.");
-    } else if (params.get("integration") === "canva_error") {
-      toast("Canva was not connected. Check the Canva developer credentials and callback URL.", true);
-    }
-    if (params.has("integration")) window.history.replaceState({}, "", window.location.pathname);
-  } catch {
+  } catch (error) {
     showLogin();
+    if (error.status !== 401) toast(error.message, true);
+    return;
   }
+
+  // Authentication and workspace hydration are separate. A non-auth data error
+  // must not send an already signed-in user back to the password screen.
+  showApp();
+  try {
+    await refreshState();
+  } catch (error) {
+    toast("You are signed in, but some workspace data could not load: " + error.message, true);
+    return;
+  }
+
+  try {
+    await creatorCampaignStudio.loadHistory();
+  } catch (error) {
+    toast("Workspace unlocked. Creator history could not be loaded: " + error.message, true);
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("integration") === "google_drive_connected" && params.get("capability") === "youtube_upload") {
+    toast("YouTube upload permission connected. Review an approved video before uploading.");
+  } else if (params.get("integration") === "google_drive_connected" && params.get("capability") === "youtube_analytics") {
+    toast("Read-only YouTube Analytics permission connected. Open Creator Studio to load channel reports.");
+  } else if (params.get("integration") === "google_drive_connected" && params.get("capability") === "create_docs") {
+    toast("Google Drive connected. New Google Docs can now be created after preview and confirmation.");
+  } else if (params.get("integration") === "google_drive_connected") {
+    toast("Google Drive connected with read-only metadata access.");
+  } else if (params.get("integration") === "google_drive_error") {
+    toast("Google Drive was not connected. Check the OAuth setup and try again.", true);
+  } else if (params.get("integration") === "canva_connected") {
+    toast("Canva connected. Open Creator Studio to create a thumbnail design.");
+  } else if (params.get("integration") === "canva_error") {
+    toast("Canva was not connected. Check the Canva developer credentials and callback URL.", true);
+  }
+  if (params.has("integration")) window.history.replaceState({}, "", window.location.pathname);
 }
 
 async function refreshState() {
@@ -2005,12 +2035,24 @@ $("#login-form").addEventListener("submit", async (event) => {
   button.disabled = true;
   try {
     await api("/api/login", { method: "POST", body: JSON.stringify({ password: $("#password").value }) });
+    // Confirm that the browser retained the HttpOnly cookie before unlocking UI.
+    await api("/api/session");
     $("#password").value = "";
     showApp();
-    await refreshState();
-    toast("Workspace unlocked.");
-  } catch (error) { toast(error.message, true); }
-  finally { button.disabled = false; }
+    try {
+      await refreshState();
+      await creatorCampaignStudio.loadHistory();
+      toast("Workspace unlocked.");
+    } catch (error) {
+      // Keep the app open after successful authentication; report data-loading failures separately.
+      toast("Signed in, but some workspace data could not load: " + error.message, true);
+    }
+  } catch (error) {
+    showLogin();
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
 });
 
 $("#logout-button").addEventListener("click", async () => {

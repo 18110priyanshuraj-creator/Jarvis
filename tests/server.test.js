@@ -220,9 +220,13 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(login.status, 200);
   const cookieHeader = login.headers.get("set-cookie") || "";
   assert.match(cookieHeader, /HttpOnly/i);
-  assert.match(cookieHeader, /SameSite=Strict/i);
+  assert.match(cookieHeader, /SameSite=Lax/i);
+  assert.match(login.headers.get("cache-control") || "", /no-store/i);
   cookie = cookieHeader.split(";")[0];
   assert.match(cookie, /^jarvis_session=/);
+  const confirmedSession = await request("/api/session");
+  assert.equal(confirmedSession.status, 200);
+  assert.equal((await confirmedSession.json()).authenticated, true);
 
   const creatorCampaignResponse = await request("/api/creator/campaigns", {
     method: "POST",
