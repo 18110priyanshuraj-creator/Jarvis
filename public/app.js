@@ -49,6 +49,13 @@ async function api(url, options = {}) {
   return payload;
 }
 
+// Login is handled by the small standalone public/login.js script. This event
+// lets the full dashboard re-run its authenticated boot after that script
+// confirms the browser retained the HttpOnly session cookie.
+window.addEventListener("jarvis:authenticated", () => {
+  void boot();
+});
+
 const mediaWorkspace = createMediaWorkspace({ api, toast });
 const creatorStudio = createCreatorStudio({ api, toast });
 creatorStudio.init();
@@ -2028,32 +2035,6 @@ function renderTasks() {
   }
   renderStorageOverview();
 }
-
-$("#login-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const button = $("#login-button");
-  button.disabled = true;
-  try {
-    await api("/api/login", { method: "POST", body: JSON.stringify({ password: $("#password").value }) });
-    // Confirm that the browser retained the HttpOnly cookie before unlocking UI.
-    await api("/api/session");
-    $("#password").value = "";
-    showApp();
-    try {
-      await refreshState();
-      await creatorCampaignStudio.loadHistory();
-      toast("Workspace unlocked.");
-    } catch (error) {
-      // Keep the app open after successful authentication; report data-loading failures separately.
-      toast("Signed in, but some workspace data could not load: " + error.message, true);
-    }
-  } catch (error) {
-    showLogin();
-    toast(error.message, true);
-  } finally {
-    button.disabled = false;
-  }
-});
 
 $("#logout-button").addEventListener("click", async () => {
   stopHandsFreeMode();
