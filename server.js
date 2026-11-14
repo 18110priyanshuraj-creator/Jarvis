@@ -447,12 +447,12 @@ function parseCookies(header = "") {
 function setSessionCookie(res, token) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   res.setHeader("Set-Cookie", "jarvis_session=" + encodeURIComponent(token) +
-    "; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200" + secure);
+    "; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200" + secure);
 }
 
 function clearSessionCookie(res) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  res.setHeader("Set-Cookie", "jarvis_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0" + secure);
+  res.setHeader("Set-Cookie", "jarvis_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0" + secure);
 }
 
 function setGoogleOAuthCookie(res, value) {
@@ -495,6 +495,8 @@ async function requireAuth(req, res, next) {
 }
 
 app.use("/api", (req, res, next) => {
+  // Private API responses include session-bound data and must never enter browser caches.
+  res.setHeader("Cache-Control", "no-store");
   const hasBody = !["GET", "HEAD", "OPTIONS"].includes(req.method);
   const origin = req.get("origin");
   if (hasBody && origin) {
@@ -1082,7 +1084,8 @@ app.get("/api/diagnostics", requireAuth, diagnosticsLimiter, async (_req, res) =
 });
 
 app.post("/api/login", loginLimiter, async (req, res) => {
-  const candidate = cleanText(req.body?.password, 500);
+  // Passwords are opaque secrets: preserve whitespace exactly instead of text-normalizing them.
+  const candidate = typeof req.body?.password === "string" ? req.body.password.slice(0, 500) : "";
   if (!PASSWORD || !candidate || !passwordsMatch(candidate, PASSWORD)) {
     return res.status(401).json({ error: "Incorrect password or server password is not configured." });
   }
