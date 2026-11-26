@@ -410,6 +410,14 @@ The read controls appear only on live search source cards after page reading is 
 - The Android CI now runs JVM unit tests for sequential completion, queued-step cancellation, cancellation before first dispatch, user checkpoints and failed-step stopping before building the APK.
 - Full behavior and limitations: `docs/PHASE21_INTERRUPTIBLE_ANDROID_TASKS.md`.
 
+## Live Android Task Dashboard
+
+- Device Control can queue one short text task for a paired Android Companion. The queue is held in server memory for up to five minutes and removed when delivered or cancelled.
+- The phone checks for queued work only while the user-started Background voice foreground service is active. The service keeps its ongoing Android notification visible and requires on-phone approval before executing a device-action plan.
+- The authenticated dashboard shows background-session presence, plan review, completed step counts, task category and final status. Pause, Resume and Cancel controls are relayed to an active phone task.
+- The progress feed reports bounded status fields only. It does not include screen contents, screenshots, voice audio, raw task text, or private model reasoning; the queued task itself is delivered over the paired device's HTTPS connection.
+- Task state is a progress summary, not proof that a visual edit looks right. Review the result in the editor. VN editing still depends on its accessible controls and currently supports only the guarded semantic item-move action.
+
 ## System Readiness & Final Integration (Phase 22)
 
 - The authenticated **System Status** dashboard calls `GET /api/diagnostics` to inspect the primary data store, temporary chat storage mode, AI conversation and planner capabilities, live search, full-page reading, source-based answers, Google Drive OAuth readiness, external integration configuration and Android Companion pairing.
@@ -515,12 +523,15 @@ There are two separate Canva control paths:
 - Android hands-free commands can toggle selected Canva text formatting, set a bounded font size, and open the selected-media Replace control when the installed Canva app is foregrounded. File selection and final visual verification remain manual.
 - Repository license and compatibility decisions are recorded in [JARVIS repository feature harvest](docs/JARVIS_REPOSITORY_FEATURE_HARVEST.md).
 
-## Creator Copilot and media visual review (feature branch)
+## Creator Copilot and media visual review
 
 - The Media Studio editor has a collapsible right-side JARVIS copilot and a Creator Command Deck linking the existing video, campaign, trend/SEO, thumbnail, research, Android and voice workspaces.
+- The local Smart edit check flags missing scene-to-timeline links, visual gaps, overlapping main-track scene clips, duplicate clip IDs and overlapping enabled captions. It is a project-metadata heuristic and does not verify rendered frames or narration meaning.
 - For a selected video clip, the user may explicitly send up to four downscaled still frames plus project metadata for AI visual review. The original video is not uploaded by this endpoint.
 - An optional audio-track scan decodes supported audio locally and marks long low-volume candidates; it does not auto-trim or assume a bad take.
 - Scene rewrites require preview, explicit apply and a separate Save changes action.
+- The Copilot can now create a structured AI edit plan against the saved draft. Review each proposed scene rewrite, transition, audio level/mute, timeline move or source trim; select which operations to apply, then review and save the draft separately. Project context and the request go to the configured JARVIS AI provider; local media files are not included in edit-plan requests.
+- Edit plans are limited to the existing Media Studio project and timeline model. They do not control CapCut or other apps, run as a background service, or export/upload/publish. [CapCut's official ChatGPT/Codex plugin](https://www.capcut.com/mcp/chatgpt) is a separate integration and does not provide this JARVIS server with a CapCut connector; use JARVIS's local export and import the rendered file into CapCut for further editing.
 - This is not full-motion video understanding, word-level transcription, diarized take detection or automatic repeated-speech removal. See [JARVIS Creator Copilot guide](docs/JARVIS_CREATOR_COPILOT_2026.md) for usage, privacy and limits.
 
 ## Subtitle Studio and burn-in captions (feature branch)
@@ -534,7 +545,7 @@ There are two separate Canva control paths:
 
 ## Android release and final acceptance
 
-Main includes the advanced multitrack Media Studio, bounded Canva accessibility drag support, and Creator Campaign Studio. See [JARVIS release and acceptance status](docs/JARVIS_RELEASE_AND_ACCEPTANCE.md) for the exact feature boundaries, the signed-APK workflow, required private GitHub Actions secrets, and the physical Galaxy Tab A9 acceptance checklist.
+Main includes the advanced multitrack Media Studio, bounded semantic drag attempts for Canva and VN, and Creator Campaign Studio. JARVIS can reorder an item only when the user provides exact visible labels, verifies the target editor is foregrounded, and that installed app exposes Android's semantic drag actions. VN support still needs a real-device acceptance test. See [JARVIS release and acceptance status](docs/JARVIS_RELEASE_AND_ACCEPTANCE.md) for the exact feature boundaries, the signed-APK workflow, required private GitHub Actions secrets, and the physical Galaxy Tab A9 acceptance checklist.
 
 The regular CI workflow produces a **debug** APK for testing. A signed release APK is produced separately by `.github/workflows/release-android.yml` after the owner configures the four Android signing secrets. A green CI build is not proof of physical-device or Canva UI acceptance.
 

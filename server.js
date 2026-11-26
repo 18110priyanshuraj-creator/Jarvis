@@ -6,7 +6,7 @@ import { neon } from "@neondatabase/serverless";
 import path from "node:path";
 import fs from "node:fs/promises";
 import crypto from "node:crypto";
-import { runLocalBrain, searchLocalKnowledge } from "./brain.js";
+import { isLocalFirstAssistantRequest, runLocalBrain, searchLocalKnowledge } from "./brain.js";
 import { getIntelligenceStatus, resolveOfflineAssistantTurn } from "./services/intelligence-engine.js";
 import { classifyIntent } from "./services/nlu.js";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,7 @@ import { createSourceBasedAnswer, SOURCE_ANSWER_LIMITS } from "./services/source
 import { createChatCompletion, getAIProviderStatus } from "./services/ai-provider.js";
 import { buildMediaVisualAnalysisMessages, normalizeMediaVisualAnalysisInput, normalizeMediaVisualAnalysisResponse } from "./services/media-visual-analysis.js";
 import { approveMediaProject, createMediaDraft, MEDIA_FORMATS, MEDIA_LIMITS, normalizeMediaProject, updateMediaProject } from "./services/media-engine.js";
+import { buildMediaEditPlanMessages, normalizeMediaEditPlan } from "./services/media-edit-plan.js";
 import { createCreatorCampaignPack, CREATOR_CAMPAIGN_LIMITS, normalizeCreatorCampaign, updateCreatorCampaign } from "./services/creator-campaign.js";
 import {
   completeYouTubePublication,
@@ -791,8 +792,7 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
     }
   }
 
-  // Resolve deterministic requests before spending a model call. Live web research above
-  // remains first for prompts that need current information.
+  const conversationAIEnabled = isConversationAIEnabled();
   const offlineTurn = resolveOfflineAssistantTurn({
     message,
     memories: store.memories,
@@ -801,14 +801,15 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
     feedback: store.feedback,
     knowledge: buildAssistantKnowledgeContext(message)
   });
-  if (offlineTurn) {
+  // Keep exact calculations and personal-data lookups local. Open-ended messages
+  // should reach the configured model instead of being intercepted by canned text.
+  if (offlineTurn && (!conversationAIEnabled || isLocalFirstAssistantRequest(message))) {
     return {
       ...offlineTurn,
       answer: webNotice ? webNotice + "\n\n" + offlineTurn.answer : offlineTurn.answer
     };
   }
 
-  const conversationAIEnabled = isConversationAIEnabled();
   if (conversationAIEnabled) {
     try {
       const knowledgeContext = buildAssistantKnowledgeContext(message);
@@ -825,6 +826,13 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
     } catch (error) {
       console.error("Online AI request failed; using the offline brain:", safeErrorMetadata(error));
     }
+  }
+
+  if (offlineTurn) {
+    return {
+      ...offlineTurn,
+      answer: webNotice ? webNotice + "\n\n" + offlineTurn.answer : offlineTurn.answer
+    };
   }
 
   const answer = runLocalBrain({
@@ -3411,6 +3419,33 @@ app.post("/api/media/analyze", requireAuth, mediaGenerationLimiter, async (req, 
       error: knownInputError
         ? error.message
         : "JARVIS could not complete the visual review. Check the AI provider and try again."
+    });
+  }
+});
+
+app.post("/api/media/edit-plan", requireAuth, mediaGenerationLimiter, async (req, res) => {
+  const provider = getAIProviderStatus();
+  if (!provider.conversationEnabled) {
+    return res.status(503).json({ error: "Enable the JARVIS AI chat provider on the server before creating an edit plan." });
+  }
+  const projectId = String(req.body?.projectId || "").slice(0, 80);
+  const request = String(req.body?.request || "").trim().slice(0, 800);
+  const existing = store.mediaProjects.find((item) => item.id === projectId);
+  if (!existing) return res.status(404).json({ error: "Media project not found. Save the draft and try again." });
+  if (existing.status !== "draft") return res.status(409).json({ error: "AI edit plans can only be created for a draft." });
+  if (!request) return res.status(400).json({ error: "Describe what you want JARVIS to edit." });
+  try {
+    const project = normalizeMediaProject(existing);
+    const result = await createChatCompletion(buildMediaEditPlanMessages(project, request), {
+      temperature: 0.2, maxTokens: 3600, responseFormat: { type: "json_object" }
+    });
+    const plan = normalizeMediaEditPlan(result.content, project);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ plan, provider: result.provider, model: result.model });
+  } catch (error) {
+    const knownInputError = error instanceof TypeError && !String(error.code || "").startsWith("AI_");
+    res.status(knownInputError ? 400 : 503).json({
+      error: knownInputError ? error.message : "JARVIS could not create a structured edit plan. Check the AI provider and try again."
     });
   }
 });

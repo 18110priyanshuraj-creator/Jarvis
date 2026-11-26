@@ -47,6 +47,7 @@ import android.webkit.WebViewClient
 import com.priyanshuraj.jarviscompanion.accessibility.JarvisAccessibilityService
 import com.priyanshuraj.jarviscompanion.LocalActivityLog
 import com.priyanshuraj.jarviscompanion.device.DeviceTokenStore
+import com.priyanshuraj.jarviscompanion.device.DeviceTaskReporter
 import com.priyanshuraj.jarviscompanion.voice.AgentPlanControls
 import com.priyanshuraj.jarviscompanion.voice.AgentPlanExecutionGate
 import com.priyanshuraj.jarviscompanion.voice.AgentPlanMode
@@ -1044,7 +1045,7 @@ class MainActivity : Activity() {
         })
 
         val footer = TextView(this).apply {
-            text = "Background voice starts only when you choose it and stays visible in the notification shade. In Canva, select text or media first, then try: Bold selected text, Set font size to 32, or Replace selected image. You choose files and review changes yourself."
+            text = "Background voice starts only when you choose it and stays visible in the notification shade. While it is active, paired dashboard tasks can reach this tablet. JARVIS announces the plan and waits for your approval before screen actions. In VN, semantic item moves work only when VN exposes exact accessible labels. Review all edits on this screen."
             textSize = 11f
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(104, 137, 153))
@@ -1557,6 +1558,8 @@ class MainActivity : Activity() {
             return
         }
         val categories = AgentPlanRunner.actionKinds(plan)
+        val planSteps = (plan.optJSONArray("actions")?.length() ?: 1).coerceIn(1, 6)
+        DeviceTaskReporter.report(this, "review", 0, planSteps, "general")
         LocalActivityLog.record(this, "Android task ready", categories)
         AlertDialog.Builder(this)
             .setTitle("Review Android task")
@@ -1566,6 +1569,7 @@ class MainActivity : Activity() {
                     "enter credentials, or grant permissions. Search results and app-specific decisions stay with you."
             )
             .setNegativeButton("Cancel") { _, _ ->
+                DeviceTaskReporter.report(this, "cancelled", 0, planSteps, "general")
                 LocalActivityLog.record(this, "Android task cancelled", "The task was rejected before execution.")
                 refreshStatus("Task cancelled. No Android action was run.")
             }
@@ -1573,6 +1577,7 @@ class MainActivity : Activity() {
                 runApprovedAgentPlan(plan, categories)
             }
             .setOnCancelListener {
+                DeviceTaskReporter.report(this, "cancelled", 0, planSteps, "general")
                 LocalActivityLog.record(this, "Android task dismissed", "The approval dialog was dismissed; no action was run.")
             }
             .show()
@@ -1601,6 +1606,20 @@ class MainActivity : Activity() {
                 updateAgentTaskControls(
                     if (success) "Task running · step " + (index + 1) + " completed."
                     else "Task stopped · step " + (index + 1) + " failed."
+                )
+            },
+            onTaskStatus = { status, step, total, category ->
+                DeviceTaskReporter.report(this, status, step, total, category)
+                updateAgentTaskControls(
+                    when (status) {
+                        "running" -> "Working · $step complete of $total · $category"
+                        "paused" -> "Paused · $step of $total steps"
+                        "completed" -> "Complete · $step of $total steps. Review the result."
+                        "failed" -> "Stopped · review the phone screen."
+                        "cancelled" -> "Task cancelled."
+                        "waiting_user" -> "Paused for your screen review."
+                        else -> "Task $status · $step of $total steps"
+                    }
                 )
             },
             onComplete = { result ->

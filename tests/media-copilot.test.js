@@ -10,18 +10,75 @@ const project = {
   tone: "friendly",
   durationSeconds: 28,
   scenes: [
-    { heading: "The mystery", voiceover: "Kabhi socha hai ki aisa kyun hota hai?", onScreenText: "Why does this happen?", visualPrompt: "A curious student", durationSeconds: 8 },
-    { heading: "The answer", voiceover: "", onScreenText: "", visualPrompt: "A simple diagram", durationSeconds: 20 }
+    { id: "scene-1", heading: "The mystery", voiceover: "Kabhi socha hai ki aisa kyun hota hai?", onScreenText: "Why does this happen?", visualPrompt: "A curious student", durationSeconds: 8 },
+    { id: "scene-2", heading: "The answer", voiceover: "", onScreenText: "", visualPrompt: "A simple diagram", durationSeconds: 20 }
   ],
-  tracks: [{ id: "track-main-video", clips: [{ sceneId: "s1" }] }, { kind: "audio", clips: [] }]
+  tracks: [{ id: "track-main-video", clips: [{ id: "clip-1", sceneId: "scene-1", start: 0, duration: 8 }] }, { kind: "audio", clips: [] }]
 };
 
 test("media audit identifies missing narration, long beats and missing timeline links", () => {
   const report = analyzeMediaProject(project);
   assert.ok(report.score < 100);
   assert.ok(report.findings.some((item) => item.title.includes("no narration")));
-  assert.ok(report.findings.some((item) => item.title.includes("feel slow")));
-  assert.ok(report.findings.some((item) => item.title.includes("not on the main timeline")));
+  assert.ok(report.findings.some((item) => item.title.includes("more visual beats")));
+  assert.ok(report.findings.some((item) => item.title.includes("missing from the main timeline")));
+  assert.equal(report.stats.missingSceneCount, 1);
+  assert.equal(report.stats.timelineGapCount, 1);
+});
+
+test("media audit detects main-track gaps and overlaps while allowing intentional scene splits", () => {
+  const validSplit = {
+    ...project,
+    durationSeconds: 28,
+    scenes: [
+      project.scenes[0],
+      { id: "scene-2", heading: "Next", voiceover: "A complete second scene narration.", visualPrompt: "A new diagram", durationSeconds: 20 }
+    ],
+    tracks: [{ id: "track-main-video", visible: true, clips: [
+      { id: "part-a", sceneId: "scene-1", start: 0, duration: 4 },
+      { id: "part-b", sceneId: "scene-1", start: 4, duration: 4 },
+      { id: "next-scene", sceneId: "scene-2", start: 8, duration: 20 }
+    ] }]
+  };
+  const clean = analyzeMediaProject(validSplit);
+  assert.equal(clean.stats.timelineGapCount, 0);
+  assert.equal(clean.stats.timelineOverlapCount, 0);
+  assert.equal(clean.stats.missingSceneCount, 0);
+
+  const broken = {
+    ...validSplit,
+    durationSeconds: 20,
+    tracks: [{ id: "track-main-video", visible: true, clips: [
+      { id: "clip-a", sceneId: "scene-1", start: 0, duration: 8 },
+      { id: "clip-b", sceneId: "scene-2", start: 7, duration: 8 }
+    ] }]
+  };
+  const report = analyzeMediaProject(broken);
+  assert.equal(report.stats.timelineGapCount, 1);
+  assert.equal(report.stats.timelineOverlapCount, 1);
+  assert.ok(report.findings.some((item) => item.title.includes("visual gap")));
+  assert.ok(report.findings.some((item) => item.title.includes("clips overlap")));
+});
+
+test("media audit flags duplicate clip IDs and overlapping enabled captions", () => {
+  const report = analyzeMediaProject({
+    ...project,
+    durationSeconds: 8,
+    captionsEnabled: true,
+    captionCues: [
+      { id: "cue-a", startSeconds: 0, endSeconds: 4, text: "First caption" },
+      { id: "cue-b", startSeconds: 2, endSeconds: 3, text: "Second caption" },
+      { id: "cue-c", startSeconds: 3.5, endSeconds: 5, text: "Third caption" }
+    ],
+    tracks: [
+      { id: "track-main-video", clips: [{ id: "shared", sceneId: "scene-1", start: 0, duration: 8 }] },
+      { id: "track-overlay", clips: [{ id: "shared", assetType: "image", start: 0, duration: 2 }] }
+    ]
+  });
+  assert.equal(report.stats.duplicateClipIdCount, 1);
+  assert.equal(report.stats.captionOverlapCount, 2);
+  assert.ok(report.findings.some((item) => item.title.includes("share an identifier")));
+  assert.ok(report.findings.some((item) => item.title.includes("captions overlap")));
 });
 
 test("copilot prompt contains project context and states its media inspection limit", () => {

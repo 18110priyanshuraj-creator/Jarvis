@@ -14,6 +14,7 @@ import com.priyanshuraj.jarviscompanion.accessibility.JarvisAccessibilityService
 import com.priyanshuraj.jarviscompanion.accessibility.ScreenObserver
 import com.priyanshuraj.jarviscompanion.accessibility.UIActionExecutor
 import com.priyanshuraj.jarviscompanion.accessibility.UiActionPolicy
+import com.priyanshuraj.jarviscompanion.accessibility.VideoEditorPolicy
 import java.util.Locale
 
 object LocalCommandProcessor {
@@ -342,8 +343,8 @@ object LocalCommandProcessor {
             "verify_public_url_foreground" -> verifyPublicUrlForeground(context, value)
             "verify_app_foreground" -> verifyAppForeground(context, value)
             "drag_label_to_label" -> {
-                // The planner binds this action to Canva and the check is repeated at
-                // execution time so a foreground-app switch cannot redirect the drag.
+                // The plan binds this action to one supported editor, then checks again
+                // at execution time so an app switch cannot redirect the drag.
                 val appCheck = verifyAppForeground(context, value)
                 if (!appCheck.success || appCheck.shouldStop) {
                     appCheck
@@ -567,6 +568,7 @@ object LocalCommandProcessor {
         }
 
         val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val expectedEditorPackage = VideoEditorPolicy.packageName(requestedName)
         val matchingApps = queryLauncherActivities(context.packageManager, launcherIntent)
             .mapNotNull { item ->
                 val info = item.activityInfo ?: return@mapNotNull null
@@ -576,7 +578,13 @@ object LocalCommandProcessor {
                     label = item.loadLabel(context.packageManager)?.toString()?.trim().orEmpty()
                 )
             }
-            .filter { it.label.isNotBlank() && normalize(it.label) == normalize(requestedName) }
+            .filter { app ->
+                app.label.isNotBlank() && if (expectedEditorPackage != null) {
+                    app.packageName == expectedEditorPackage
+                } else {
+                    normalize(app.label) == normalize(requestedName)
+                }
+            }
             .distinctBy { it.packageName }
 
         if (matchingApps.size != 1) {
@@ -611,8 +619,12 @@ object LocalCommandProcessor {
             )
         }.filter { it.label.isNotBlank() }.distinctBy { it.packageName }
 
-        val exactMatches = apps.filter { normalize(it.label) == query }
-        val candidates = if (exactMatches.isNotEmpty()) exactMatches else apps.filter {
+        val expectedEditorPackage = VideoEditorPolicy.packageName(requestedName)
+        val exactMatches = apps.filter { app ->
+            if (expectedEditorPackage != null) app.packageName == expectedEditorPackage
+            else normalize(app.label) == query
+        }
+        val candidates = if (expectedEditorPackage != null || exactMatches.isNotEmpty()) exactMatches else apps.filter {
             normalize(it.label).startsWith(query)
         }
 

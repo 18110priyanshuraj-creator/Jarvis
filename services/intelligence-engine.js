@@ -44,7 +44,7 @@ export function getIntelligenceStatus(aiProvider = {}) {
       executesWhenPlanIsCreated: false
     },
     routing: {
-      conversation: "offline-first for covered requests; optional configured model for unsupported requests",
+      conversation: "configured model for open-ended requests; local rules for exact calculations and personal-data lookups; offline fallback when the model is unavailable",
       devicePlanning: "local rule planner first; optional configured model for unsupported requests",
       currentInformation: "live research takes precedence when the request requires current sources"
     },

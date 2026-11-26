@@ -228,9 +228,29 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   white-space: nowrap;
 }
 .device-status.revoked { background: rgba(220, 90, 90, .12); color: #ff9a9a; }
+.device-task-form { margin-top: 18px; }
+.device-task-form h2, .device-live-section h2 { margin: 0; }
+.device-task-heading, .device-task-card-header { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.device-session-pill, .device-session-state { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; color: #aebbd0; font-size: .7rem; white-space: nowrap; }
+.device-session-pill i { width: 7px; height: 7px; border-radius: 50%; background: #7d8ca4; }
+.device-task-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); gap: 12px; }
+.device-task-card { padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(145deg, rgba(28, 40, 62, .75), rgba(12, 19, 32, .88)); }
+.device-session-state.is-active { color: #8de3bf; border-color: #8de3bf44; background: #8de3bf0b; }
+.device-task-state { margin-top: 18px; color: #bdcbed; font-size: .88rem; font-weight: 700; }
+.device-task-state-running { color: #9dc0ff; }
+.device-task-state-completed { color: #8de3bf; }
+.device-task-state-failed, .device-task-state-expired { color: #ffadad; }
+.device-task-state-review, .device-task-state-waiting_user { color: #f4ce8a; }
+.device-task-progress { height: 5px; margin-top: 12px; overflow: hidden; border-radius: 99px; background: rgba(255,255,255,.08); }
+.device-task-progress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #7aa9ff, #74e3c0); transition: width .3s ease; }
+.device-task-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.device-task-controls .danger { color: #ffaaa9; border-color: #ffaaa944; }
+.device-live-section { margin-top: 26px; }
+.device-live-section .list-heading { align-items: end; }
 @media (max-width: 620px) {
   .device-actions { align-items: flex-end; flex-direction: column; }
   .pairing-code-value { letter-spacing: .16em; }
+  .device-task-heading, .device-task-card-header { align-items: flex-start; flex-direction: column; }
 }
 
 .web-search-button { white-space: nowrap; }

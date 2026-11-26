@@ -16,6 +16,7 @@ const sessionEpoch = createSessionEpoch();
 const $ = (selector) => document.querySelector(selector);
 const state = { chats: [], memories: [], memoryTotal: 0, memoryQuery: "", memoryCategory: "", tasks: [], feedback: [], experiencePreferences: [], skills: [], editingSkillId: null, workflows: [], workflowRuns: [], workflowSteps: [], editingWorkflowId: null, taskPlan: null, integrations: [], integrationResults: {}, googleDriveOAuth: null, integrationPermissions: [], externalActions: [], actionCapabilities: null, devices: [], research: [], knowledge: [], knowledgeTotal: 0, knowledgeQuery: "", knowledgeFilter: "all", knowledgeSummary: { total: 0, trusted: 0, unreviewed: 0, rejected: 0 }, diagnostics: null, activeView: "chat" };
 let toastTimer;
+let deviceRefreshTimer;
 
 function toast(message, isError = false) {
   const el = $("#toast");
@@ -211,6 +212,12 @@ function setView(name) {
   $("#app-shell").classList.remove("menu-open");
   $("#menu-toggle")?.setAttribute("aria-expanded", "false");
   if (name === "devices") refreshDevices().catch((error) => toast(error.message, true));
+  if (deviceRefreshTimer) clearInterval(deviceRefreshTimer);
+  deviceRefreshTimer = name === "devices" ? setInterval(() => {
+    if (document.visibilityState === "visible" && !$("#app-shell").classList.contains("hidden")) {
+      refreshDevices().catch(() => {});
+    }
+  }, 7000) : null;
   if (name === "tasks") scheduleWorkspace.load().catch((error) => toast(error.message, true));
   if (name === "memory") refreshMemories().catch((error) => toast(error.message, true));
   if (name === "workflows") {
@@ -3624,6 +3631,129 @@ async function refreshDevices() {
 function renderDevices() {
   const target = $("#device-list");
   if (!target) return;
+  const taskBoard = $("#device-task-board");
+  if (taskBoard) {
+    taskBoard.replaceChildren();
+    const activeDevices = state.devices.filter((device) => !device.revokedAt);
+    if (!activeDevices.length) {
+      taskBoard.append(makeEmpty("Pair an Android Companion to see its task activity."));
+    } else {
+      for (const device of activeDevices) {
+        const card = document.createElement("article");
+        card.className = "device-task-card";
+        const header = document.createElement("div");
+        header.className = "device-task-card-header";
+        const name = document.createElement("strong");
+        name.textContent = device.name || device.model || "Android device";
+        const session = document.createElement("span");
+        session.className = "device-session-state";
+        const seenRecently = device.lastSeenAt && Date.now() - Date.parse(device.lastSeenAt) < 45_000;
+        session.textContent = device.backgroundVoiceActive && seenRecently ? "Background session active" : "Waiting for phone";
+        if (device.backgroundVoiceActive && seenRecently) session.classList.add("is-active");
+        header.append(name, session);
+        card.append(header);
+        const task = device.lastTask;
+        if (task) {
+          const status = document.createElement("div");
+          status.className = "device-task-state device-task-state-" + task.status;
+          const taskUpdatedAt = Date.parse(task.updatedAt || "");
+          const taskIsStale = ["running", "paused"].includes(task.status) &&
+            Number.isFinite(taskUpdatedAt) && Date.now() - taskUpdatedAt > 90_000;
+          status.textContent = taskIsStale ? "No recent progress from phone · check the task on the device" : ({
+            queued: "Task queued · waiting for the phone",
+            review: "Plan ready · waiting for approval on the phone",
+            running: "Task running",
+            paused: "Task paused",
+            completed: "Task completed",
+            failed: "Task stopped · needs review",
+            cancelled: "Task cancelled",
+            waiting_user: "Waiting for you to review the screen",
+            expired: "Task expired before delivery"
+          })[task.status] || "Task status updated");
+          const progress = document.createElement("div");
+          progress.className = "device-task-progress";
+          const bar = document.createElement("span");
+          const total = Math.max(1, Number(task.total) || 1);
+          bar.style.width = Math.min(100, Math.round((Number(task.step || 0) / total) * 100)) + "%";
+          progress.append(bar);
+          const meta = document.createElement("div");
+          meta.className = "list-item-meta";
+          const updated = task.updatedAt ? new Date(task.updatedAt).toLocaleTimeString() : "recently";
+          meta.textContent = `${task.step || 0} of ${total} steps · ${task.category || "general"} · Updated ${updated}`;
+          card.append(status, progress, meta);
+          if (["running", "paused"].includes(task.status)) {
+            const controls = document.createElement("div");
+            controls.className = "device-task-controls";
+            const options = task.status === "paused"
+              ? [["Resume", "resume task"]]
+              : [["Pause", "pause task"]];
+            options.push(["Cancel", "cancel task"]);
+            for (const [label, command] of options) {
+              const control = document.createElement("button");
+              control.type = "button";
+              control.className = label === "Cancel" ? "item-action danger" : "item-action";
+              control.textContent = label;
+              control.addEventListener("click", async () => {
+                control.disabled = true;
+                try {
+                  await queueDeviceTask(device.id, command);
+                  toast(label + " command sent to the phone.");
+                } catch (error) {
+                  toast(error.message, true);
+                  control.disabled = false;
+                }
+              });
+              controls.append(control);
+            }
+            card.append(controls);
+          } else if (task.status === "queued") {
+            const cancelQueued = document.createElement("button");
+            cancelQueued.type = "button";
+            cancelQueued.className = "item-action danger";
+            cancelQueued.textContent = "Cancel queued task";
+            cancelQueued.addEventListener("click", async () => {
+              cancelQueued.disabled = true;
+              try {
+                await api("/api/devices/" + encodeURIComponent(device.id) + "/tasks", { method: "DELETE" });
+                await refreshDevices();
+                toast("Queued task cancelled.");
+              } catch (error) {
+                toast(error.message, true);
+                cancelQueued.disabled = false;
+              }
+            });
+            const controls = document.createElement("div");
+            controls.className = "device-task-controls";
+            controls.append(cancelQueued);
+            card.append(controls);
+          }
+        } else {
+          const empty = document.createElement("p");
+          empty.className = "small muted";
+          empty.textContent = "No task activity yet.";
+          card.append(empty);
+        }
+        taskBoard.append(card);
+      }
+    }
+  }
+
+  const deviceSelect = $("#device-task-target");
+  if (deviceSelect) {
+    const previous = deviceSelect.value;
+    deviceSelect.replaceChildren();
+    const options = state.devices.filter((device) => !device.revokedAt);
+    for (const device of options) {
+      const option = document.createElement("option");
+      option.value = device.id;
+      option.textContent = device.name || device.model || "Android device";
+      deviceSelect.append(option);
+    }
+    if (options.some((device) => device.id === previous)) deviceSelect.value = previous;
+    deviceSelect.disabled = options.length === 0;
+    $("#device-task-submit").disabled = options.length === 0;
+  }
+
   target.replaceChildren();
   if (!state.devices.length) {
     target.append(makeEmpty("No paired devices yet. Generate a code above to connect your Android Companion."));
@@ -3675,6 +3805,37 @@ function renderDevices() {
     target.append(row);
   }
 }
+
+async function queueDeviceTask(deviceId, message) {
+  const data = await api("/api/devices/" + encodeURIComponent(deviceId) + "/tasks", {
+    method: "POST",
+    body: JSON.stringify({ message })
+  });
+  await refreshDevices();
+  return data;
+}
+
+$("#device-task-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const deviceId = $("#device-task-target").value;
+  const message = $("#device-task-message").value.trim();
+  const button = $("#device-task-submit");
+  const status = $("#device-task-submit-status");
+  if (!deviceId || !message) return;
+  button.disabled = true;
+  status.textContent = "Sending task to the paired device…";
+  try {
+    await queueDeviceTask(deviceId, message);
+    $("#device-task-message").value = "";
+    status.textContent = "Queued. It expires in five minutes and runs only when the phone's visible background voice session receives it.";
+    toast("Task queued for Android.");
+  } catch (error) {
+    status.textContent = error.message;
+    toast(error.message, true);
+  } finally {
+    button.disabled = !state.devices.some((device) => !device.revokedAt);
+  }
+});
 
 async function generatePairingCode() {
   const button = $("#create-pairing-code");

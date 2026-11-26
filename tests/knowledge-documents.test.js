@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 import {
   buildDocumentKnowledgeContext,
   createKnowledgeDocument,
@@ -107,6 +108,9 @@ test("document filtering can search tags, descriptions and collections", () => {
 test("document storage key resolves only directly under its configured directory", () => {
   const bytes = Buffer.from("A safe note.", "utf8");
   const doc = createKnowledgeDocument({ fileName: "note.txt", mimeType: "text/plain" }, bytes, now);
-  assert.match(resolveDocumentStoragePath("/tmp/jarvis-docs", doc), /^\/tmp\/jarvis-docs\//);
+  const storageDirectory = path.resolve("/tmp/jarvis-docs");
+  const storagePath = resolveDocumentStoragePath(storageDirectory, doc);
+  assert.equal(path.dirname(storagePath), storageDirectory);
+  assert.notEqual(path.relative(storageDirectory, storagePath), "..");
   assert.throws(() => resolveDocumentStoragePath("/tmp/jarvis-docs", { storageKey: "../escape" }));
 });

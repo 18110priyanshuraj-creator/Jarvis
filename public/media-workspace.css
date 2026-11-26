@@ -769,6 +769,8 @@
 .media-copilot-actions button { min-width: 0; min-height: 35px; padding: 7px 9px; font-size: .64rem; }
 .media-copilot-actions #media-copilot-improve { grid-column: 1 / -1; }
 .media-copilot-form { display: grid; gap: 8px; }
+.media-copilot-form-actions { display: grid; grid-template-columns: 1fr 1.2fr; gap: 7px; }
+.media-copilot-form-actions button { min-height: 36px; padding: 7px 9px; font-size: .64rem; }
 .media-copilot-form label, .media-copilot-preview label { color: #a8bad3; font-size: .67rem; font-weight: 700; }
 .media-copilot-form textarea, .media-copilot-preview textarea, .media-copilot-preview input {
   width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid rgba(121, 159, 210, .2);
@@ -785,6 +787,14 @@
 .media-copilot-preview label { display: grid; gap: 5px; }
 .media-copilot-preview-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 .media-copilot-preview-actions button { flex: 1; min-height: 36px; }
+.media-copilot-plan-card { display: grid; gap: 9px; padding: 11px; border: 1px solid rgba(112, 192, 160, .32); border-radius: 11px; background: linear-gradient(145deg, rgba(13, 35, 34, .52), rgba(8, 17, 28, .84)); }
+.media-copilot-plan-card.hidden { display: none; }
+.media-copilot-plan-card > strong { color: #d8f5e8; font-size: .76rem; }
+.media-copilot-plan-summary, .media-copilot-plan-note { margin: 0; color: #aabbd0; font-size: .65rem; line-height: 1.55; }
+.media-copilot-plan-operations { display: grid; gap: 6px; }
+.media-copilot-plan-operation { display: flex; align-items: flex-start; gap: 8px; padding: 8px; border: 1px solid rgba(121, 159, 210, .14); border-radius: 8px; background: rgba(5, 12, 23, .48); color: #d1deef; font-size: .64rem; line-height: 1.45; cursor: pointer; }
+.media-copilot-plan-operation input { margin: 2px 0 0; accent-color: #74d2ab; }
+.media-copilot-plan-card > small { color: #8294ad; font-size: .58rem; line-height: 1.45; }
 .media-copilot-privacy { margin: 0; color: #71839d; font-size: .59rem; line-height: 1.55; }
 @media (max-width: 1180px) {
   .media-editor.has-ai-sidecar { margin-right: min(370px, 39vw); }

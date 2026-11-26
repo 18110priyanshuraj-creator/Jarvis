@@ -24,6 +24,8 @@ The cards are shortcuts to existing modules, not claims that each provider integ
 6. Use the quick tools: **Creator mode** jumps to project creation/details, **Templates** focuses the visual-style selector, **Captions SRT** exports captions after approval, **AI motion graphics** focuses the selected scene's animation control, and **Timeline** jumps back to the tracks.
 7. Use **Smart edit check**, **Improve selected scene**, or ask a question.
 
+The structural checklist is a heuristic over saved project metadata. It checks that visible scene clips cover the timeline without gaps or overlaps, that every scene maps to a visible main-track clip, that clip IDs are unique, and that enabled timed captions do not overlap. Split clips that form a continuous section are accepted. Findings are review prompts: the checklist does not inspect rendered frames, prove that a visual supports narration, or replace export verification.
+
 On smaller screens the side panel becomes a bottom drawer. The editor remains the main workspace; hide the drawer to get the full width back.
 
 ## Analyze selected video
@@ -72,8 +74,8 @@ The copilot can prepare a selected-scene rewrite. It appears in an editable prop
 
 Available in the project: storyboard editor, multi-track timeline, preview, trim/split/keyframe and speed controls, colour grading, local assets, SRT/JSON/script export, local video render, Creator Campaign Pack, thumbnail and stick-figure tools, Android Companion UI control, and reviewed YouTube publishing.
 
-New in this branch: right-docked side panel, context-aware text copilot, local project-quality audit, four-frame AI visual review, local low-volume audio scan and Creator Command Deck.
+Copilot capabilities: right-docked side panel, context-aware text copilot, local project-quality audit, four-frame AI visual review, local low-volume audio scan and Creator Command Deck.
 
 Not yet available: full-motion/whole-video AI analysis, word-level speech transcription, diarized speaker/take detection, reliable bad-take identification, automatic repeated-speech removal, or a synchronized one-click silence-removal/ripple-edit operation. Those need a proper transcription/audio-analysis pipeline and additional synchronized timeline-edit tests. Do not treat a low-volume interval as proof that speech should be removed.
 
-Deployment status is separate from code status. These changes remain on the feature branch until the PR is merged and the connected hosting service deploys that commit.
+Deployment status is separate from code status. A feature in the repository is not evidence that the connected hosting service has deployed it.

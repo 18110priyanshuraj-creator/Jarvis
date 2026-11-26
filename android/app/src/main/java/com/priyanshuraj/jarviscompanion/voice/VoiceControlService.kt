@@ -24,9 +24,11 @@ import com.priyanshuraj.jarviscompanion.accessibility.ScreenObserver
 import com.priyanshuraj.jarviscompanion.LocalActivityLog
 import com.priyanshuraj.jarviscompanion.JarvisApplication
 import com.priyanshuraj.jarviscompanion.CoreCommandSource
+import com.priyanshuraj.jarviscompanion.device.DeviceTaskReporter
 import org.json.JSONObject
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 class VoiceControlService : Service() {
     private val core by lazy(LazyThreadSafetyMode.NONE) {
@@ -48,6 +50,7 @@ class VoiceControlService : Service() {
     private var pendingPlan: JSONObject? = null
     private var pendingPlanTimeout: Runnable? = null
     private var voiceStatus = "Microphone session is active. Speak a command or use Stop to end it."
+    private val dashboardPollInFlight = AtomicBoolean(false)
 
     override fun onCreate() {
         super.onCreate()
@@ -98,6 +101,7 @@ class VoiceControlService : Service() {
             textToSpeech?.stop()
             lastSpeechUtteranceId = null
             stopForeground(STOP_FOREGROUND_REMOVE)
+            DeviceTaskReporter.setBackgroundVoice(this, false)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -124,7 +128,9 @@ class VoiceControlService : Service() {
         try {
             startAsForeground()
             running = true
+            DeviceTaskReporter.setBackgroundVoice(this, true)
             startListening()
+            mainHandler.post(dashboardTaskPollRunnable)
         } catch (_: SecurityException) {
             running = false
             stopSelf()
@@ -313,13 +319,14 @@ class VoiceControlService : Service() {
         }
     }
 
-    private fun handleTranscript(rawTranscript: String) {
+    private fun handleTranscript(rawTranscript: String, fromDashboard: Boolean = false) {
         // Pause, resume, cancel and stop remain available without the wake phrase so a
         // user can always interrupt an active foreground voice session.
         val wakeStripped = WakeWordPolicy.commandAfterWakeWord(rawTranscript)
         val isSessionControl = taskControlIntent(rawTranscript) != null ||
             LocalCommandProcessor.isStopCommand(rawTranscript)
         val transcript = when {
+            fromDashboard -> rawTranscript.trim()
             isSessionControl -> rawTranscript
             wakeStripped != null -> wakeStripped
             else -> null
@@ -394,7 +401,20 @@ class VoiceControlService : Service() {
                     val controls = AgentPlanRunner.execute(
                         this@VoiceControlService,
                         waitingPlan,
-                        mainHandler
+                        mainHandler,
+                        onTaskStatus = { status, step, total, category ->
+                            DeviceTaskReporter.report(this@VoiceControlService, status, step, total, category)
+                            val label = when (status) {
+                                "running" -> "JARVIS task · $step complete of $total · $category"
+                                "paused" -> "Task paused · $step of $total steps"
+                                "completed" -> "Task complete · $step of $total steps. Review the screen."
+                                "failed" -> "Task stopped · review the phone screen."
+                                "cancelled" -> "Task cancelled."
+                                "waiting_user" -> "Task paused for your screen review."
+                                else -> "Task $status · $step of $total steps"
+                            }
+                            mainHandler.post { updateVoiceStatus(label) }
+                        }
                     ) { result ->
                         LocalActivityLog.record(this@VoiceControlService, "Execution ended", categories)
                         cancelActivePlan = null
@@ -434,7 +454,7 @@ class VoiceControlService : Service() {
             return
         }
 
-        val localResponse = core.handleLocalCommand(
+        val localResponse = if (fromDashboard) null else core.handleLocalCommand(
             transcript,
             CoreCommandSource.HANDS_FREE,
             allowUiActions = true
@@ -470,12 +490,27 @@ class VoiceControlService : Service() {
                                 val preview = AgentPlanRunner.describe(plan)
                                 val categories = AgentPlanRunner.actionKinds(plan)
                                 pendingPlan = plan
+                                val plannedActions = plan.optJSONArray("actions")
+                                DeviceTaskReporter.report(
+                                    this@VoiceControlService,
+                                    "review",
+                                    0,
+                                    (plannedActions?.length() ?: 1).coerceIn(1, 6),
+                                    "general"
+                                )
                                 LocalActivityLog.record(this@VoiceControlService, "Plan ready", categories)
 
                                 val timeout = Runnable {
                                     if (pendingPlan === plan) {
                                         pendingPlan = null
                                         pendingPlanTimeout = null
+                                        DeviceTaskReporter.report(
+                                            this@VoiceControlService,
+                                            "expired",
+                                            0,
+                                            (plannedActions?.length() ?: 1).coerceIn(1, 6),
+                                            "general"
+                                        )
                                         LocalActivityLog.record(
                                             this@VoiceControlService,
                                             "Plan expired",
@@ -583,8 +618,10 @@ class VoiceControlService : Service() {
         pendingPlanTimeout?.let(mainHandler::removeCallbacks)
         pendingPlanTimeout = null
         val hadPendingPlan = pendingPlan != null
+        val stepCount = (pendingPlan?.optJSONArray("actions")?.length() ?: 1).coerceIn(1, 6)
         pendingPlan = null
         if (hadPendingPlan && reason != null) {
+            DeviceTaskReporter.report(this, "cancelled", 0, stepCount, "general")
             LocalActivityLog.record(this, "Plan cancelled", reason)
         }
     }
@@ -663,9 +700,30 @@ class VoiceControlService : Service() {
         if (running && textToSpeech?.isSpeaking != true) startListening()
     }
 
+    private val dashboardTaskPollRunnable = object : Runnable {
+        override fun run() {
+            if (!running) return
+            if (pendingPlan == null && dashboardPollInFlight.compareAndSet(false, true)) {
+                networkExecutor.execute {
+                    val task = runCatching { DeviceTaskReporter.poll(this@VoiceControlService) }.getOrNull()
+                    mainHandler.post {
+                        dashboardPollInFlight.set(false)
+                        val message = task?.optString("message")?.trim().orEmpty()
+                        if (running && message.isNotBlank()) {
+                            updateVoiceStatus("Dashboard task received. Preparing a plan for phone review.")
+                            handleTranscript(message, fromDashboard = true)
+                        }
+                    }
+                }
+            }
+            mainHandler.postDelayed(this, DASHBOARD_TASK_POLL_MS)
+        }
+    }
+
     override fun onTaskRemoved(rootIntent: Intent?) {
         invalidatePendingWork()
         running = false
+        DeviceTaskReporter.setBackgroundVoice(this, false)
         stopSelf()
         super.onTaskRemoved(rootIntent)
     }
@@ -673,6 +731,7 @@ class VoiceControlService : Service() {
     override fun onDestroy() {
         invalidatePendingWork()
         running = false
+        DeviceTaskReporter.setBackgroundVoice(this, false)
         mainHandler.removeCallbacksAndMessages(null)
         lastSpeechUtteranceId = null
         recognizer?.cancel()
@@ -695,5 +754,6 @@ class VoiceControlService : Service() {
         private const val STOP_REQUEST_CODE = 7252
         private const val INTERRUPT_REQUEST_CODE = 7253
         private const val PLAN_APPROVAL_TIMEOUT_MS = 60_000L
+        private const val DASHBOARD_TASK_POLL_MS = 5_000L
     }
 }

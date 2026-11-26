@@ -5,9 +5,27 @@ import { normalizeApplicationId } from "../services/skill-engine.js";
 
 const PAIRING_CODE_TTL_MS = 3 * 60 * 1000;
 const pairingChallenges = new Map();
+const dashboardTasks = new Map();
+const DEVICE_TASK_STATES = new Set(["queued", "review", "running", "paused", "completed", "failed", "cancelled", "waiting_user", "expired"]);
+const DEVICE_TASK_CATEGORIES = new Set(["editing", "navigation", "screen_read", "general"]);
+
+function publicTaskStatus(value) {
+  if (!value || typeof value !== "object" || !DEVICE_TASK_STATES.has(value.status)) return null;
+  return {
+    status: value.status,
+    step: Number.isInteger(value.step) ? Math.min(6, Math.max(0, value.step)) : 0,
+    total: Number.isInteger(value.total) ? Math.min(6, Math.max(1, value.total)) : 1,
+    category: DEVICE_TASK_CATEGORIES.has(value.category) ? value.category : "general",
+    updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : null
+  };
+}
 
 function cleanText(value, maxLength) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+}
+
+function clearDashboardTaskTimer(task) {
+  if (task?.expiryTimer) clearTimeout(task.expiryTimer);
 }
 
 function sha256(value) {
@@ -32,6 +50,8 @@ function publicDevice(device) {
     pairedAt: device.pairedAt,
     lastSeenAt: device.lastSeenAt,
     accessibilityEnabled: Boolean(device.accessibilityEnabled),
+    lastTask: publicTaskStatus(device.lastTask),
+    backgroundVoiceActive: Boolean(device.backgroundVoiceActive),
     revokedAt: device.revokedAt || null
   };
 }
@@ -118,8 +138,120 @@ export function createDevicesRouter({ getStore, saveStore, requireAuth, runDevic
     res.status(201).json({ device: publicDevice(device), deviceToken: token });
   });
 
-  router.get("/", requireAuth, (req, res) => {
+  router.get("/", requireAuth, async (req, res) => {
+    const now = Date.now();
+    let expired = false;
+    for (const [deviceId, task] of dashboardTasks) {
+      if (task.expiresAt > now) continue;
+      dashboardTasks.delete(deviceId);
+      clearDashboardTaskTimer(task);
+      const device = getStore().devices.find((item) => item.id === deviceId);
+      if (device && device.lastTask?.status === "queued") {
+        device.lastTask = { status: "expired", step: 0, total: 1, category: "general", updatedAt: new Date().toISOString() };
+        expired = true;
+      }
+    }
+    for (const device of getStore().devices) {
+      if (device.lastTask?.status !== "queued") continue;
+      const queuedAt = Date.parse(device.lastTask.updatedAt || "");
+      if (!Number.isFinite(queuedAt) || now - queuedAt < 5 * 60 * 1000) continue;
+      device.lastTask = { status: "expired", step: 0, total: 1, category: "general", updatedAt: new Date().toISOString() };
+      expired = true;
+    }
+    if (expired) await saveStore();
     res.json({ devices: getStore().devices.map(publicDevice) });
+  });
+
+  router.post("/:deviceId/tasks", requireAuth, (req, res) => {
+    const device = getStore().devices.find((item) => item.id === req.params.deviceId && !item.revokedAt);
+    if (!device) return res.status(404).json({ error: "Active paired device not found." });
+    const message = cleanText(req.body?.message, 3000);
+    if (!message) return res.status(400).json({ error: "Enter a task for the paired Android device." });
+    const activeTask = ["running", "paused"].includes(device.lastTask?.status);
+    const controlCommand = /^(pause task|resume task|cancel task)$/i.test(message);
+    if (activeTask && !controlCommand) {
+      return res.status(409).json({ error: "This device is busy. Use Pause, Resume or Cancel from the live task monitor." });
+    }
+    const current = dashboardTasks.get(device.id);
+    if (current && current.expiresAt > Date.now()) {
+      return res.status(409).json({ error: "This device already has a queued task. Wait for it to start or expire." });
+    }
+    clearDashboardTaskTimer(current);
+    const task = {
+      id: crypto.randomUUID(),
+      message,
+      controlCommand,
+      createdAt: new Date().toISOString(),
+      expiresAt: Date.now() + 5 * 60 * 1000
+    };
+    task.expiryTimer = setTimeout(() => {
+      if (dashboardTasks.get(device.id) !== task) return;
+      dashboardTasks.delete(device.id);
+      const currentDevice = getStore().devices.find((item) => item.id === device.id);
+      if (currentDevice && !task.controlCommand && currentDevice.lastTask?.status === "queued") {
+        currentDevice.lastTask = { status: "expired", step: 0, total: 1, category: "general", updatedAt: new Date().toISOString() };
+        void saveStore();
+      }
+    }, 5 * 60 * 1000);
+    task.expiryTimer.unref?.();
+    dashboardTasks.set(device.id, task);
+    if (!controlCommand) {
+      device.lastTask = { status: "queued", step: 0, total: 1, category: "general", updatedAt: task.createdAt };
+    }
+    res.status(202).json({ taskId: task.id, expiresAt: new Date(task.expiresAt).toISOString() });
+  });
+
+  router.delete("/:deviceId/tasks", requireAuth, async (req, res) => {
+    const device = getStore().devices.find((item) => item.id === req.params.deviceId && !item.revokedAt);
+    if (!device) return res.status(404).json({ error: "Active paired device not found." });
+    const task = dashboardTasks.get(device.id);
+    if (!task) return res.status(404).json({ error: "There is no queued task to cancel." });
+    dashboardTasks.delete(device.id);
+    clearDashboardTaskTimer(task);
+    if (!task.controlCommand) {
+      device.lastTask = { status: "cancelled", step: 0, total: 1, category: "general", updatedAt: new Date().toISOString() };
+      await saveStore();
+    }
+    res.json({ ok: true });
+  });
+
+  router.post("/tasks/next", requireDeviceAuth, (req, res) => {
+    const device = req.jarvisDevice;
+    device.lastSeenAt = new Date().toISOString();
+    device.backgroundVoiceActive = true;
+    const task = dashboardTasks.get(device.id);
+    if (!task) return res.json({ task: null });
+    if (task.expiresAt <= Date.now()) {
+      dashboardTasks.delete(device.id);
+      clearDashboardTaskTimer(task);
+      if (!task.controlCommand) {
+        device.lastTask = { status: "expired", step: 0, total: 1, category: "general", updatedAt: new Date().toISOString() };
+      }
+      return res.json({ task: null });
+    }
+    dashboardTasks.delete(device.id);
+    clearDashboardTaskTimer(task);
+    if (!task.controlCommand) {
+      device.lastTask = { status: "review", step: 0, total: 1, category: "general", updatedAt: new Date().toISOString() };
+    }
+    res.json({ task: { id: task.id, message: task.message } });
+  });
+
+  router.post("/task-status", requireDeviceAuth, async (req, res) => {
+    const device = req.jarvisDevice;
+    const status = cleanText(req.body?.status, 24);
+    if (!DEVICE_TASK_STATES.has(status)) return res.status(400).json({ error: "Task status is not supported." });
+    const step = Number(req.body?.step);
+    const total = Number(req.body?.total);
+    if (!Number.isInteger(step) || step < 0 || step > 6 || !Number.isInteger(total) || total < 1 || total > 6 || step > total) {
+      return res.status(400).json({ error: "Task progress is outside the supported range." });
+    }
+    const category = cleanText(req.body?.category, 24);
+    if (!DEVICE_TASK_CATEGORIES.has(category)) return res.status(400).json({ error: "Task category is not supported." });
+    device.lastSeenAt = new Date().toISOString();
+    device.lastTask = { status, step, total, category, updatedAt: new Date().toISOString() };
+    await saveStore();
+    res.json({ ok: true, device: publicDevice(device) });
   });
 
   router.delete("/:deviceId", requireAuth, async (req, res) => {
@@ -127,6 +259,8 @@ export function createDevicesRouter({ getStore, saveStore, requireAuth, runDevic
     if (!device) return res.status(404).json({ error: "Device not found." });
     if (!device.revokedAt) {
       device.revokedAt = new Date().toISOString();
+      clearDashboardTaskTimer(dashboardTasks.get(device.id));
+      dashboardTasks.delete(device.id);
       await saveStore();
     }
     res.json({ ok: true, device: publicDevice(device) });
@@ -140,6 +274,9 @@ export function createDevicesRouter({ getStore, saveStore, requireAuth, runDevic
     }
     if (typeof req.body?.appVersion === "string") {
       device.appVersion = cleanText(req.body.appVersion, 40);
+    }
+    if (typeof req.body?.backgroundVoiceActive === "boolean") {
+      device.backgroundVoiceActive = req.body.backgroundVoiceActive;
     }
     await saveStore();
     res.json({ ok: true, device: publicDevice(device) });

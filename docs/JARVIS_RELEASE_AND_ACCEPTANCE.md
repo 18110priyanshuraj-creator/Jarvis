@@ -13,6 +13,7 @@ This document separates source-code completion from live account, device and pro
 - Media Studio can mix user-selected local voiceover/music/audio tracks into the exported video. Source assets remain in the browser session and are not uploaded automatically.
 - Creator Studio can draft a short-video campaign, carousel copy/assets, SEO outline, social captions, lead-magnet outline and topic ideas. Trend Radar requires the configured SearXNG search provider.
 - Canva has two different integrations: an optional OAuth thumbnail handoff that creates a flat PNG design, and a narrowly scoped Android semantic drag action for exact accessible labels. The latter requires Android 12L/API 32 or newer and the target Canva UI must expose semantic drag actions.
+- VN now has the same conditional semantic-drag path, scoped to the official Android package `com.frontrow.vlog`. This is not a VN API or proof that the installed version exposes drag actions; there is no automated trim, split, caption, audio or export workflow in VN yet.
 - Android app control remains permission-bounded and uses explicit user approval, visible UI labels, result checks and stop/cancel controls.
 - Android hands-free voice is a user-started foreground session. It cycles speech recognition after each utterance and now requires an explicit “Hey JARVIS” phrase before ordinary commands. Stop, pause, resume and cancel controls remain available without the wake phrase. This is phrase-gated recognition inside a visible session, not an ambient or always-on wake-word service.
 
@@ -22,6 +23,7 @@ This document separates source-code completion from live account, device and pro
 | --- | --- | --- |
 | Long-form video | A separate 16:9 long-form project format supports timeline/storyboard data up to 20 minutes and 80 scenes. Export still uses browser Canvas/MediaRecorder in real time; local imported assets are session-bound and not durable. | Browser-memory/device stress tests and playback/sync acceptance on target hardware; for production-grade long exports, add a server-side render queue, durable object storage, resumable jobs and tested audio/video muxing. |
 | Canva timeline editing | OAuth creates a flat thumbnail design. Android drag is only semantic label-to-label, only when Canva exposes the actions. No general clip trim/split/keyframe/audio automation in Canva. | A real Canva Android acceptance session proving each supported operation on the target app version. Unsupported controls must remain manual. |
+| VN timeline editing | Android can attempt one exact-label semantic drag in the verified VN app on API 32+, only when that installed version exposes drag-start/drop actions. No VN trim, split, caption, audio or export automation. | A real VN Android acceptance session with a harmless sample project; record whether the installed version exposes semantic drag actions and verify the timeline result. |
 | Browser automation | JARVIS can open a user-specified public HTTP/HTTPS URL or Google search in the Android default browser, verify the browser app is foregrounded, read visible screen text locally on request, and use bounded exact-label Accessibility actions. It does not verify page load/content from the URL handoff alone, provide a general DOM/Playwright agent, automate authenticated sessions, solve CAPTCHA, or choose search results automatically. | Device acceptance across Chrome/other default browsers, browser page-load timing, visible-text reading and exact-label actions; a general browser runtime would need separate permission-bounded design and security review. |
 | Natural voice | Ordinary commands now require a spoken “Hey JARVIS” phrase inside the user-started foreground microphone session. This is not always-on or background wake-word detection; stop/pause/resume/cancel remain available without it. | Physical-device tests for Hindi/Hinglish/English recognition, phrase false accepts/rejects, interruption, and microphone service lifecycle. An ambient on-device wake-word feature would require a separate opt-in/privacy design. |
 | Unified Android experience | The APK contains a native shell/Orb and embeds the web Workspace; not every dashboard feature is a native offline screen. | Native offline parity for each required workspace feature, or an explicitly accepted WebView-based product boundary. |
@@ -61,9 +63,12 @@ Record the device model, Android version, JARVIS APK version, date, and pass/fai
 - [ ] Open a public HTTPS website, search a harmless topic, read visible content locally, and confirm result selection, sign-in, consent and CAPTCHA steps remain user-controlled.
 - [ ] Create a 20-minute long-form project with 80 scenes, save/reopen it, render it in a desktop browser, and validate full playback, audio sync and cancellation. Record any browser/device memory limit.
 - [ ] In the installed Canva version, test only exact accessible-label drag actions with a harmless sample project. Record whether Canva exposes Android semantic drag actions; confirm safe failure when it does not.
+- [ ] In the installed VN version, test only exact accessible-label drag actions with a harmless sample project. Record whether VN exposes Android semantic drag actions; confirm safe failure when it does not.
 - [ ] Export a short multitrack Media Studio project with locally selected voiceover/music, play the exported file on-device, and check timing, sync, transitions, audio levels and playback completion.
 - [ ] Test memory save/delete and data export; confirm local Android memory and server Workspace memory remain clearly separate.
 - [ ] Verify release APK signature and SHA-256 checksum from the signed-release artifact before wider installation.
+- [ ] Pair a phone, start its visible background voice session, queue one text task from Device Control, approve it on the phone, and confirm the web monitor receives only bounded progress fields.
+- [ ] Verify Pause, Resume and Cancel commands from the live task monitor; confirm task text expires or can be cancelled before phone delivery.
 
 **Do not mark a physical-device or Canva item complete from a GitHub Actions result alone.**
 
@@ -75,5 +80,7 @@ Record the device model, Android version, JARVIS APK version, date, and pass/fai
 | Accessibility + app control | Pending physical test | — | Pending | — |
 | Hands-free voice + stop controls | Pending physical test | — | Pending | — |
 | Canva semantic drag | Pending Canva UI test | — | Pending | — |
+| VN semantic drag | Pending VN UI test | — | Pending | — |
+| Dashboard task handoff + progress | Pending paired-device test | — | Pending | — |
 | Multitrack export + audio playback | Pending physical test | — | Pending | — |
 | Signed release install | Pending signing secrets + device test | — | Pending | — |

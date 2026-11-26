@@ -2,7 +2,7 @@ import { collectTimelineSnapPoints, snapTimelineEdge, snapTimelineMoveStart } fr
 import { createMediaAssetLibrary, formatMediaAssetSize } from "./media-asset-library.js";
 import { clampMediaEditorTime, resolveMediaEditorShortcut } from "./media-editor-shortcuts.js";
 import { assessMediaExport } from "./media-export-quality.js";
-import { analyzeMediaProject, buildMediaCopilotPrompt, parseMediaSceneRewrite } from "./media-copilot.js";
+import { analyzeMediaProject, applyMediaEditOperations, buildMediaCopilotPrompt, parseMediaSceneRewrite } from "./media-copilot.js";
 import { formatCaptionSrt, normalizeCaptionCues, normalizeCaptionStyle, parseTimedCaptionFile } from "./media-captions.js";
 
 const FORMATS = {
@@ -43,6 +43,7 @@ export function createMediaWorkspace({ api, toast }) {
   let pendingAssetLibraryFile = null;
   let copilotOpen = false;
   let pendingSceneRewrite = null;
+  let pendingEditPlan = null;
   let copilotBusy = false;
   let mediaAnalysisBusy = false;
   let localAudioScan = null;
@@ -205,7 +206,7 @@ export function createMediaWorkspace({ api, toast }) {
     const panel = makeElement("aside", "media-ai-sidecar hidden");
     panel.id = "media-ai-sidecar";
     panel.setAttribute("aria-label", "JARVIS editing copilot");
-    panel.innerHTML = '<div class="media-ai-sidecar-head"><div><p class="eyebrow">LIVE EDITING COMPANION</p><h3>JARVIS Copilot</h3><span class="media-ai-context-badge">PROJECT AWARE</span></div><button type="button" class="item-action" id="media-copilot-close" aria-label="Hide side panel">Hide</button></div><p id="media-copilot-context" class="media-ai-context">Open a project to load its editing context.</p><section class="media-copilot-quick-tools" aria-label="Quick editing tools"><strong>Quick tools</strong><div><button type="button" data-copilot-tool="creator">Creator mode</button><button type="button" data-copilot-tool="templates">Templates</button><button type="button" data-copilot-tool="captions">Subtitle Studio</button><button type="button" data-copilot-tool="motion">AI motion graphics</button><button type="button" data-copilot-tool="timeline">Timeline</button></div></section><section class="media-copilot-audit"><div class="media-copilot-section-head"><strong>Smart edit check</strong><button type="button" class="item-action" id="media-copilot-audit-button">Scan</button></div><div class="media-copilot-score"><strong id="media-copilot-score">—</strong><span id="media-copilot-score-label">Waiting for project</span></div><ul id="media-copilot-findings" class="media-copilot-findings"><li>Open a storyboard to inspect pacing, narration and timeline structure.</li></ul></section><div class="media-copilot-media-actions"><div><strong>Analyze real media</strong><span>Choose a video clip or audio track in the timeline first.</span></div><button type="button" class="primary" id="media-copilot-analyze-video">Analyze selected video frames</button><button type="button" class="item-action" id="media-copilot-scan-audio">Scan selected audio for long pauses</button><p>Video review sends up to four small still frames only after you press Analyze. Audio pause scanning runs locally in your browser.</p></div><div class="media-copilot-actions"><button type="button" class="primary" id="media-copilot-improve">Improve selected scene</button><button type="button" class="item-action" data-copilot-prompt="Review this edit and give me the three most important improvements, in priority order.">Review this edit</button><button type="button" class="item-action" data-copilot-prompt="Suggest a stronger opening hook and a clear first 3-second visual.">Improve the hook</button><button type="button" class="item-action" data-copilot-prompt="Review the scene pacing and suggest where to tighten the storyboard without losing meaning.">Tighten pacing</button><button type="button" class="item-action" data-copilot-prompt="Suggest concise on-screen captions and a title that accurately matches this video.">Titles & captions</button></div><form id="media-copilot-form" class="media-copilot-form"><label for="media-copilot-question">Ask about this edit</label><textarea id="media-copilot-question" rows="3" maxlength="800" placeholder="Example: Is this intro engaging? What should I change?"></textarea><button type="submit" class="primary" id="media-copilot-send">Ask JARVIS</button></form><div id="media-copilot-answer" class="media-copilot-answer" role="status" aria-live="polite">JARVIS can review the project text and selected scene. Media files themselves stay in this browser.</div><div id="media-copilot-media-markers" class="media-copilot-media-markers" aria-live="polite"></div><section id="media-copilot-preview" class="media-copilot-preview hidden"><div><strong>Proposed scene rewrite</strong><p>Review and edit every field before applying it to your draft.</p></div><label>Scene heading<input id="media-copilot-preview-heading" maxlength="120"></label><label>Voiceover<textarea id="media-copilot-preview-voiceover" rows="4" maxlength="1800"></textarea></label><label>On-screen text<textarea id="media-copilot-preview-onscreen" rows="2" maxlength="600"></textarea></label><label>Visual direction<textarea id="media-copilot-preview-visual" rows="3" maxlength="600"></textarea></label><div class="media-copilot-preview-actions"><button type="button" class="primary" id="media-copilot-apply">Apply to draft</button><button type="button" class="item-action" id="media-copilot-discard">Discard</button></div></section><p class="media-copilot-privacy">Text questions send project text only. Video analysis sends up to four downscaled still frames and project metadata after your explicit click; the original video is never uploaded or stored. Audio pause scans stay local. Visual analysis cannot judge speech performance or produce word-level transcripts. Applying scene rewrites changes the draft only; Save changes remains a separate step.</p>';
+    panel.innerHTML = '<div class="media-ai-sidecar-head"><div><p class="eyebrow">LIVE EDITING COMPANION</p><h3>JARVIS Copilot</h3><span class="media-ai-context-badge">PROJECT AWARE</span></div><button type="button" class="item-action" id="media-copilot-close" aria-label="Hide side panel">Hide</button></div><p id="media-copilot-context" class="media-ai-context">Open a project to load its editing context.</p><section class="media-copilot-quick-tools" aria-label="Quick editing tools"><strong>Quick tools</strong><div><button type="button" data-copilot-tool="creator">Creator mode</button><button type="button" data-copilot-tool="templates">Templates</button><button type="button" data-copilot-tool="captions">Subtitle Studio</button><button type="button" data-copilot-tool="motion">AI motion graphics</button><button type="button" data-copilot-tool="timeline">Timeline</button></div></section><section class="media-copilot-audit"><div class="media-copilot-section-head"><strong>Smart edit check</strong><button type="button" class="item-action" id="media-copilot-audit-button">Scan</button></div><div class="media-copilot-score"><strong id="media-copilot-score">—</strong><span id="media-copilot-score-label">Waiting for project</span></div><ul id="media-copilot-findings" class="media-copilot-findings"><li>Open a storyboard to inspect pacing, narration and timeline structure.</li></ul></section><div class="media-copilot-media-actions"><div><strong>Analyze real media</strong><span>Choose a video clip or audio track in the timeline first.</span></div><button type="button" class="primary" id="media-copilot-analyze-video">Analyze selected video frames</button><button type="button" class="item-action" id="media-copilot-scan-audio">Scan selected audio for long pauses</button><p>Video review sends up to four small still frames only after you press Analyze. Audio pause scanning runs locally in your browser.</p></div><div class="media-copilot-actions"><button type="button" class="primary" id="media-copilot-improve">Improve selected scene</button><button type="button" class="item-action" data-copilot-prompt="Review this edit and give me the three most important improvements, in priority order.">Review this edit</button><button type="button" class="item-action" data-copilot-prompt="Suggest a stronger opening hook and a clear first 3-second visual.">Improve the hook</button><button type="button" class="item-action" data-copilot-prompt="Review the scene pacing and suggest where to tighten the storyboard without losing meaning.">Tighten pacing</button><button type="button" class="item-action" data-copilot-prompt="Suggest concise on-screen captions and a title that accurately matches this video.">Titles & captions</button></div><form id="media-copilot-form" class="media-copilot-form"><label for="media-copilot-question">Ask about this edit</label><textarea id="media-copilot-question" rows="3" maxlength="800" placeholder="Example: Tighten the pacing, balance the music, and improve the scene transitions."></textarea><div class="media-copilot-form-actions"><button type="submit" class="primary" id="media-copilot-send">Ask JARVIS</button><button type="button" class="item-action" id="media-copilot-plan">Create reviewable edit plan</button></div></form><div id="media-copilot-answer" class="media-copilot-answer" role="status" aria-live="polite">JARVIS can review project text and propose draft edits. Media files stay in this browser unless you explicitly analyze sampled frames.</div><div id="media-copilot-media-markers" class="media-copilot-media-markers" aria-live="polite"></div><section id="media-copilot-plan-card" class="media-copilot-plan-card hidden" aria-live="polite"></section><section id="media-copilot-preview" class="media-copilot-preview hidden"><div><strong>Proposed scene rewrite</strong><p>Review and edit every field before applying it to your draft.</p></div><label>Scene heading<input id="media-copilot-preview-heading" maxlength="120"></label><label>Voiceover<textarea id="media-copilot-preview-voiceover" rows="4" maxlength="1800"></textarea></label><label>On-screen text<textarea id="media-copilot-preview-onscreen" rows="2" maxlength="600"></textarea></label><label>Visual direction<textarea id="media-copilot-preview-visual" rows="3" maxlength="600"></textarea></label><div class="media-copilot-preview-actions"><button type="button" class="primary" id="media-copilot-apply">Apply to draft</button><button type="button" class="item-action" id="media-copilot-discard">Discard</button></div></section><p class="media-copilot-privacy">Text questions send bounded project text to the configured JARVIS AI provider. Video review sends up to four downscaled still frames only after your click. Audio pause scans run locally. AI edit plans change the draft only after you select and apply operations; Save changes remains separate.</p>';
     const side = editor.querySelector(".media-editor-side");
     if (side) side.after(panel);
     else editor.append(panel);
@@ -223,6 +224,8 @@ export function createMediaWorkspace({ api, toast }) {
       const question = byId("media-copilot-question").value.trim();
       if (question) runCopilotRequest(question, "ask");
     });
+    byId("media-copilot-plan").addEventListener("click", createCopilotEditPlan);
+    byId("media-copilot-plan-card").addEventListener("click", handleCopilotPlanAction);
     panel.querySelectorAll("[data-copilot-prompt]").forEach((button) => {
       button.addEventListener("click", () => runCopilotRequest(button.dataset.copilotPrompt, "ask"));
     });
@@ -421,6 +424,115 @@ export function createMediaWorkspace({ api, toast }) {
       copilotBusy = false;
       if (send) send.disabled = false;
       updateCopilotContext();
+    }
+  }
+
+  function describeEditOperation(operation, project) {
+    if (operation.type === "rewrite_scene") {
+      const index = project.scenes.findIndex((scene) => scene.id === operation.sceneId);
+      return "Rewrite Scene " + (index + 1) + ": " + operation.heading;
+    }
+    if (operation.type === "set_scene_transition") {
+      const index = project.scenes.findIndex((scene) => scene.id === operation.sceneId);
+      return "Set Scene " + (index + 1) + " transition to " + operation.transition;
+    }
+    const found = project.tracks.flatMap((track) => track.clips.map((clip) => ({ track, clip }))).find((item) => item.clip.id === operation.clipId);
+    if (operation.type === "set_clip_volume") return "Set " + (found?.clip.label || "audio clip") + " volume to " + Math.round(operation.volume * 100) + "%";
+    if (operation.type === "set_track_muted") return (project.tracks.find((track) => track.id === operation.trackId)?.name || "Audio track") + (operation.muted ? " · mute" : " · unmute");
+    if (operation.type === "move_clip") return "Move " + (found?.clip.label || "clip") + " to " + Number(operation.start).toFixed(2) + "s on the timeline";
+    if (operation.type === "trim_clip") return "Trim " + (found?.clip.label || "clip") + " source to " + Number(operation.sourceIn).toFixed(2) + "–" + Number(operation.sourceOut).toFixed(2) + "s";
+    return "Unsupported operation";
+  }
+
+  async function createCopilotEditPlan() {
+    if (!currentProject || currentProject.status !== "draft" || copilotBusy || mediaAnalysisBusy) return;
+    const request = byId("media-copilot-question")?.value?.trim() || "Review the whole edit and propose the most valuable professional improvements.";
+    const button = byId("media-copilot-plan");
+    const output = byId("media-copilot-answer");
+    copilotBusy = true;
+    if (button) button.disabled = true;
+    if (output) output.textContent = "Saving the draft, then JARVIS will prepare a structured edit plan…";
+    try {
+      await saveProject();
+      const result = await api("/api/media/edit-plan", {
+        method: "POST",
+        body: JSON.stringify({ projectId: currentProject.id, request })
+      });
+      pendingEditPlan = { projectId: currentProject.id, plan: result.plan };
+      renderCopilotEditPlan();
+      if (output) output.textContent = "Plan ready. Review or uncheck any operation, then apply the selected changes to the local draft.";
+    } catch (error) {
+      if (output) output.textContent = error.message;
+    } finally {
+      copilotBusy = false;
+      if (button) button.disabled = false;
+      updateCopilotContext();
+    }
+  }
+
+  function renderCopilotEditPlan() {
+    const card = byId("media-copilot-plan-card");
+    if (!card) return;
+    card.replaceChildren();
+    if (!pendingEditPlan || !currentProject || pendingEditPlan.projectId !== currentProject.id) {
+      card.classList.add("hidden");
+      return;
+    }
+    card.classList.remove("hidden");
+    const heading = makeElement("strong", "", "JARVIS edit plan");
+    const summary = makeElement("p", "media-copilot-plan-summary", pendingEditPlan.plan.summary);
+    card.append(heading, summary);
+    const list = makeElement("div", "media-copilot-plan-operations");
+    pendingEditPlan.plan.operations.forEach((operation, index) => {
+      const label = makeElement("label", "media-copilot-plan-operation");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = true;
+      checkbox.dataset.planIndex = String(index);
+      const text = makeElement("span", "", describeEditOperation(operation, currentProject));
+      label.append(checkbox, text);
+      list.append(label);
+    });
+    card.append(list);
+    (pendingEditPlan.plan.notes || []).forEach((note) => card.append(makeElement("p", "media-copilot-plan-note", note)));
+    const actions = makeElement("div", "media-copilot-preview-actions");
+    const apply = makeElement("button", "primary", "Apply selected to draft");
+    apply.type = "button";
+    apply.dataset.planAction = "apply";
+    const discard = makeElement("button", "item-action", "Discard plan");
+    discard.type = "button";
+    discard.dataset.planAction = "discard";
+    actions.append(apply, discard);
+    card.append(actions, makeElement("small", "", "No edits are saved until you press Save changes."));
+  }
+
+  function handleCopilotPlanAction(event) {
+    const action = event.target?.closest?.("[data-plan-action]")?.dataset?.planAction;
+    if (!action) return;
+    if (action === "discard") {
+      pendingEditPlan = null;
+      renderCopilotEditPlan();
+      return;
+    }
+    if (!currentProject || currentProject.status !== "draft" || !pendingEditPlan || pendingEditPlan.projectId !== currentProject.id) return;
+    const selected = [...byId("media-copilot-plan-card").querySelectorAll("[data-plan-index]:checked")]
+      .map((checkbox) => pendingEditPlan.plan.operations[Number(checkbox.dataset.planIndex)])
+      .filter(Boolean);
+    if (!selected.length) return toast("Select at least one proposed edit.", true);
+    try {
+      currentProject = applyMediaEditOperations(currentProject, selected);
+      projects = projects.map((item) => item.id === currentProject.id ? currentProject : item);
+      pendingEditPlan = null;
+      renderCopilotEditPlan();
+      renderSceneEditors();
+      renderTimelineEditor();
+      renderPreviewAtTime(Math.min(previewTimeMs, currentProject.durationSeconds * 1000));
+      renderCopilotAudit();
+      setExportStatus("Selected JARVIS edits are on the local draft. Review the preview, then press Save changes.");
+      const output = byId("media-copilot-answer");
+      if (output) output.textContent = "Selected changes applied to the draft. Review the timeline and preview; nothing has been exported or published.";
+    } catch (error) {
+      toast(error.message, true);
     }
   }
 
@@ -2507,6 +2619,7 @@ export function createMediaWorkspace({ api, toast }) {
     selectedProjectId = id;
     currentProject = structuredClone(selected);
     ensureCopilotUI();
+    renderCopilotEditPlan();
     byId("media-editor").classList.remove("hidden");
     byId("media-editor-project-title").value = currentProject.title;
     byId("media-editor-audience").value = currentProject.audience || "";

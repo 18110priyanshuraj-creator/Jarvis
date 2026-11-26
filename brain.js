@@ -258,6 +258,20 @@ export function tryRunLocalBrain(options = {}) {
   return runLocalBrainInternal(options, false);
 }
 
+/** Keep exact local calculations and private-list lookups local; let the configured model answer ordinary conversation. */
+export function isLocalFirstAssistantRequest(message) {
+  const raw = String(message ?? "").trim();
+  const q = normalize(raw);
+  if (!q) return true;
+  if (findCalculation(raw)) return true;
+  return /(show|list|what are|view|mere|meri|my).*(task|tasks|to.?do|kaam|कार्य)/.test(q) ||
+    /^(tasks|my tasks|mere tasks|show tasks)$/.test(q) ||
+    /(show|list|what are|view|mere|meri|my).*(memory|memories|notes|yaad)/.test(q) ||
+    /^(memories|my memory|show memories|meri memory)$/.test(q) ||
+    (/(today|aaj|date|time|samay|kitne baje)/.test(q) && /(date|time|today|aaj|samay|kitne baje|what day)/.test(q)) ||
+    /(forget|clear|delete).*(memory|memories|task)/.test(q);
+}
+
 /** Backwards-compatible offline response; unknown requests receive an explicit limitation. */
 export function runLocalBrain(options = {}) {
   return runLocalBrainInternal(options, true);

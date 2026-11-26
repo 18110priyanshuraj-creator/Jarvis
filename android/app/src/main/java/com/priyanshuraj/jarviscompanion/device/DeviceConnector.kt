@@ -33,13 +33,40 @@ object DeviceConnector {
         )
     }
 
-    fun heartbeat(serverUrl: String, token: String, accessibilityEnabled: Boolean) {
+    fun heartbeat(serverUrl: String, token: String, accessibilityEnabled: Boolean, backgroundVoiceActive: Boolean? = null) {
+        val payload = JSONObject()
+            .put("accessibilityEnabled", accessibilityEnabled)
+            .put("appVersion", "0.2.0-phase18")
+        backgroundVoiceActive?.let { payload.put("backgroundVoiceActive", it) }
         request(
             serverUrl,
             "/api/devices/heartbeat",
+            payload,
+            token
+        )
+    }
+
+    fun nextDashboardTask(serverUrl: String, token: String): JSONObject? {
+        val response = request(serverUrl, "/api/devices/tasks/next", JSONObject(), token)
+        return response.optJSONObject("task")
+    }
+
+    fun reportTaskStatus(
+        serverUrl: String,
+        token: String,
+        status: String,
+        step: Int,
+        total: Int,
+        category: String
+    ) {
+        request(
+            serverUrl,
+            "/api/devices/task-status",
             JSONObject()
-                .put("accessibilityEnabled", accessibilityEnabled)
-                .put("appVersion", "0.2.0-phase18"),
+                .put("status", status)
+                .put("step", step)
+                .put("total", total)
+                .put("category", category),
             token
         )
     }

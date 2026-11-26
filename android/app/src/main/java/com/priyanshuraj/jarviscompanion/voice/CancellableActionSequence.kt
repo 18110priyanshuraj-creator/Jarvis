@@ -96,6 +96,9 @@ internal class CancellableActionSequence<T>(
             return
         }
 
+        // Publish the active step immediately before it touches the screen.
+        if (!persistState("running")) return
+
         val action = actions[index]
         val result = try {
             executeAction(action)

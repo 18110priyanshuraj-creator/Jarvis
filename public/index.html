@@ -1094,7 +1094,7 @@
               <input id="creator-thumbnail-subtitle" maxlength="60" placeholder="Optional · keep it short">
               <canvas id="creator-thumbnail-canvas" width="1280" height="720" aria-label="YouTube thumbnail preview"></canvas>
               <button type="button" class="primary" id="creator-export-thumbnail">Export thumbnail PNG</button>
-              <p class="small muted">No Canva developer credentials are needed for device control. Start JARVIS Companion hands-free and say “Open Canva”. JARVIS can read the screen, tap a clearly labelled control, scroll, or type into a field you have focused. On Android 12L/API 32+, it may also attempt a drag between two exact visible labels only when Canva exposes semantic drag and drop. Clip trimming, splitting, precise timing and export review remain under your direct supervision.</p>
+              <p class="small muted">No editor developer credentials are needed for device control. Start JARVIS Companion hands-free and open VN or Canva. JARVIS can read the screen, tap an exact visible control, scroll, or type into a field you have focused. On Android 12L/API 32+, it may attempt one drag between two exact visible labels only when the foreground editor exposes semantic drag and drop. This does not provide precision trimming, splitting, timing or export automation; review edits in the editor.</p>
               <p class="small muted">Check that the headline remains readable at small phone size and accurately matches the video.</p>
             </div>
             <div class="creator-tool-card">
@@ -1272,7 +1272,7 @@
           </div>
 
           <p class="small muted">Canva’s external Connect API automates supported templates, data fields and exports. It does not expose arbitrary clip trimming, split points, keyframes or freeform Canva timeline editing. Those still require Canva UI controls that are accessible in the installed app, or direct user editing.</p>
-          <p class="small muted">On Android, JARVIS can open Canva, inspect accessible labels and perform a limited semantic drag when Canva exposes that action. This is a separate UI-control path and does not require Canva OAuth for basic app control.</p>
+          <p class="small muted">On Android, JARVIS can open VN or Canva, inspect accessible labels and attempt a limited semantic drag when the foreground app exposes that action. This is a separate UI-control path and does not require editor OAuth.</p>
         </section>
 
         <section class="creator-panel">
@@ -1408,8 +1408,8 @@
           <div>
             <p class="eyebrow">ANDROID COMPANION</p>
             <h1>Device Control</h1>
-            <p class="muted">Pair your own Android device using a short-lived code. Phase 20 adds built-in planning for supported app-search commands without an external AI provider. App launch and safe screen actions run on your tablet after you enable Android Accessibility.</p>
-          <p class="small muted">Supported: open apps, read a local screen summary, scroll, Back, Home, tap an exact visible label and enter ordinary search text. Search stops before choosing a result. Send, delete, payment, password, PIN and OTP controls are blocked.</p>
+            <p class="muted">Pair your Android Companion, send a task to its visible background session, and follow task progress here. Screen actions still require the phone's user-enabled Accessibility service and approval on the phone.</p>
+          <p class="small muted">Supported: open apps, read a local screen summary, scroll, Back, Home, tap an exact visible label, enter ordinary search text and attempt a VN semantic item move when exact accessible labels are available. Dashboard tasks need the visible phone session and on-phone plan approval. Send, delete, payment, password, PIN and OTP controls are blocked.</p>
           </div>
         </div>
         <div class="form-card">
@@ -1424,6 +1424,20 @@
             <div id="pairing-code-value" class="pairing-code-value">------</div>
             <div id="pairing-code-expiry" class="small muted"></div>
           </div>
+        </div>
+        <form class="form-card device-task-form" id="device-task-form">
+          <div class="device-task-heading"><div><p class="eyebrow">LIVE DEVICE SESSION</p><h2>Send a task to Android</h2></div><span class="device-session-pill"><i></i> Paired device</span></div>
+          <p class="small muted">The paired phone must have JARVIS Background voice running. It will prepare a bounded plan, announce it, and wait for approval on the phone before taking screen actions.</p>
+          <label for="device-task-target">Target device</label>
+          <select id="device-task-target" required><option value="">Pair a device first</option></select>
+          <label for="device-task-message">Task</label>
+          <textarea id="device-task-message" rows="3" maxlength="3000" required placeholder='Example: Open VN and move "Clip 1" to "Main video track"'></textarea>
+          <div class="form-row"><span class="small muted">Queued text expires after five minutes and is removed when delivered.</span><button class="primary" id="device-task-submit" type="submit">Queue task</button></div>
+          <p id="device-task-submit-status" class="small muted" role="status" aria-live="polite">No task queued.</p>
+        </form>
+        <div class="device-live-section">
+          <div class="list-heading"><div><p class="eyebrow">LIVE ACTIVITY</p><h2>Task monitor</h2></div><span class="small muted">Refreshes while this page is open</span></div>
+          <div id="device-task-board" class="device-task-board"></div>
         </div>
         <div class="list-heading">
           <h2>Connected devices</h2>

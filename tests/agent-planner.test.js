@@ -190,6 +190,21 @@ test("built-in planner creates Canva drag plan only from quoted exact labels", (
   assert.equal(createLocalAgentPlan('Open Canva and move "Clip 1" to "Delete project"'), null);
 });
 
+test("built-in planner creates a verified VN semantic reorder plan from exact labels", () => {
+  const plan = createLocalAgentPlan('Open VN and move "Clip 1" to "Main video track"');
+  assert.ok(plan);
+  assert.deepEqual(plan.actions.map((item) => item.type), [
+    "open_app", "verify_app_foreground", "drag_label_to_label", "verify_screen_text", "ask_user"
+  ]);
+  assert.equal(plan.actions[0].value, "VN");
+  assert.equal(plan.actions[1].value, "VN");
+  assert.equal(plan.actions[2].value, "VN");
+  assert.equal(plan.actions[2].sourceLabel, "Clip 1");
+  assert.equal(plan.actions[2].targetLabel, "Main video track");
+  assert.equal(plan.actions[3].value, "Main video track");
+  assert.equal(createLocalAgentPlan("Open VN and move Clip 1 to Main video track"), null);
+});
+
 test("agent planner validates Canva semantic drag with exact labels and foreground checks", () => {
   const plan = validateAgentPlan({
     mode: "device_action",
@@ -233,7 +248,7 @@ test("agent planner rejects ambiguous or unverified Canva drag requests", () => 
       { type: "drag_label_to_label", value: "Canva", sourceLabel: "Clip 1", targetLabel: "Track 2", purpose: "Move" },
       { type: "verify_screen_text", value: "Track 2", purpose: "Check" }
     ]
-  }), /explicit Canva launch/i);
+  }), /explicit matching app launch/i);
 
   assert.throws(() => validateAgentPlan({
     mode: "device_action", reply: "Move it.",

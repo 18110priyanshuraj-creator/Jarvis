@@ -299,6 +299,23 @@ class AgentPlanRunnerTest {
     }
 
     @Test
+    fun validatesAndPreviewsVerifiedVNClipReordering() {
+        val plan = JSONObject(
+            """{"mode":"device_action","reply":"I will reorder the clip in VN and check the screen.","actions":[
+                {"type":"open_app","value":"VN","purpose":"Open VN."},
+                {"type":"verify_app_foreground","value":"VN","purpose":"Confirm VN is foregrounded."},
+                {"type":"drag_label_to_label","value":"VN","sourceLabel":"Clip 1","targetLabel":"Main video track","purpose":"Move the named clip to the named track."},
+                {"type":"verify_screen_text","value":"Main video track","purpose":"Check the expected destination is visible."},
+                {"type":"ask_user","value":"Please review the timeline before continuing.","purpose":"Keep final review with the user."}
+            ]}"""
+        )
+        val actions = AgentPlanRunner.validate(plan)
+        assertEquals(5, actions.length())
+        assertTrue(AgentPlanRunner.requiresAccessibility(plan))
+        assertTrue(AgentPlanRunner.describe(plan).contains("Move Clip 1 to Main video track in VN"))
+    }
+
+    @Test
     fun rejectsCanvaDragWithoutExactLabelsCanvaVerificationOrImmediateResultCheck() {
         val missingLabels = JSONObject(
             """{"mode":"device_action","actions":[

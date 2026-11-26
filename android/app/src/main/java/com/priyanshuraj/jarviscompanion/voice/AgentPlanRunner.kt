@@ -5,6 +5,7 @@ import android.os.Handler
 import com.priyanshuraj.jarviscompanion.LocalTaskExecutionJournal
 import com.priyanshuraj.jarviscompanion.accessibility.JarvisAccessibilityService
 import com.priyanshuraj.jarviscompanion.accessibility.UiActionPolicy
+import com.priyanshuraj.jarviscompanion.accessibility.VideoEditorPolicy
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -123,14 +124,14 @@ object AgentPlanRunner {
                 throw IllegalArgumentException("The plan contains a protected screen control.")
             }
             if (type == "drag_label_to_label") {
-                if (UiActionPolicy.normalizeLabel(value) != "canva" ||
+                if (!VideoEditorPolicy.supportsSemanticDrag(value) ||
                     sourceLabel.isBlank() || targetLabel.isBlank() ||
                     sourceLabel.length > 100 || targetLabel.length > 100 ||
                     UiActionPolicy.normalizeLabel(sourceLabel) == UiActionPolicy.normalizeLabel(targetLabel) ||
                     UiActionPolicy.isProtectedControl(sourceLabel) ||
                     UiActionPolicy.isProtectedControl(targetLabel)
                 ) {
-                    throw IllegalArgumentException("A Canva drag needs two different, safe, exact visible labels and the verified Canva app name.")
+                    throw IllegalArgumentException("A video-editor drag needs two different, safe, exact visible labels and a supported editor name.")
                 }
             }
             if (type == "type_text" && !UiActionPolicy.validateTextPayload(value, 160).allowed) {
@@ -233,24 +234,25 @@ object AgentPlanRunner {
             }
         }
 
-        // A semantic drag must stay inside the verified Canva app and be checked immediately.
+        // A semantic drag must stay inside the explicitly verified editor and be checked immediately.
         for (index in 0 until actions.length()) {
             val action = actions.getJSONObject(index)
             if (action.optString("type") != "drag_label_to_label") continue
+            val editorName = VideoEditorPolicy.canonicalName(action.optString("value"))
             val appCheck = actions.optJSONObject(index - 1)
             val appLaunch = actions.optJSONObject(index - 2)
             val resultCheck = actions.optJSONObject(index + 1)
             if (appLaunch?.optString("type") != "open_app" ||
-                UiActionPolicy.normalizeLabel(appLaunch.optString("value")) != "canva" ||
+                VideoEditorPolicy.canonicalName(appLaunch.optString("value")) != editorName ||
                 appCheck?.optString("type") != "verify_app_foreground" ||
-                UiActionPolicy.normalizeLabel(appCheck.optString("value")) != "canva"
+                VideoEditorPolicy.canonicalName(appCheck.optString("value")) != editorName
             ) {
-                throw IllegalArgumentException("A Canva drag must follow an explicit Canva launch and foreground verification.")
+                throw IllegalArgumentException("A video-editor drag must follow an explicit editor launch and foreground verification.")
             }
             if (resultCheck?.optString("type") != "verify_screen_text" ||
                 resultCheck.optString("value").isBlank()
             ) {
-                throw IllegalArgumentException("A Canva drag must be followed immediately by visible-result verification.")
+                throw IllegalArgumentException("A video-editor drag must be followed immediately by visible-result verification.")
             }
         }
 
@@ -293,7 +295,7 @@ object AgentPlanRunner {
                 "scroll_up" -> "Scroll up"
                 "back" -> "Go back"
                 "home" -> "Go to the home screen"
-                "drag_label_to_label" -> "Move " + action.optString("sourceLabel").take(45) + " to " + action.optString("targetLabel").take(45) + " in Canva"
+                "drag_label_to_label" -> "Move " + action.optString("sourceLabel").take(45) + " to " + action.optString("targetLabel").take(45) + " in " + value.take(40)
                 "verify_screen_text" -> "Verify that this text is visible: " + value.take(100)
                 "ask_user" -> "Ask you: " + value.take(60)
                 "finish" -> "Finish"
@@ -347,6 +349,7 @@ object AgentPlanRunner {
         plan: JSONObject,
         handler: Handler,
         onProgress: (Int, Boolean) -> Unit = { _, _ -> },
+        onTaskStatus: (String, Int, Int, String) -> Unit = { _, _, _, _ -> },
         onComplete: (String) -> Unit
     ): AgentPlanControls? {
         val actions = try {
@@ -370,6 +373,16 @@ object AgentPlanRunner {
         val intro = plan.optString("reply").trim()
         val initialMessages = if (intro.isBlank()) emptyList() else listOf(intro.take(180))
         val taskKinds = actionKinds(plan).split(" → ")
+        var completedSteps = 0
+        fun categoryAt(index: Int): String {
+            val type = actions.optJSONObject(index)?.optString("type").orEmpty()
+            return when (type) {
+                "drag_label_to_label" -> "editing"
+                "read_screen", "verify_screen_text" -> "screen_read"
+                "open_app", "tap_label", "type_text", "scroll_down", "scroll_up", "back", "home" -> "navigation"
+                else -> "general"
+            }
+        }
         val journalId = try {
             LocalTaskExecutionJournal.start(context, taskKinds)
         } catch (error: Exception) {
@@ -415,11 +428,19 @@ object AgentPlanRunner {
             onState = { status, index ->
                 if (status == "running" || status == "paused") {
                     LocalTaskExecutionJournal.setState(context, journalId, status, index)
+                    onTaskStatus(status, completedSteps, actions.length(), categoryAt(index.coerceIn(0, actions.length() - 1)))
                 }
             },
             onProgress = { index, result ->
                 LocalTaskExecutionJournal.checkpoint(
                     context, journalId, index, result.success, result.shouldStop
+                )
+                if (result.success) completedSteps = (index + 1).coerceAtMost(actions.length())
+                onTaskStatus(
+                    if (result.success) "running" else "failed",
+                    completedSteps,
+                    actions.length(),
+                    categoryAt(index)
                 )
                 onProgress(index, result.success)
             },
@@ -429,6 +450,7 @@ object AgentPlanRunner {
                 } finally {
                     AgentPlanExecutionGate.release(journalId)
                 }
+                onTaskStatus(status, completedSteps, actions.length(), categoryAt((completedSteps - 1).coerceAtLeast(0)))
             },
             onComplete = { messages ->
                 completedDuringStart = true

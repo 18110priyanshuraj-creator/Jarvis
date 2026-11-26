@@ -127,6 +127,14 @@ Android's configured speech-recognition provider processes the microphone audio.
 - Pairing codes expire after three minutes and can be used once.
 - Consequential actions and sensitive fields remain manual.
 
+## Dashboard task handoff and live progress
+
+- The authenticated web Device Control view can queue one text task for a paired phone. The task text is held in server memory for up to five minutes and is deleted when delivered or cancelled.
+- The phone polls only while the user has started the visible Background voice service. Starting that service requires the microphone permission and Android's foreground-service rules; no hidden wake-up or auto-start is used.
+- A delivered device-action plan is read aloud and must be approved on the phone before screen actions begin. The phone can receive browser-queued Pause, Resume and Cancel controls while a task is active.
+- The web monitor receives only status, step count and a broad category. It does not receive screen labels, screen captures, speech audio, or raw task text in progress events.
+- The progress feed describes the action plan and confirmed action results. It does not expose private model reasoning or claim that an edit is visually correct; review the timeline on the phone.
+
 
 ## Current provider-independent AI routing
 

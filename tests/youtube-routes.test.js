@@ -6,7 +6,7 @@ import fs from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   GOOGLE_DRIVE_METADATA_SCOPE,
   YOUTUBE_UPLOAD_SCOPE,
@@ -96,7 +96,7 @@ before(async () => {
   const port = await freePort();
   baseUrl = "http://127.0.0.1:" + port;
   const mockPath = fileURLToPath(new URL("./helpers/mock-youtube-google.js", import.meta.url));
-  child = spawn(process.execPath, ["--import", mockPath, "server.js"], {
+  child = spawn(process.execPath, ["--import", pathToFileURL(mockPath).href, "server.js"], {
     cwd: projectRoot,
     env: {
       ...process.env,

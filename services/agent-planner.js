@@ -55,20 +55,22 @@ function extractGoogleSearchQuery(input) {
 }
 
 /**
- * Parse only quoted, exact Canva source/destination labels. The local planner
- * never guesses labels from screen contents, because it does not receive them.
+ * Parse only quoted, exact video-editor source/destination labels. The local
+ * planner never guesses labels from screen contents, because it cannot see them.
  */
-function extractCanvaDragIntent(input) {
+function extractVideoEditorDragIntent(input) {
   const patterns = [
-    /^(?:please\s+)?(?:open|launch|start)\s+canva\s+(?:and|then)\s+(?:drag|move)\s+["“'](.+?)["”']\s+(?:to|into|onto)\s+["“'](.+?)["”']$/i,
-    /^canva\s+(?:kholo|khol do)\s+(?:aur|phir)\s+["“'](.+?)["”']\s+ko\s+["“'](.+?)["”']\s+(?:mein|me|par)\s+(?:drag|move|shift|rakh(?:o|\s+do))(?:\s+(?:karo|kar do))?$/i
+    /^(?:please\s+)?(?:open|launch|start)\s+(canva|vn)\s+(?:and|then)\s+(?:drag|move)\s+["“'](.+?)["”']\s+(?:to|into|onto)\s+["“'](.+?)["”']$/i,
+    /^(canva|vn)\s+(?:kholo|khol do)\s+(?:aur|phir)\s+["“'](.+?)["”']\s+ko\s+["“'](.+?)["”']\s+(?:mein|me|par)\s+(?:drag|move|shift|rakh(?:o|\s+do))(?:\s+(?:karo|kar do))?$/i
   ];
   for (const pattern of patterns) {
     const match = input.match(pattern);
     if (match?.[1] && match?.[2]) {
+      const editor = match[1].toLowerCase() === "vn" ? "VN" : "Canva";
       return {
-        sourceLabel: cleanLocalIntent(match[1], 100),
-        targetLabel: cleanLocalIntent(match[2], 100)
+        editor,
+        sourceLabel: cleanLocalIntent(match[2], 100),
+        targetLabel: cleanLocalIntent(match[3], 100)
       };
     }
   }
@@ -177,9 +179,9 @@ export function createLocalAgentPlan(message) {
     });
   }
 
-  const canvaDrag = extractCanvaDragIntent(input);
-  if (canvaDrag) {
-    const { sourceLabel, targetLabel } = canvaDrag;
+  const editorDrag = extractVideoEditorDragIntent(input);
+  if (editorDrag) {
+    const { editor, sourceLabel, targetLabel } = editorDrag;
     if (!sourceLabel || !targetLabel ||
       sourceLabel.toLowerCase() === targetLabel.toLowerCase() ||
       BLOCKED_LABEL.test(sourceLabel) || BLOCKED_LABEL.test(targetLabel)) {
@@ -187,13 +189,13 @@ export function createLocalAgentPlan(message) {
     }
     return validateAgentPlan({
       mode: "device_action",
-      reply: "I will open Canva, verify that it is foregrounded, request the named semantic drag, and check the visible screen. If Canva does not expose drag actions for those items, you will need to move the clip manually.",
+      reply: "I will open " + editor + ", verify it is foregrounded, attempt the exact semantic drag, and check the visible screen. The move works only if this app version exposes Android accessibility drag actions for both items.",
       actions: [
-        { type: "open_app", value: "Canva", purpose: "Open the Canva app." },
-        { type: "verify_app_foreground", value: "Canva", purpose: "Confirm Canva is the foreground app." },
-        { type: "drag_label_to_label", value: "Canva", sourceLabel, targetLabel, purpose: "Move the exact user-named item to the exact user-named destination with Android semantic accessibility actions." },
+        { type: "open_app", value: editor, purpose: "Open the requested video editor." },
+        { type: "verify_app_foreground", value: editor, purpose: "Confirm the requested video editor is the foreground app." },
+        { type: "drag_label_to_label", value: editor, sourceLabel, targetLabel, purpose: "Move the exact user-named item to the exact user-named destination with Android semantic accessibility actions." },
         { type: "verify_screen_text", value: targetLabel, purpose: "Check that the expected destination label is visible after the drag request." },
-        { type: "ask_user", value: "Review the timeline and confirm the clip is in the intended position. If the move did not happen, move it manually in Canva.", purpose: "Keep final placement verification with the user." }
+        { type: "ask_user", value: "Review the timeline and confirm the clip is in the intended position. If the editor did not expose semantic drag actions, adjust the clip manually.", purpose: "Keep final placement verification with the user." }
       ]
     });
   }
@@ -278,10 +280,10 @@ export function validateAgentPlan(candidate) {
       throw new TypeError("The AI planner requested a protected action.");
     }
     if (action.type === "drag_label_to_label" &&
-      (value.toLowerCase() !== "canva" || !sourceLabel || !targetLabel ||
+      (!new Set(["canva", "vn"]).has(value.toLowerCase()) || !sourceLabel || !targetLabel ||
         sourceLabel.toLowerCase() === targetLabel.toLowerCase() ||
         BLOCKED_LABEL.test(sourceLabel) || BLOCKED_LABEL.test(targetLabel))) {
-      throw new TypeError("A Canva drag needs two different, safe, exact visible labels.");
+      throw new TypeError("A video-editor drag needs two different, safe, exact visible labels and a supported editor.");
     }
     if (action.type === "type_text" && (value.length > 160 || NUMERIC_SECRET.test(value))) {
       throw new TypeError("The requested text is outside the allowed typing policy.");
@@ -364,20 +366,21 @@ export function validateAgentPlan(candidate) {
     }
   }
 
-  // A Canva drag is permitted only inside an explicitly opened and verified Canva app.
+  // An editor drag is permitted only inside its explicitly opened and verified app.
   // It must be followed immediately by a visible-result check on the device.
   for (let index = 0; index < actions.length; index += 1) {
     const action = actions[index];
     if (action.type !== "drag_label_to_label") continue;
+    const editor = action.value.toLowerCase();
     const launch = actions[index - 2];
     const appCheck = actions[index - 1];
     const resultCheck = actions[index + 1];
-    if (launch?.type !== "open_app" || launch.value.toLowerCase() !== "canva" ||
-      appCheck?.type !== "verify_app_foreground" || appCheck.value.toLowerCase() !== "canva") {
-      throw new TypeError("A Canva drag must follow an explicit Canva launch and foreground check.");
+    if (launch?.type !== "open_app" || launch.value.toLowerCase() !== editor ||
+      appCheck?.type !== "verify_app_foreground" || appCheck.value.toLowerCase() !== editor) {
+      throw new TypeError("A video-editor drag must follow an explicit matching app launch and foreground check.");
     }
     if (resultCheck?.type !== "verify_screen_text" || !resultCheck.value) {
-      throw new TypeError("A Canva drag must be followed immediately by visible-result verification.");
+      throw new TypeError("A video-editor drag must be followed immediately by visible-result verification.");
     }
   }
 
@@ -436,7 +439,7 @@ const SYSTEM_INSTRUCTIONS = [
   "Every open_app action must be followed immediately by verify_app_foreground with the same app label. Every open_web_search action must be followed immediately by verify_browser_foreground with the exact same query text. Every open_public_url action must be followed immediately by verify_public_url_foreground with the same URL. Every UI mutation (tap, type, scroll, back or home) must be followed by verify_screen_text for the expected visible result before the plan can finish.",
   "A verification action is an observation only; it never taps, submits, sends, purchases, deletes or changes account state. If the expected result is not visible, stop and ask the user to review the screen. Never report completion without that check.",
   "A tap_label must be a short exact UI label such as Search or Library. If uncertain, choose clarification instead of guessing.",
-  "For drag_label_to_label, only handle an explicitly requested Canva edit. Set value to exactly Canva, sourceLabel to the exact accessible label of the item to move, and targetLabel to the exact accessible label of the destination. Do not invent labels or infer them from the screen: the planner does not receive screen contents. Require the actions immediately before it to be open_app Canva and verify_app_foreground Canva, then immediately follow the drag with verify_screen_text for a phrase the user expects to see. If the user has not supplied both exact labels, choose clarification and ask for them. Drag works only if Canva exposes Android semantic accessibility drag actions; never use coordinates or claim timeline editing succeeded if the action is unavailable.",
+  "For drag_label_to_label, only handle an explicitly requested Canva or VN edit. Set value to exactly Canva or VN, sourceLabel to the exact accessible label of the item to move, and targetLabel to the exact accessible label of the destination. Do not invent labels or infer them from the screen: the planner does not receive screen contents. Require the two actions immediately before it to be open_app and verify_app_foreground for the same editor, then immediately follow the drag with verify_screen_text for a phrase the user expects to see. If the user has not supplied both exact labels, choose clarification and ask for them. Drag works only if that installed app version exposes Android semantic accessibility drag actions; never use coordinates or claim the move succeeded if the action or visible-result check is unavailable.",
   "type_text is only for ordinary search or draft text in a field the user has already focused. Never produce PINs, OTPs, passwords, payment details, or long numeric codes.",
   "Do not request or infer screen contents. The planner receives only the spoken transcript; screen text stays on the device.",
   "Use no more than six actions. If the task is outside the allowed capabilities, choose clarification and explain that it must be completed manually."
