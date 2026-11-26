@@ -49,3 +49,26 @@ The current repository includes:
 - Unsupported operations must fail honestly rather than falling back to arbitrary shell commands or coordinate-based UI actions.
 - Keep uploads local unless the user has explicitly chosen an authenticated storage destination.
 - Preserve draft/approval gates for edits and publishing.
+
+## Open-source editor integration — JARVIS-native approach
+
+JARVIS keeps its existing project model and browser timeline as the canonical editing surface. The goal is to port useful *capabilities and algorithms*, not to paste several desktop applications into the Android app.
+
+### Capability mapping
+
+- **Dawn Cut concepts:** retain transcript-aware editing, word-timed captions, filler/retake review, silence candidates, and deterministic edit-decision lists as target capabilities. JARVIS already has local low-volume interval scanning, SRT/WebVTT import, timeline trims/splits, and project-level visual checks. Automatic speech-to-text and word-level transcript editing are still not implemented.
+- **MakeMyClip Editor concepts:** use typed edit commands, previewable operations, undo/redo snapshots, and portable timeline interchange. JARVIS already has multi-track clips, trims, splits, speed ramps, keyframes, transitions and local export. A general natural-language command-to-edit executor and durable undo/redo history remain future work.
+- **OpenChatCut concepts:** preserve the multi-track timeline and agent-tool boundary. JARVIS already has multi-track editing and a bounded AI copilot. Do not copy OpenChatCut's AGPL-licensed implementation into this repository unless the project deliberately adopts and satisfies the resulting source-distribution obligations; reimplement compatible ideas independently and retain attribution for any copied permissively licensed code.
+- **Rough-cut prototype concepts:** build a reviewable rough-cut proposal from transcript timing and silence candidates. Current silence scanning is local and advisory only; it does not automatically delete or move timeline media.
+
+### Changes in this integration pass
+
+- Long-form AI storyboard generation now asks for up to 80 concise narration-linked beats, normally 4–8 seconds each, with varied shot scale, subject, action and composition. It asks the model not to pad a short brief or claim that media assets have been generated.
+- The Media Copilot audit now flags missing visual direction, adjacent repeated visual prompts and long-form scenes that may need additional cutaways.
+- These checks are editorial warnings, not proof of visual quality. The user must still preview the rendered result and check narration synchronisation.
+
+### Android and runtime boundary
+
+The Android Companion remains the permission-gated controller for supported visible UI actions. It does not expose a private VN editor API, arbitrary coordinate tapping, or guaranteed frame-accurate control of every VN feature. The browser Media Studio can edit its own JARVIS timeline on the tablet; this is not the same as remotely controlling VN's internal timeline.
+
+A true FFmpeg render worker, local speech-to-text model, word-level transcript editor, audio mastering, automatic asset sourcing and cross-app VN execution require separate implementations and device acceptance tests. Do not describe them as complete until they are built and verified.
