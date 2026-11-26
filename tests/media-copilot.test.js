@@ -41,3 +41,28 @@ test("scene rewrite parser rejects invalid and incomplete output", () => {
   assert.equal(parseMediaSceneRewrite("I think you should change the intro"), null);
   assert.equal(parseMediaSceneRewrite('{"heading":"Only a title"}'), null);
 });
+
+test("media audit flags repeated adjacent visuals and slow long-form beats", () => {
+  const repetitive = {
+    ...project,
+    format: "long-form",
+    scenes: [
+      { heading: "First", voiceover: "Explain the first step clearly.", visualPrompt: "A close up of a red blood cell moving through a narrow blood vessel", onScreenText: "", durationSeconds: 12 },
+      { heading: "Second", voiceover: "Explain what happens next.", visualPrompt: "A close up of a red blood cell moving through a narrow blood vessel", onScreenText: "", durationSeconds: 6 }
+    ],
+    tracks: []
+  };
+  const report = analyzeMediaProject(repetitive);
+  assert.ok(report.findings.some((item) => item.title.includes("repeat the same visual")));
+  assert.ok(report.findings.some((item) => item.title.includes("more visual beats")));
+});
+
+test("media audit flags missing visual direction", () => {
+  const incomplete = {
+    ...project,
+    scenes: [{ heading: "Scene", voiceover: "A sufficiently long narration sentence for the audit.", onScreenText: "", visualPrompt: "", durationSeconds: 6 }],
+    tracks: []
+  };
+  const report = analyzeMediaProject(incomplete);
+  assert.ok(report.findings.some((item) => item.title.includes("no visual direction")));
+});
