@@ -25,8 +25,16 @@ export function analyzeMediaProject(project) {
     if (!voiceover) add("warning", "Scene " + (index + 1) + " has no narration", "Add voiceover text or intentionally mark this scene as silent.", index);
     if (!onScreenText) add("tip", "Scene " + (index + 1) + " has no on-screen text", "Consider a concise caption or key phrase.", index);
     const shortFormat = ["vertical-short", "square-carousel"].includes(project?.format);
-    if (duration > (shortFormat ? 16 : 35)) {
-      add("tip", "Scene " + (index + 1) + " may feel slow", "Review its " + duration.toFixed(1) + " second duration and consider a tighter beat.", index);
+    const visualPrompt = cleanText(scene?.visualPrompt, 500);
+    if (!visualPrompt) {
+      add("warning", "Scene " + (index + 1) + " has no visual direction", "Describe a specific subject, action and focal point that directly supports the narration.", index);
+    }
+    const longForm = project?.format === "long-form";
+    const pacingLimit = longForm ? 8 : (shortFormat ? 16 : 35);
+    if (duration > pacingLimit) {
+      add("tip", "Scene " + (index + 1) + " may need more visual beats", longForm
+        ? "This narration beat lasts " + duration.toFixed(1) + " seconds. Consider splitting it into shorter, narration-synchronised shots or cutaways."
+        : "Review its " + duration.toFixed(1) + " second duration and consider a tighter beat.", index);
     }
   });
 
@@ -38,6 +46,26 @@ export function analyzeMediaProject(project) {
   const audioClips = tracks.filter((track) => track?.kind === "audio")
     .reduce((sum, track) => sum + (Array.isArray(track.clips) ? track.clips.length : 0), 0);
   if (!audioClips) add("tip", "No timeline audio track", "Add voiceover or music when the project needs it. Silent exports are still valid.");
+
+  // Compare only adjacent scenes: repeated visual direction is most noticeable at a cut.
+  const visualTokens = (value) => new Set(
+    cleanText(value, 500).toLocaleLowerCase()
+      .replace(/[^\\p{L}\\p{N}]+/gu, " ")
+      .split(/\\s+/u)
+      .filter((token) => token.length > 2)
+  );
+  for (let index = 1; index < scenes.length; index++) {
+    const previous = visualTokens(scenes[index - 1]?.visualPrompt);
+    const current = visualTokens(scenes[index]?.visualPrompt);
+    if (previous.size < 3 || current.size < 3) continue;
+    let shared = 0;
+    for (const token of current) if (previous.has(token)) shared++;
+    const similarity = shared / Math.max(1, previous.size + current.size - shared);
+    if (similarity >= 0.72) {
+      add("warning", "Scenes " + index + " and " + (index + 1) + " may repeat the same visual",
+        "Change the focal subject, shot scale, action or visual explanation so the next cut adds new information.", index);
+    }
+  }
 
   const warningCount = findings.filter((item) => item.level === "warning").length;
   const tipCount = findings.filter((item) => item.level === "tip").length;
