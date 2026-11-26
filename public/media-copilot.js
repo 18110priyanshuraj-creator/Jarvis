@@ -50,8 +50,8 @@ export function analyzeMediaProject(project) {
   // Compare only adjacent scenes: repeated visual direction is most noticeable at a cut.
   const visualTokens = (value) => new Set(
     cleanText(value, 500).toLocaleLowerCase()
-      .replace(/[^\\p{L}\\p{N}]+/gu, " ")
-      .split(/\\s+/u)
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .split(/\s+/u)
       .filter((token) => token.length > 2)
   );
   for (let index = 1; index < scenes.length; index++) {
