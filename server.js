@@ -3369,7 +3369,7 @@ app.post("/api/media/drafts", requireAuth, mediaGenerationLimiter, async (req, r
                 "Do not invent factual details, statistics, sources, quotes or events. Preserve supplied factual claims cautiously and flag uncertainty in the narration rather than fabricating evidence.",
                 "Keep all important subjects and text inside comfortable safe margins. Do not include private information, credentials, dangerous instructions, graphic content or explicit sexual content.",
                 "Return ONLY valid JSON with a concise title, scenes array and grade object. No markdown fences or commentary."
-              ].join("\\n")
+              ].join("\n")
             },
             { role: "user", content: JSON.stringify(specification) }
           ], { temperature: 0.35, maxTokens: longForm ? 8192 : 3200, responseFormat: { type: "json_object" } });
