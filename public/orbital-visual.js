@@ -113,6 +113,40 @@ export function createOrbitalVisual(canvas) {
       context.fill();
     }
 
+    // Fine amber latitude and meridian lines make the center read as a
+    // holographic system core instead of a character or face.
+    context.save();
+    context.lineWidth = 0.55;
+    for (let band = -4; band <= 4; band++) {
+      const offset = band / 5;
+      const widthScale = Math.sqrt(Math.max(0.06, 1 - offset * offset));
+      context.beginPath();
+      context.ellipse(cx, cy + offset * radius * 0.82, radius * widthScale, radius * widthScale * 0.19, 0, 0, TAU);
+      context.strokeStyle = "rgba(255, 174, 74, " + (0.035 + (1 - Math.abs(offset)) * 0.045) * energy + ")";
+      context.stroke();
+    }
+    for (let meridian = 0; meridian < 10; meridian++) {
+      const longitude = (meridian / 10) * TAU + shellRotation;
+      context.beginPath();
+      let drawingFront = false;
+      for (let step = 0; step <= 48; step++) {
+        const latitude = -Math.PI / 2 + (step / 48) * Math.PI;
+        const depth = Math.cos(latitude) * Math.cos(longitude);
+        if (depth < -0.06) {
+          drawingFront = false;
+          continue;
+        }
+        const x = cx + Math.cos(latitude) * Math.sin(longitude) * radius;
+        const y = cy + Math.sin(latitude) * radius;
+        if (drawingFront) context.lineTo(x, y);
+        else context.moveTo(x, y);
+        drawingFront = true;
+      }
+      context.strokeStyle = "rgba(255, 178, 81, " + (0.045 + Math.abs(Math.sin(longitude)) * 0.035) * energy + ")";
+      context.stroke();
+    }
+    context.restore();
+
     const orbitSet = [
       { rx: radius * 1.28, ry: radius * 0.39, tilt: -0.3, phase: 0.2, alpha: 0.8 },
       { rx: radius * 1.15, ry: radius * 0.48, tilt: 0.82, phase: 1.6, alpha: 0.64 },
@@ -188,3 +222,4 @@ export function createOrbitalVisual(canvas) {
     }
   };
 }
+
