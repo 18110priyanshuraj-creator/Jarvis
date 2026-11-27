@@ -799,6 +799,7 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
   }
 
   const conversationAIEnabled = isConversationAIEnabled();
+  let aiFallbackNotice = "";
   const offlineTurn = resolveOfflineAssistantTurn({
     message,
     memories: store.memories,
@@ -812,7 +813,7 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
   if (offlineTurn && (!conversationAIEnabled || isLocalFirstAssistantRequest(message))) {
     return {
       ...offlineTurn,
-      answer: webNotice ? webNotice + "\n\n" + offlineTurn.answer : offlineTurn.answer
+      answer: [aiFallbackNotice, webNotice, offlineTurn.answer].filter(Boolean).join("\n\n")
     };
   }
 
@@ -824,13 +825,14 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
       const approvedExperienceContext = getActiveExperienceContext(store.experiencePreferences, 5);
       const answer = await createConversationReply(message, history, approvedMemoryContext, knowledgeContext, activeSkillContext, approvedExperienceContext);
       return {
-        answer: webNotice ? webNotice + "\n\n" + answer : answer,
+        answer: [aiFallbackNotice, webNotice, answer].filter(Boolean).join("\n\n"),
         engine: "online-conversation",
         externalAI: true,
         liveWebChecked: false
       };
     } catch (error) {
       console.error("Online AI request failed; using the offline brain:", safeErrorMetadata(error));
+      aiFallbackNotice = "Online AI could not be reached for this reply, so I used my limited offline brain.";
     }
   }
 

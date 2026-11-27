@@ -86,17 +86,29 @@
             <span id="voice-status" class="voice-status sr-only" role="status" aria-live="polite">Voice ready</span>
           </div>
 
+          <aside id="assistant-readiness" class="assistant-readiness" data-state="checking" aria-live="polite">
+            <span class="assistant-readiness-badge"><i></i><span id="assistant-readiness-label">CHECKING CONNECTION</span></span>
+            <p id="assistant-readiness-detail">Checking online AI and web search availability…</p>
+          </aside>
+
+          <div class="assistant-quick-actions" aria-label="Things you can ask JARVIS">
+            <button type="button" data-assistant-starter="Create a 30-second vertical video about: ">Video idea</button>
+            <button type="button" data-assistant-starter="Search the web for: ">Research online</button>
+            <button type="button" data-assistant-starter="Search my saved knowledge for: ">Saved knowledge</button>
+            <button type="button" data-assistant-starter="Show my tasks">My tasks</button>
+          </div>
+
           <div id="chat-messages" class="chat-messages orbital-messages" aria-live="polite"></div>
 
           <form id="chat-form" class="composer orbital-composer">
-            <textarea id="chat-input" rows="1" maxlength="4000" placeholder="Or type a message…" aria-label="Type a message to JARVIS"></textarea>
+            <textarea id="chat-input" rows="1" maxlength="4000" placeholder="Talk naturally in Hindi, Hinglish or English…" aria-label="Type a message to JARVIS"></textarea>
             <button id="send-button" class="orbital-send" type="submit" aria-label="Send message">↑</button>
           </form>
 
           <div class="orbital-footer">
-            <span>MICROPHONE OFF</span>
+            <span>VOICE + TEXT</span>
             <span class="orbital-footer-separator">·</span>
-            <span>Tap orb to begin, tap again to stop</span>
+            <span>Ask naturally · Enter to send</span>
           </div>
           <details class="orbital-preferences">
             <summary>Voice settings</summary>

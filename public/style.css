@@ -1672,3 +1672,44 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .orbital-hud, .orbital-hud::before, .orbital-hud::after { animation: none !important; }
 }
+.assistant-readiness {
+  width: min(100%, 680px);
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin: 3px auto 14px;
+  padding: 10px 13px;
+  border: 1px solid rgba(224, 151, 70, .14);
+  border-radius: 12px;
+  background: rgba(13, 9, 5, .68);
+}
+.assistant-readiness-badge { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 7px; color: #a98b65; font-size: .56rem; font-weight: 800; letter-spacing: .1em; white-space: nowrap; }
+.assistant-readiness-badge i { width: 6px; height: 6px; border-radius: 50%; background: #b18b60; box-shadow: 0 0 9px currentColor; }
+.assistant-readiness p { margin: 0; color: #8f7d67; font-size: .66rem; line-height: 1.45; }
+.assistant-readiness[data-state="online"] { border-color: rgba(163, 185, 98, .22); }
+.assistant-readiness[data-state="online"] .assistant-readiness-badge { color: #b1bd79; }
+.assistant-readiness[data-state="online"] .assistant-readiness-badge i { background: #b1bd79; }
+.assistant-readiness[data-state="unavailable"] { border-color: rgba(228, 148, 104, .25); }
+.assistant-readiness[data-state="unavailable"] .assistant-readiness-badge { color: #d99771; }
+.assistant-quick-actions { width: min(100%, 680px); display: flex; flex-wrap: wrap; justify-content: center; gap: 7px; margin: 0 auto 10px; }
+.assistant-quick-actions button, .assistant-open-editor {
+  min-height: 31px;
+  padding: 6px 10px;
+  border: 1px solid rgba(224, 151, 70, .19);
+  border-radius: 999px;
+  color: #c0a17a;
+  background: rgba(20, 13, 7, .72);
+  font: inherit;
+  font-size: .65rem;
+  cursor: pointer;
+}
+.assistant-quick-actions button:hover, .assistant-open-editor:hover { color: #ffe0ad; border-color: rgba(242, 177, 103, .43); }
+.assistant-open-editor { margin-top: 9px; border-radius: 8px; }
+@media (max-width: 600px) {
+  .assistant-readiness { flex-direction: column; gap: 5px; margin-top: 4px; }
+  .assistant-readiness p { font-size: .64rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .orbital-hud, .orbital-hud::before, .orbital-hud::after { animation: none !important; }
+}
+

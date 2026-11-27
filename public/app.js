@@ -112,6 +112,35 @@ function showApp() {
   $("#app-shell").classList.remove("hidden");
 }
 
+async function refreshAssistantReadiness() {
+  const panel = $("#assistant-readiness");
+  const label = $("#assistant-readiness-label");
+  const detail = $("#assistant-readiness-detail");
+  if (!panel || !label || !detail) return;
+  try {
+    const response = await fetch("/api/health", { credentials: "same-origin", cache: "no-store" });
+    if (!response.ok) throw new Error("Health status unavailable");
+    const health = await response.json();
+    const aiOnline = health.conversationAIEnabled === true;
+    const webOnline = health.webResearchEnabled === true;
+    panel.dataset.state = aiOnline ? "online" : "offline";
+    label.textContent = aiOnline ? "AI ENABLED" : "OFFLINE MODE";
+    if (aiOnline && webOnline) {
+      detail.textContent = "Online AI and live web research are enabled. Prompts go to the configured AI provider; don’t include passwords or API keys.";
+    } else if (aiOnline) {
+      detail.textContent = "Online AI is enabled. Prompts go to the configured provider; live web research still needs a trusted search service.";
+    } else if (webOnline) {
+      detail.textContent = "Limited offline conversation. Live web research is connected; an online AI model still needs setup.";
+    } else {
+      detail.textContent = "Limited offline rules only. Ask a parent/guardian or workspace owner to add the model endpoint, model name and private API key in Render, then enable AI chat. Live web search needs a separate trusted search service. Never paste API keys into chat.";
+    }
+  } catch {
+    panel.dataset.state = "unavailable";
+    label.textContent = "STATUS UNAVAILABLE";
+    detail.textContent = "JARVIS could not check its online services. It will say clearly if it has to use the limited offline brain.";
+  }
+}
+
 async function boot(bootEpoch = sessionEpoch.capture()) {
   try {
     await api("/api/session");
@@ -128,6 +157,7 @@ async function boot(bootEpoch = sessionEpoch.capture()) {
   // Authentication and workspace hydration are separate. A non-auth data error
   // must not send an already signed-in user back to the password screen.
   showApp();
+  refreshAssistantReadiness();
   try {
     await refreshState();
   } catch (error) {
@@ -2337,6 +2367,16 @@ $("#clear-chat-button").addEventListener("click", async () => {
   }
 });
 
+document.querySelectorAll("[data-assistant-starter]").forEach((starter) => {
+  starter.addEventListener("click", () => {
+    const input = $("#chat-input");
+    const prompt = starter.dataset.assistantStarter || "";
+    input.value = prompt;
+    input.focus();
+    if (prompt === "Show my tasks") $("#chat-form").requestSubmit();
+  });
+});
+
 $("#chat-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const input = $("#chat-input");
@@ -2378,11 +2418,18 @@ $("#chat-form").addEventListener("submit", async (event) => {
     const mediaIntent = parseMediaCreationIntent(message);
     if (mediaIntent) {
       const project = await mediaWorkspace.createFromPrompt(message, mediaIntent);
-      setView("media");
+      const sceneCount = Array.isArray(project.scenes) ? project.scenes.length : 0;
       body.textContent = "Created a private " + project.visualStyle.replace(/-/g, " ") +
-        " storyboard draft: " + project.title + ". Review the scenes, motions and audio in Media Studio before approving and exporting.";
+        " storyboard draft: " + project.title + (sceneCount ? " · " + sceneCount + " scenes." : ".") +
+        " It is ready in your workspace. Open the timeline editor when you want to review or refine individual scenes.";
+      const openEditor = document.createElement("button");
+      openEditor.type = "button";
+      openEditor.className = "item-action assistant-open-editor";
+      openEditor.textContent = "Open timeline editor";
+      openEditor.addEventListener("click", () => setView("media"));
+      wrap.append(openEditor);
       awaitingAssistantReply = false;
-      setOrbitalStatus("idle", "Media Studio draft created");
+      setOrbitalStatus("idle", "Video storyboard draft created");
       return;
     }
     const data = await api("/api/chat", { method: "POST", body: JSON.stringify({ message, applicationId: "web-dashboard" }) });
