@@ -248,7 +248,7 @@ class CancellableActionSequenceTest {
         scheduler.runNext()
 
         assertEquals(listOf("open", "read", "tap"), executed)
-        assertEquals(listOf("running:0", "paused:1", "running:1"), states)
+        assertEquals(listOf("running:0", "paused:1", "running:1", "running:2"), states)
         assertEquals(listOf("completed"), terminal)
     }
 
