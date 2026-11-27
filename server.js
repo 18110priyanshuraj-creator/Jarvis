@@ -480,13 +480,17 @@ function clearCanvaOAuthCookie(res) {
 
 async function requireAuth(req, res, next) {
   const token = parseCookies(req.headers.cookie).jarvis_session;
-  if (!token) return res.status(401).json({ error: "Please sign in to continue." });
+  if (!token) {
+    console.warn("[auth] rejected request:", req.method, req.path, "missing_session_cookie");
+    return res.status(401).json({ error: "Please sign in to continue." });
+  }
   try {
     const valid = await runtimeStore.refreshSession(token, SESSION_TTL_MS);
     if (!valid) {
       // Do not clear the cookie on an auth failure. An older in-flight request
       // carrying a stale cookie can finish after a new login and otherwise
       // overwrite the browser session cookie with an empty one.
+      console.warn("[auth] rejected request:", req.method, req.path, "invalid_or_expired_session");
       return res.status(401).json({ error: "Please sign in to continue." });
     }
     req.sessionToken = token;
