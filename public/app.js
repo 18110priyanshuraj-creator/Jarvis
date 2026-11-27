@@ -40,10 +40,32 @@ async function api(url, options = {}) {
   }
   const payload = await response.json().catch(() => ({}));
   if (response.status === 401 && url !== "/api/login") {
-    sessionEpoch.runIfCurrent(requestEpoch, showLogin);
-    const message = url === "/api/session"
-      ? "Sign-in was not retained by this browser. Enable site cookies, then sign in again."
-      : "Your session expired. Please sign in again.";
+    // Only a failed session check proves the whole workspace is signed out.
+    // A route-specific 401 must not hide the dashboard if the session remains valid.
+    let sessionState = url === "/api/session" ? "expired" : "unknown";
+    if (url !== "/api/session") {
+      try {
+        const sessionResponse = await fetch("/api/session", {
+          method: "GET",
+          credentials: "same-origin",
+          cache: "no-store"
+        });
+        sessionState = sessionResponse.status === 401
+          ? "expired"
+          : sessionResponse.ok ? "active" : "unknown";
+      } catch {
+        sessionState = "unknown";
+      }
+    }
+
+    if (sessionState === "expired") {
+      sessionEpoch.runIfCurrent(requestEpoch, showLogin);
+    }
+    const message = sessionState === "active"
+      ? "JARVIS rejected this request, but your workspace session is still active. Please retry."
+      : sessionState === "expired"
+        ? "Your session expired. Please sign in again."
+        : "JARVIS could not verify your session. Check your connection and retry."; 
     const error = new Error(message);
     error.status = response.status;
     throw error;
@@ -3884,3 +3906,7 @@ $("#external-action-form").addEventListener("submit", async (event) => {
 });
 
 boot();
+
+// Login remains locked until the dashboard module has installed its handlers.
+window.__jarvisAppReady = true;
+window.dispatchEvent(new Event("jarvis:app-ready"));
