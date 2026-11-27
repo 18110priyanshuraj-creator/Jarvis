@@ -3669,7 +3669,7 @@ function renderDevices() {
             cancelled: "Task cancelled",
             waiting_user: "Waiting for you to review the screen",
             expired: "Task expired before delivery"
-          })[task.status] || "Task status updated");
+          })[task.status] || "Task status updated";
           const progress = document.createElement("div");
           progress.className = "device-task-progress";
           const bar = document.createElement("span");
