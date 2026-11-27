@@ -25,7 +25,7 @@ function response(status, payload) {
   };
 }
 
-function setup(sessionStatus = 200) {
+function setup(sessionStatus = 200, appReady = true) {
   let submitHandler;
   const calls = [];
   const dispatched = [];
@@ -40,7 +40,14 @@ function setup(sessionStatus = 200) {
 
   const context = {
     document: { getElementById(id) { return elements[id] || null; } },
-    window: { dispatchEvent(event) { dispatched.push(event.type); } },
+    window: {
+      __jarvisAppReady: appReady,
+      dispatchEvent(event) { dispatched.push(event.type); },
+      addEventListener() {},
+      removeEventListener() {}
+    },
+    setTimeout(callback) { callback(); return 1; },
+    clearTimeout() {},
     Event: class TestEvent { constructor(type) { this.type = type; } },
     fetch: async (url, options) => {
       calls.push({ url, options });
@@ -91,5 +98,21 @@ test("standalone login keeps the password screen when the session cookie is not 
   assert.equal(dispatched.length, 0);
   assert.equal(elements.password.value, "private test password");
   assert.match(elements.toast.textContent, /browser did not retain the session/i);
+  assert.equal(elements["login-button"].disabled, false);
+});
+
+
+test("standalone login does not unlock when the dashboard module failed to start", async () => {
+  const { submitHandler, dispatched, elements } = setup(200, false);
+
+  await submitHandler({
+    preventDefault() {},
+    stopImmediatePropagation() {}
+  });
+
+  assert.equal(elements["login-screen"].classList.contains("hidden"), false);
+  assert.equal(elements["app-shell"].classList.contains("hidden"), true);
+  assert.equal(dispatched.length, 0);
+  assert.match(elements.toast.textContent, /dashboard did not finish loading/i);
   assert.equal(elements["login-button"].disabled, false);
 });
