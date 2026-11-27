@@ -1,0 +1,18 @@
+Jarvis is a personal assistant project. This is a tiny educational training corpus.
+A language model learns patterns from examples of text. It predicts the next character
+based on the characters that came before it. A small model trained on a small dataset
+does not understand the world like a large assistant. It can learn spelling patterns,
+punctuation, repeated phrases, and the style of the examples.
+
+Artificial intelligence is a field of computer science. Machine learning systems
+learn patterns from data. A neural network contains layers of numerical operations.
+A transformer uses attention to combine information from earlier tokens.
+Training adjusts model parameters to reduce prediction error.
+
+Jarvis can be extended with a chat interface, speech recognition, text to speech,
+and carefully designed tools. The model should not claim to perform an action unless
+the application has actually completed that action. Private credentials should never
+be stored in source code or committed to a public repository.
+
+This project is an educational experiment. It is not a medical, legal, or emergency
+expert. It should explain uncertainty and ask for clarification when a request is unclear.
