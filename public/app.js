@@ -132,7 +132,7 @@ async function refreshAssistantReadiness() {
     } else if (webOnline) {
       detail.textContent = "Limited offline conversation. Live web research is connected; an online AI model still needs setup.";
     } else {
-      detail.textContent = "Limited offline rules only. Ask a parent/guardian or workspace owner to add the model endpoint, model name and private API key in Render, then enable AI chat. Live web search needs a separate trusted search service. Never paste API keys into chat.";
+      detail.textContent = "Online AI is disabled for this workspace. Ask a parent/guardian or workspace owner to decide whether to connect a provider and manage any cost and data sharing. Until then, JARVIS uses limited offline rules. Live web search is not connected.";
     }
   } catch {
     panel.dataset.state = "unavailable";
