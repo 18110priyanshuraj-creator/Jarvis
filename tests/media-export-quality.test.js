@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { assessMediaExport } from "../services/media-export-quality.js";
+import { assessMediaExport as assessBrowserMediaExport } from "../public/media-export-quality.js";
 
 const validExport = {
   blobSizeBytes: 2_400_000,
@@ -19,6 +20,14 @@ test("verifies a rendered video when measured metadata matches the export contra
   assert.deepEqual(result.issues, []);
   assert.equal(result.actualWidth, 720);
   assert.equal(result.actualHeight, 1280);
+});
+
+test("keeps the browser and server export validators in sync", () => {
+  assert.deepEqual(assessBrowserMediaExport(validExport), assessMediaExport(validExport));
+  assert.deepEqual(
+    assessBrowserMediaExport({ ...validExport, actualWidth: 640 }),
+    assessMediaExport({ ...validExport, actualWidth: 640 })
+  );
 });
 
 test("flags an output whose dimensions differ from the requested canvas", () => {
