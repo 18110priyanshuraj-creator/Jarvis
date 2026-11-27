@@ -484,7 +484,9 @@ async function requireAuth(req, res, next) {
   try {
     const valid = await runtimeStore.refreshSession(token, SESSION_TTL_MS);
     if (!valid) {
-      clearSessionCookie(res);
+      // Do not clear the cookie on an auth failure. An older in-flight request
+      // carrying a stale cookie can finish after a new login and otherwise
+      // overwrite the browser session cookie with an empty one.
       return res.status(401).json({ error: "Please sign in to continue." });
     }
     req.sessionToken = token;
