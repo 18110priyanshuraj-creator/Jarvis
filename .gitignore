@@ -3,5 +3,14 @@ node_modules/
 .env.*
 !.env.example
 data/
+!experiments/
+!experiments/tiny-gpt/
+!experiments/tiny-gpt/data/
+!experiments/tiny-gpt/data/example-training.txt
+experiments/tiny-gpt/data/training.txt
+experiments/tiny-gpt/checkpoints/
+__pycache__/
+*.pyc
+.venv/
 *.log
 .DS_Store

@@ -1,38 +1,49 @@
-# Jarvis Own AI — educational starter
+# JARVIS
 
-This folder trains a tiny character-level GPT-style Transformer from random initialization.
-It is intended to teach the training loop and model structure, not to create a ChatGPT-level model.
+JARVIS is a personal assistant project with a Node.js backend, Android Companion, AI-provider integration, research and knowledge workflows, and a browser-based Media Studio.
 
-## Run in Google Colab
+## Repository layout
 
-1. Upload this folder to your GitHub repository under `my-ai-model/`.
-2. Open Google Colab and choose a Python notebook.
-3. Clone your repository (replace the URL with your repository URL):
+- android/ — Android Companion app and on-device policies.
+- public/ — browser dashboard, Media Studio, creator tools and client-side modules.
+- services/ — server-side AI, media, research, knowledge, memory and workflow services.
+- routes/ — HTTP route modules.
+- tests/ — Node.js and Android regression tests.
+- docs/ — architecture, implementation phases, operations and acceptance notes.
+- ai-training/ — governed dataset and model-training workspace for future JARVIS adapters.
+- experiments/tiny-gpt/ — isolated educational character-level Transformer experiment. It is not the production JARVIS brain.
 
-```python
-!git clone https://github.com/YOUR-USERNAME/YOUR-REPO.git
-%cd YOUR-REPO/my-ai-model
-!pip install -r requirements.txt
-!python train.py
-!python generate.py --prompt "Jarvis" --tokens 200
-```
+## Requirements
 
-If you use a private repository, do not paste a personal access token into a notebook
-that you share or commit. Use Colab's secure secrets feature or upload the files privately.
+- Node.js 22 or newer.
+- npm.
+- Android Studio / Android SDK only when building the Android app.
 
-## Dataset
+## Run the server locally
 
-Replace `data/training.txt` with text you own or are licensed to use. Keep a backup.
-For meaningful language behavior, a much larger, clean, diverse dataset is needed.
+1. Install dependencies with npm ci.
+2. Create a local .env from .env.example and set only the secrets required for your environment.
+3. Run npm run check.
+4. Run npm start.
 
-## Checkpoints
+Never commit .env files, API keys, passwords, OAuth tokens, model checkpoints, private media or private training datasets.
 
-The trained checkpoint is written to `checkpoints/tiny_gpt.pt`.
-Do not commit large model checkpoints to GitHub. Store them privately or use an
-appropriate model-storage service.
+## Existing AI and learning architecture
 
-## Important
+JARVIS already has separate layers for:
 
-This is a small character-level model. It is not instruction-tuned and will not
-behave like ChatGPT. The next stage is evaluation, better tokenization, larger
-licensed datasets, instruction tuning, and a separate inference service.
+- AI-provider calls through services/ai-provider.js.
+- Source-grounded internet research through services/web-research.js, services/web-page-reader.js and services/source-answer.js.
+- Persistent, reviewable knowledge through services/knowledge.js and services/knowledge-documents.js.
+- Explicit user-taught retrieval lessons through services/learning-engine.js.
+- Media editing and planning through the public Media Studio and services/media-* modules.
+
+Saving reviewed knowledge does not modify model weights. Fine-tuning is a separate, deliberate process described in ai-training/ and docs/JARVIS_AI_LEARNING_AND_VIDEO_TRAINING_PLAN.md.
+
+## Media Studio
+
+Start with docs/JARVIS_VIDEO_EDITING_FILE_MAP.md for the existing media files and their responsibilities. Existing files remain in public/, services/, android/ and tests/ because their runtime boundaries and imports depend on those locations.
+
+## Training experiment
+
+The old root-level TinyGPT files have been moved to experiments/tiny-gpt/ so they do not look like the production assistant. That experiment is useful for learning Transformer mechanics only; it is not instruction tuned, not trained on internet-scale data and not compatible with the production chat API without a separate adapter.

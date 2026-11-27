@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "JARVIS AI source provenance manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source_id",
+    "title",
+    "source_url",
+    "creator",
+    "content_type",
+    "license_id",
+    "permission_status",
+    "permission_evidence",
+    "acquisition_method",
+    "allowed_uses",
+    "collected_at",
+    "sha256"
+  ],
+  "properties": {
+    "source_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 120
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "source_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "creator": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "content_type": {
+      "type": "string",
+      "enum": [
+        "text",
+        "code",
+        "image",
+        "audio",
+        "video",
+        "transcript",
+        "metadata",
+        "mixed"
+      ]
+    },
+    "license_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "permission_status": {
+      "type": "string",
+      "enum": [
+        "owned",
+        "public_domain_verified",
+        "open_license_verified",
+        "written_permission_verified",
+        "youtube_trainability_opt_in_verified",
+        "unverified",
+        "denied"
+      ]
+    },
+    "permission_evidence": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "acquisition_method": {
+      "type": "string",
+      "enum": [
+        "self_created",
+        "creator_upload",
+        "open_dataset_download",
+        "licensed_dataset_download",
+        "approved_content_delivery",
+        "official_api_metadata_only",
+        "other_authorized_method"
+      ]
+    },
+    "allowed_uses": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "retrieval",
+          "summarization",
+          "fine_tuning",
+          "evaluation",
+          "internal_reference"
+        ]
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "attribution_required": {
+      "type": "boolean"
+    },
+    "attribution_text": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "collected_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "retention_rule": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "youtube_trainability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "permitted",
+        "checked_at"
+      ],
+      "properties": {
+        "permitted": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "checked_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "video_id": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "permitted_party_match": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "permission_status": {
+            "const": "denied"
+          }
+        },
+        "required": [
+          "permission_status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "allowed_uses": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "permission_status": {
+            "const": "unverified"
+          }
+        },
+        "required": [
+          "permission_status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "allowed_uses": {
+            "items": {
+              "not": {
+                "const": "fine_tuning"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

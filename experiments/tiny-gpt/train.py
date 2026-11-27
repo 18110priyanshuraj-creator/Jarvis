@@ -9,7 +9,11 @@ OUT_DIR = ROOT / "checkpoints"
 OUT_DIR.mkdir(exist_ok=True)
 
 if not DATA_FILE.exists():
-    raise FileNotFoundError("Add your text to data/training.txt before training.")
+    example = ROOT / "data" / "example-training.txt"
+    raise FileNotFoundError(
+        f"Create {DATA_FILE} first. You can copy {example} as a starting point, "
+        "then replace it with text you wrote or are licensed to use."
+    )
 
 text = DATA_FILE.read_text(encoding="utf-8")
 if len(text) < 1000:
