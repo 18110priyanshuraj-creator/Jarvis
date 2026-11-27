@@ -95,7 +95,7 @@
           "internal_reference"
         ]
       },
-      "minItems": 1,
+      "minItems": 0,
       "uniqueItems": true
     },
     "attribution_required": {
@@ -186,6 +186,31 @@
                 "const": "fine_tuning"
               }
             }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "permission_status": {
+            "enum": [
+              "owned",
+              "public_domain_verified",
+              "open_license_verified",
+              "written_permission_verified",
+              "youtube_trainability_opt_in_verified"
+            ]
+          }
+        },
+        "required": [
+          "permission_status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "allowed_uses": {
+            "minItems": 1
           }
         }
       }
