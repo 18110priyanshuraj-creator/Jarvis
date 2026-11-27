@@ -34,6 +34,8 @@ internal class CancellableActionSequence<T>(
     private var cancelled = false
     private var paused = false
     private var completed = false
+    private var lastPersistedState: String? = null
+    private var lastPersistedIndex: Int? = null
 
     private val runner = Runnable { runNext() }
 
@@ -62,8 +64,11 @@ internal class CancellableActionSequence<T>(
     }
 
     private fun persistState(state: String): Boolean {
+        if (lastPersistedState == state && lastPersistedIndex == index) return true
         return try {
             onState(state, index)
+            lastPersistedState = state
+            lastPersistedIndex = index
             true
         } catch (error: Exception) {
             failCheckpoint(error)
