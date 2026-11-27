@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { createDevicesRouter } from "./routes/devices.js";
 import { createRuntimeStore } from "./services/runtime-store.js";
 import { createAgentPlan, createLocalAgentPlan } from "./services/agent-planner.js";
-import { createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
+import { CONVERSATION_TOOLS, createConversationReply, isConversationAIEnabled } from "./services/conversation.js";
 import { createWebResearch, getWebResearchStatus, isRestrictedResearchQuery, isWebResearchEnabled, normalizeSavedResearch, shouldUseLiveWebResearch } from "./services/web-research.js";
 import { createPageReadToken, createWebPageRead, getWebPageReadStatus, verifyPageReadToken } from "./services/web-page-reader.js";
 import { createSourceBasedAnswer, SOURCE_ANSWER_LIMITS } from "./services/source-answer.js";
@@ -777,6 +777,61 @@ function buildAssistantKnowledgeContext(message) {
   ];
 }
 
+function isExplicitTaskCreationRequest(message) {
+  const text = cleanText(message, 4000);
+  if (/^(?:how|what|why|when|where|can you explain|kaise|kya|kyun)\b/i.test(text)) return false;
+  return /\b(?:add|create|make|save)\b.{0,80}\b(?:a\s+)?(?:task|todo|to-do|reminder)\b|\b(?:task|todo|to-do)\b.{0,80}\b(?:add|create|make|save)\b|\b(?:ek\s+task|task\s+add|task\s+bana)\b/i.test(text);
+}
+
+async function executeAssistantTool(name, args, userMessage) {
+  if (name === "search_knowledge") {
+    const query = cleanText(args?.query, 300);
+    if (query.length < 2) return { ok: false, error: "Enter a longer knowledge search." };
+    const entries = buildAssistantKnowledgeContext(query).slice(0, 5).map((item) => ({
+      title: cleanText(item.title, 180),
+      category: cleanText(item.category, 60),
+      content: cleanText(item.content, 1200),
+      sources: Array.isArray(item.sources) ? item.sources.slice(0, 4).map((source) => cleanText(source.url, 400)) : []
+    }));
+    return { ok: true, query, count: entries.length, entries };
+  }
+
+  if (name === "list_tasks") {
+    return {
+      ok: true,
+      tasks: store.tasks.slice(-30).map((task) => ({
+        title: cleanText(task.title, 180),
+        description: cleanText(task.description, 500),
+        dueAt: cleanText(task.dueAt, 80),
+        priority: task.priority,
+        done: Boolean(task.done)
+      }))
+    };
+  }
+
+  if (name === "create_task") {
+    if (!isExplicitTaskCreationRequest(userMessage)) {
+      return { ok: false, error: "The user did not explicitly ask to create a task; nothing was saved." };
+    }
+    const title = cleanText(args?.title, 180);
+    const description = cleanText(args?.description, 1000);
+    const priority = ["low", "normal", "high"].includes(args?.priority) ? args.priority : "normal";
+    if (!title) return { ok: false, error: "A non-empty task title is required." };
+    if (store.tasks.length >= 200) return { ok: false, error: "Task limit reached. No task was saved." };
+    const task = { id: newId(), title, description, dueAt: "", priority, done: false, createdAt: new Date().toISOString() };
+    store.tasks.push(task);
+    try {
+      await saveStore();
+    } catch (error) {
+      store.tasks = store.tasks.filter((item) => item.id !== task.id);
+      throw error;
+    }
+    return { ok: true, title: task.title, priority: task.priority };
+  }
+
+  return { ok: false, error: "That assistant tool is not available." };
+}
+
 async function generateAssistantAnswer(message, history = [], memories = store.memories, applicationId = "web-dashboard") {
   const useLiveWeb = shouldUseLiveWebResearch(message);
   let webNotice = "";
@@ -823,7 +878,10 @@ async function generateAssistantAnswer(message, history = [], memories = store.m
       const approvedMemoryContext = buildMemoryContext(memories, message, 5);
       const activeSkillContext = getActiveSkillContext(store.skills, message, 3, applicationId);
       const approvedExperienceContext = getActiveExperienceContext(store.experiencePreferences, 5);
-      const answer = await createConversationReply(message, history, approvedMemoryContext, knowledgeContext, activeSkillContext, approvedExperienceContext);
+      const answer = await createConversationReply(message, history, approvedMemoryContext, knowledgeContext, activeSkillContext, approvedExperienceContext, {
+        tools: CONVERSATION_TOOLS,
+        executeTool: (name, args) => executeAssistantTool(name, args, message)
+      });
       return {
         answer: [aiFallbackNotice, webNotice, answer].filter(Boolean).join("\n\n"),
         engine: "online-conversation",

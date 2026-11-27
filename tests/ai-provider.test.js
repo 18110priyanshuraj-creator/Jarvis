@@ -254,3 +254,76 @@ test("AI provider rejects remote image URLs and oversized frame payloads", async
     );
   });
 });
+
+test("AI provider sends server-selected tools and normalizes model tool calls", async () => {
+  await withEnv({ ...localConfig }, async () => {
+    const tool = {
+      type: "function",
+      function: {
+        name: "list_tasks",
+        description: "Read saved tasks.",
+        parameters: { type: "object", properties: {}, additionalProperties: false }
+      }
+    };
+    let captured;
+    const result = await createChatCompletion([{ role: "user", content: "Show my tasks" }], { tools: [tool] }, async (_url, options) => {
+      captured = JSON.parse(options.body);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: {
+          content: null,
+          tool_calls: [{ id: "call_1", type: "function", function: { name: "list_tasks", arguments: "{}" } }]
+        } }] })
+      };
+    });
+    assert.deepEqual(captured.tools, [tool]);
+    assert.equal(captured.tool_choice, "auto");
+    assert.deepEqual(result.toolCalls, [{ id: "call_1", name: "list_tasks", arguments: {} }]);
+    assert.equal(result.content, "");
+  });
+});
+
+test("AI provider rejects malformed tool definitions and model arguments", async () => {
+  await withEnv({ ...localConfig }, async () => {
+    let calls = 0;
+    await assert.rejects(
+      createChatCompletion([{ role: "user", content: "Hello" }], { tools: [{ type: "function", function: { name: "bad name", parameters: {} } }] }, async () => {
+        calls++;
+        return {};
+      }),
+      /bounded function schemas/i
+    );
+    assert.equal(calls, 0);
+
+    await assert.rejects(
+      createChatCompletion([{ role: "user", content: "Hello" }], { tools: [{ type: "function", function: { name: "safe", description: "A safe tool.", parameters: { type: "object", properties: {} } } }] }, async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: {
+          content: null,
+          tool_calls: [{ id: "call_2", type: "function", function: { name: "safe", arguments: "[]" } }]
+        } }] })
+      })),
+      error => error.code === "AI_PROVIDER_INVALID_TOOL_CALL"
+    );
+  });
+});
+
+test("AI provider preserves assistant tool-call and tool-result messages safely", async () => {
+  await withEnv({ ...localConfig }, async () => {
+    let captured;
+    const messages = [
+      { role: "assistant", content: "", tool_calls: [{ id: "call_3", type: "function", function: { name: "list_tasks", arguments: "{}" } }] },
+      { role: "tool", tool_call_id: "call_3", content: "{\"ok\":true}" },
+      { role: "user", content: "Thanks" }
+    ];
+    await createChatCompletion(messages, {}, async (_url, options) => {
+      captured = JSON.parse(options.body).messages;
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "Done." } }] }) };
+    });
+    assert.equal(captured[0].tool_calls[0].function.name, "list_tasks");
+    assert.equal(captured[1].tool_call_id, "call_3");
+    assert.equal(captured[1].role, "tool");
+  });
+});

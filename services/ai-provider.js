@@ -153,14 +153,74 @@ function normalizeMessages(messages) {
   }
   const normalized = [];
   for (const item of messages) {
-    if (!item || !["system", "user", "assistant"].includes(item.role)) continue;
-    const content = normalizeMessageContent(item.content);
-    if ((typeof content === "string" && content) || (Array.isArray(content) && content.length)) {
-      normalized.push({ role: item.role, content });
+    if (!item || !["system", "user", "assistant", "tool"].includes(item.role)) continue;
+    if (item.role === "tool") {
+      const toolCallId = String(item.tool_call_id || "");
+      const content = typeof item.content === "string" ? item.content.trim().slice(0, 8000) : "";
+      if (!/^[a-zA-Z0-9_-]{1,128}$/.test(toolCallId) || !content) continue;
+      normalized.push({ role: "tool", tool_call_id: toolCallId, content });
+      continue;
+    }
+    const toolCalls = item.role === "assistant" ? normalizeMessageToolCalls(item.tool_calls) : [];
+    const content = item.content === null && toolCalls.length ? null : normalizeMessageContent(item.content);
+    if ((typeof content === "string" && content) || (Array.isArray(content) && content.length) || toolCalls.length) {
+      normalized.push({ role: item.role, content, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) });
     }
   }
   if (!normalized.length) throw new TypeError("AI messages cannot be empty.");
   return normalized;
+}
+
+function normalizeMessageToolCalls(value) {
+  if (!Array.isArray(value)) return [];
+  if (value.length > 8) throw new TypeError("An assistant message may contain at most eight tool calls.");
+  return value.map((call) => {
+    const id = String(call?.id || "");
+    const name = String(call?.function?.name || "");
+    const rawArguments = call?.function?.arguments;
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id) || !/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(name)) {
+      throw new TypeError("AI tool calls must include a valid call ID and function name.");
+    }
+    let parsed;
+    try { parsed = typeof rawArguments === "string" ? JSON.parse(rawArguments) : rawArguments; }
+    catch { throw new TypeError("AI tool call arguments must be valid JSON."); }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || JSON.stringify(parsed).length > 4000) {
+      throw new TypeError("AI tool call arguments must be a bounded JSON object.");
+    }
+    return { id, type: "function", function: { name, arguments: JSON.stringify(parsed) } };
+  });
+}
+
+function normalizeTools(value) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 12) throw new TypeError("AI tools must be an array of at most twelve definitions.");
+  return value.map((tool) => {
+    const definition = tool?.function;
+    const name = String(definition?.name || "");
+    if (tool?.type !== "function" || !/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(name) ||
+      typeof definition.description !== "string" || !definition.description.trim() ||
+      !definition.parameters || typeof definition.parameters !== "object" || Array.isArray(definition.parameters) ||
+      JSON.stringify(definition.parameters).length > 8000) {
+      throw new TypeError("AI tool definitions must use bounded function schemas.");
+    }
+    return {
+      type: "function",
+      function: {
+        name,
+        description: definition.description.trim().slice(0, 500),
+        parameters: definition.parameters
+      }
+    };
+  });
+}
+
+function normalizeResponseToolCalls(value) {
+  if (!Array.isArray(value) || !value.length) return [];
+  return normalizeMessageToolCalls(value).map((call) => ({
+    id: call.id,
+    name: call.function.name,
+    arguments: JSON.parse(call.function.arguments)
+  }));
 }
 
 function extractMessageText(content) {
@@ -195,6 +255,7 @@ export async function createChatCompletion(messages, options = {}, fetchImpl = g
     throw providerError("This server runtime does not provide HTTP fetch support.", "AI_FETCH_UNAVAILABLE");
   }
   const safeMessages = normalizeMessages(messages);
+  const safeTools = normalizeTools(options.tools);
   const endpoint = config.baseUrl + "/chat/completions";
   const requestBody = {
     model: config.model,
@@ -204,6 +265,10 @@ export async function createChatCompletion(messages, options = {}, fetchImpl = g
     stream: false
   };
   if (options.responseFormat?.type === "json_object") requestBody.response_format = { type: "json_object" };
+  if (safeTools.length) {
+    requestBody.tools = safeTools;
+    requestBody.tool_choice = "auto";
+  }
 
   const keys = config.apiKeys.length ? config.apiKeys : [""];
   const rotateKeys = config.geminiProvider && keys.length > 1;
@@ -249,10 +314,15 @@ export async function createChatCompletion(messages, options = {}, fetchImpl = g
         let payload;
         try { payload = await response.json(); }
         catch { throw providerError("The AI provider returned an unreadable response.", "AI_PROVIDER_INVALID_RESPONSE"); }
-        const content = extractMessageText(payload?.choices?.[0]?.message?.content);
-        if (!content) throw providerError("The AI provider returned an empty or unsupported response.", "AI_PROVIDER_EMPTY_RESPONSE");
+        const providerMessage = payload?.choices?.[0]?.message;
+        const content = extractMessageText(providerMessage?.content);
+        let toolCalls;
+        try { toolCalls = normalizeResponseToolCalls(providerMessage?.tool_calls); }
+        catch { throw providerError("The AI provider returned invalid tool calls.", "AI_PROVIDER_INVALID_TOOL_CALL"); }
+        if (!content && !toolCalls.length) throw providerError("The AI provider returned an empty or unsupported response.", "AI_PROVIDER_EMPTY_RESPONSE");
         return {
           content: content.slice(0, 12000),
+          toolCalls,
           provider: config.geminiProvider
             ? "google-gemini"
             : (config.runtime === "self-hosted" ? "jarvis-self-hosted" : "openai-compatible"),
