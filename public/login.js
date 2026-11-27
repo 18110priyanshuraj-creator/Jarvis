@@ -12,6 +12,24 @@
     toast.className = "toast show" + (isError ? " error" : "");
   }
 
+  function waitForAppReady(timeoutMs = 8000) {
+    if (window.__jarvisAppReady === true) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      let timeoutId;
+      let settled = false;
+      const finish = (ready) => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
+        window.removeEventListener?.("jarvis:app-ready", onReady);
+        resolve(ready);
+      };
+      const onReady = () => finish(window.__jarvisAppReady === true);
+      window.addEventListener("jarvis:app-ready", onReady, { once: true });
+      timeoutId = setTimeout(() => finish(window.__jarvisAppReady === true), timeoutMs);
+    });
+  }
+
   form.addEventListener("submit", async (event) => {
     // This handler is loaded independently of the large dashboard module,
     // so a dashboard startup error cannot fall through to a native form reload.
@@ -43,6 +61,11 @@
       const session = await sessionResponse.json().catch(() => ({}));
       if (!sessionResponse.ok || session.authenticated !== true) {
         throw new Error(session.error || "Sign-in was accepted, but this browser did not retain the session. Enable site cookies and try again.");
+      }
+
+      const appReady = await waitForAppReady();
+      if (!appReady) {
+        throw new Error("JARVIS dashboard did not finish loading. Refresh this page and try again.");
       }
 
       passwordInput.value = "";
