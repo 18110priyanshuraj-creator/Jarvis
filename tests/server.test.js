@@ -228,6 +228,17 @@ test("authentication, local search, tasks, memories, and offline chat behave saf
   assert.equal(confirmedSession.status, 200);
   assert.equal((await confirmedSession.json()).authenticated, true);
 
+  // A delayed request from an earlier browser session may arrive after this
+  // login. Its 401 must not delete the new session cookie in the browser.
+  const staleSessionProbe = await fetch(baseUrl + "/api/session", {
+    headers: { cookie: "jarvis_session=stale-session-token" }
+  });
+  assert.equal(staleSessionProbe.status, 401);
+  assert.equal(staleSessionProbe.headers.get("set-cookie"), null);
+  const preservedSession = await request("/api/session");
+  assert.equal(preservedSession.status, 200);
+  assert.equal((await preservedSession.json()).authenticated, true);
+
   const creatorCampaignResponse = await request("/api/creator/campaigns", {
     method: "POST",
     body: JSON.stringify({
