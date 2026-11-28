@@ -1,0 +1,30 @@
+name: AI training assets
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  lightweight-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate notebooks and authored JSONL
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for path in Path('ai-training/notebooks').glob('*.ipynb'):
+              nb=json.loads(path.read_text(encoding='utf-8'))
+              assert nb.get('nbformat') == 4 and isinstance(nb.get('cells'), list), path
+              assert all(c.get('cell_type') in ('code','markdown') for c in nb['cells']), path
+          print('Notebook structure valid')
+          PY
+          python ai-training/scripts/dataset_factory.py validate ai-training/datasets/starter/general.jsonl
+          python ai-training/scripts/dataset_factory.py validate ai-training/evaluation/heldout.jsonl
+      - name: Run CPU-safe dataset tests
+        run: python -m unittest discover -s ai-training/tests -v
+      - name: Check Python syntax
+        run: python -m py_compile ai-training/scripts/*.py ai-training/tests/*.py
