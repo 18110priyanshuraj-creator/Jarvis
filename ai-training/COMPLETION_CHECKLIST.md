@@ -4,16 +4,15 @@ Status is recorded honestly; an implemented workflow is not evidence of a comple
 
 ## Automated checks
 
-- [x] Dataset JSONL format and governance validator implemented (`scripts/dataset_factory.py`).
-- [x] CPU-safe unit tests added for schema, duplicate, secret-pattern, and source-group split checks (`tests/test_dataset_factory.py`).
-- [x] GitHub Actions workflow added for notebook JSON structure, starter/held-out data validation, Python compilation, and unit tests (`../.github/workflows/ai-training-checks.yml`).
-- [ ] Repository pull-request CI and the existing full Node.js check suite pass. Record the PR check result here after Actions completes.
+- [x] Dataset JSONL format, notebook structure, Python syntax, and CPU-safe dataset unit tests passed in GitHub Actions `AI training assets` run 1 (run ID `46140071816`, success).
+- [x] Existing Node syntax checks, full test suite, and production dependency audit passed in `JARVIS CI` run 1827, job `Node.js tests and dependency audit` (run ID `46140071784`, success).
+- [x] Android Companion build, APK verification, release metadata, and artifact upload passed in the same `JARVIS CI` run, job `Android Companion build and APK verification` (run ID `46140071784`, success).
 
 ## Model and data acceptance
 
 - [x] Model candidates documented with licenses and access caveats; no final model chosen without a real hardware report and revision pin (`model-candidates.json`).
 - [x] Small authored smoke examples and a separate held-out example included; documentation explicitly says they are not sufficient training data.
-- [x] Reproducible QLoRA training, inference, and held-out evaluation scripts/notebooks provided.
+- [x] Reproducible QLoRA training, inference, checkpointing, and held-out evaluation scripts/notebooks provided.
 - [ ] Curated, consented, licensed, and human-reviewed corpus ingested and split by source group.
 - [ ] Colab GPU/memory audit run; chosen model/revision and dependency versions recorded.
 - [ ] Real baseline inference, training, checkpoint save/resume, adapter load, and held-out evaluation completed with artifacts.
@@ -30,10 +29,10 @@ Status is recorded honestly; an implemented workflow is not evidence of a comple
 
 - [x] API integration and rollback guidance documented (`../docs/JARVIS_TRAINED_MODEL_DEPLOYMENT.md`).
 - [ ] Exported model artifact and checksums exist in durable storage.
-- [ ] Deployment health and API smoke tests pass in an authorized environment.
+- [ ] Live deployment smoke test completed in an authorized environment. GitHub reported the Vercel PR preview as Ready, but opening it redirected to Vercel sign-in, so the protected preview could not be inspected or smoke-tested.
 
 ## Blockers / evidence
 
-- Colab currently opens at its sign-in-required home page. No account sign-in, Drive mount, GPU runtime, training, or deployment was performed. User sign-in and hardware availability are required for these checks.
-- The local environment has Node/npm but no Python interpreter, and direct GitHub network cloning is unavailable. Python checks are therefore delegated to the added GitHub Actions workflow; do not report them as locally executed.
-- This branch contains implementation and workflow scaffolding, not a trained model, production deployment, or verified live edit.
+- Colab opens at a sign-in-required home page. No account sign-in, Drive mount, GPU runtime, training, or model deployment was performed. User sign-in and suitable hardware are required for those checks.
+- The local environment has Node/npm but no Python interpreter, and direct GitHub network cloning is unavailable. Python checks ran in GitHub Actions instead; they were not run locally.
+- This branch contains implementation and workflow scaffolding, not a trained model, production model deployment, or verified live edit. The PR is open for review at https://github.com/18110priyanshuraj-creator/Jarvis/pull/107.
