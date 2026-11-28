@@ -1,0 +1,36 @@
+{
+  "status": "Shortlist only; select only after the Colab hardware audit and license review.",
+  "candidates": [
+    {
+      "id": "Qwen/Qwen2.5-1.5B-Instruct",
+      "parameters": "1.5B",
+      "license": "Apache-2.0 per model card",
+      "strengths": [
+        "multilingual",
+        "instruction following",
+        "structured outputs"
+      ],
+      "risk": "Pin revision; verify library compatibility."
+    },
+    {
+      "id": "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+      "parameters": "1.7B",
+      "license": "Apache-2.0 per model card",
+      "strengths": [
+        "compact",
+        "instruction and function-calling examples"
+      ],
+      "risk": "Assess Hindi/Hinglish quality; pin revision."
+    },
+    {
+      "id": "google/gemma-3-1b-it",
+      "parameters": "1B",
+      "license": "Gemma terms; gated acceptance required",
+      "strengths": [
+        "small parameter count"
+      ],
+      "risk": "Requires accepting terms; assess multilingual and training compatibility."
+    }
+  ],
+  "decision": "No winner is selected without a measured GPU report. Resolve an immutable Hugging Face revision SHA before loading."
+}
