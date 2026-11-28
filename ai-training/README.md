@@ -23,8 +23,12 @@ Read DATASET_GOVERNANCE.md. Keep private data, checkpoints, adapters, and evalua
 
 ## Local checks
 
-The CPU-safe dataset validator and unit tests require Python 3.11 or newer. Run python ai-training/scripts/dataset_factory.py validate ai-training/datasets/starter/general.jsonl and python -m unittest discover -s ai-training/tests -v. GitHub Actions validates notebook JSON, authored JSONL, Python syntax, and the dataset tests. GPU training is not run in CI.
+The CPU-safe dataset validator and unit tests require Python 3.11 or newer. Run `python ai-training/scripts/dataset_factory.py validate ai-training/datasets/starter/general.jsonl` and `python -m unittest discover -s ai-training/tests -v`. GitHub Actions validates notebook JSON, authored JSONL, Python syntax, and the dataset tests. GPU training is not run in CI.
+
+## Live verification so far
+
+The master notebook has been run in Google Colab. It cloned this development branch, mounted Google Drive, created the JARVIS folder tree, passed a Drive write/read probe, and validated the authored starter fixture. The assigned runtime was CPU-only: Python 3.13.18, PyTorch 2.14.1+cpu, 12.67 GiB RAM, and 107.61 GiB free runtime disk. The hardware report is saved at `MyDrive/JARVIS_AI/runs/hardware_reports/latest.json`. Dataset validation returned two valid unique records from two source groups; these are tooling fixtures, not training data.
 
 ## Honest release status
 
-The notebooks/scripts are implemented, but they have not been run in Colab. No Drive folder, hardware report, baseline inference, checkpoint, adapter, evaluation result, trained model, endpoint, or deployment is claimed. A release manifest defaults to deployment disabled. Read the training, evaluation, recovery, deployment, and Android guides under docs/.
+The notebook and scripts are implemented, and the live audit/data-validation stage has been verified. No baseline model inference, model-generated edit plan, training, checkpoint, adapter, evaluation result, trained model, endpoint, or deployment is claimed. A release manifest defaults to deployment disabled. Read the training, evaluation, recovery, deployment, and Android guides under docs/.
