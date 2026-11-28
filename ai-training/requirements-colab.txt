@@ -1,0 +1,8 @@
+# Install after recording Colab Python, CUDA, and PyTorch versions.
+transformers>=4.46,<5
+peft>=0.13
+accelerate>=1.0
+bitsandbytes>=0.44
+datasets>=3.0
+huggingface_hub>=0.26
+jsonschema>=4.23
