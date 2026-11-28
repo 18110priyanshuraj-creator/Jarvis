@@ -7,6 +7,9 @@ Status is recorded honestly; an implemented workflow is not evidence of a comple
 - [x] Dataset JSONL format, notebook structure, Python syntax, and CPU-safe dataset unit tests passed in GitHub Actions `AI training assets` run 1 (run ID `46140071816`, success).
 - [x] Existing Node syntax checks, full test suite, and production dependency audit passed in `JARVIS CI` run 1827, job `Node.js tests and dependency audit` (run ID `46140071784`, success).
 - [x] Android Companion build, APK verification, release metadata, and artifact upload passed in the same `JARVIS CI` run, job `Android Companion build and APK verification` (run ID `46140071784`, success).
+- [x] Live Colab setup cloned the PR branch and confirmed the expected repository.
+- [x] Live Colab setup and dataset validation completed: Colab Python 3.13.18, PyTorch 2.14.1+cpu, 12.67 GiB RAM, 107.61 GiB free runtime disk; Drive mounted, JARVIS folder tree created, write/read probe passed, and hardware report saved at `MyDrive/JARVIS_AI/runs/hardware_reports/latest.json`.
+- [x] Starter dataset validator rerun in Colab exited 0 and reported 2 valid unique records from 2 source groups.
 
 ## Model and data acceptance
 
@@ -14,8 +17,8 @@ Status is recorded honestly; an implemented workflow is not evidence of a comple
 - [x] Small authored smoke examples and a separate held-out example included; documentation explicitly says they are not sufficient training data.
 - [x] Reproducible QLoRA training, inference, checkpointing, and held-out evaluation scripts/notebooks provided.
 - [ ] Curated, consented, licensed, and human-reviewed corpus ingested and split by source group.
-- [ ] Colab GPU/memory audit run; chosen model/revision and dependency versions recorded.
-- [ ] Real baseline inference, training, checkpoint save/resume, adapter load, and held-out evaluation completed with artifacts.
+- [ ] GPU hardware audit completed; chosen model/revision and dependency versions recorded.
+- [ ] Real baseline inference, edit-plan generation, training, checkpoint save/resume, adapter load, and held-out evaluation completed with artifacts.
 
 ## JARVIS editor acceptance
 
@@ -33,6 +36,7 @@ Status is recorded honestly; an implemented workflow is not evidence of a comple
 
 ## Blockers / evidence
 
-- Colab opens at a sign-in-required home page. No account sign-in, Drive mount, GPU runtime, training, or model deployment was performed. User sign-in and suitable hardware are required for those checks.
-- The local environment has Node/npm but no Python interpreter, and direct GitHub network cloning is unavailable. Python checks ran in GitHub Actions instead; they were not run locally.
+- Colab sign-in, CPU runtime, and Google Drive mount succeeded. The persistent hardware report and successful write/read check are in the Drive path recorded above. The assigned runtime has no CUDA GPU (`cuda_available: false`), so baseline loading, inference, training, and model-generated edit-plan checks were not attempted or claimed.
+- The starter validator was run against the authored sample only. Its 2 records and 2 source groups are tooling smoke-test data, not training data or model-quality evidence.
+- The local environment has Node/npm but no Python interpreter, and direct GitHub network cloning is unavailable. Python checks ran in GitHub Actions and the Colab runtime instead; they were not run locally.
 - This branch contains implementation and workflow scaffolding, not a trained model, production model deployment, or verified live edit. The PR is open for review at https://github.com/18110priyanshuraj-creator/Jarvis/pull/107.
