@@ -1,5 +1,7 @@
 # Colab notebooks
 
-Start with 00_hardware_and_drive_audit.ipynb. It does not train a model; it measures the actual runtime and creates persistent Drive folders.
+Start with JARVIS_Hybrid_Master_Training.ipynb for the staged workflow or 00_hardware_and_drive_audit.ipynb for a standalone GPU/Drive audit. Both use official Drive authorization and save persistent reports to Drive.
 
-The remaining notebook sequence is documented in ../README.md. Generate those notebooks after the GPU report and base-model decision. This avoids hard-coding a model or quantization settings that may not fit the Colab runtime available to the owner.
+Modular notebooks are present for model selection, approved source review, leakage-safe data splits, editing examples, resumable QLoRA training, held-out evaluation, and release-manifest checks. See ../README.md and docs/JARVIS_TRAINING_MANAGER_GUIDE.md for the run order.
+
+Notebook files are JSON-validated in GitHub Actions. Colab execution still requires the owner's authenticated Google account and an available runtime; no GPU run is claimed.
