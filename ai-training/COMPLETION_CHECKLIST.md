@@ -4,9 +4,9 @@ Status is recorded honestly; an implemented workflow is not evidence of a comple
 
 ## Automated checks
 
-- [x] Dataset JSONL format, notebook structure, Python syntax, and CPU-safe dataset unit tests passed in GitHub Actions `AI training assets` run 1 (run ID `46140071816`, success).
-- [x] Existing Node syntax checks, full test suite, and production dependency audit passed in `JARVIS CI` run 1827, job `Node.js tests and dependency audit` (run ID `46140071784`, success).
-- [x] Android Companion build, APK verification, release metadata, and artifact upload passed in the same `JARVIS CI` run, job `Android Companion build and APK verification` (run ID `46140071784`, success).
+- [x] Dataset JSONL format, notebook structure, Python syntax, and CPU-safe dataset unit tests passed in GitHub Actions `AI training assets` run 5 (run ID `46145141807`, success).
+- [x] Existing Node syntax checks, full test suite, and production dependency audit passed in `JARVIS CI` run 1831, job `Node.js tests and dependency audit` (run ID `46145141844`, success).
+- [x] Android Companion build, APK verification, release metadata, and artifact upload passed in the same `JARVIS CI` run, job `Android Companion build and APK verification` (run ID `46145141844`, success); artifact `jarvis-companion-debug` (ID `15263357354`, SHA-256 `75c65430afee5720ec42025fd7903da7dfd76b77dbc0db639d92dcebad10b2f9`, expires 2026-12-05).
 - [x] Live Colab setup cloned the PR branch and confirmed the expected repository.
 - [x] Live Colab setup and dataset validation completed: Colab Python 3.13.18, PyTorch 2.14.1+cpu, 12.67 GiB RAM, 107.61 GiB free runtime disk; Drive mounted, JARVIS folder tree created, write/read probe passed, and hardware report saved at `MyDrive/JARVIS_AI/runs/hardware_reports/latest.json`.
 - [x] Starter dataset validator rerun in Colab exited 0 and reported 2 valid unique records from 2 source groups.
